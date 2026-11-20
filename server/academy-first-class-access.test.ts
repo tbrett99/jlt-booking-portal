@@ -97,7 +97,7 @@ beforeEach(() => {
     academy_questions: [{ id: 8, lessonId: 12, prompt: "Private question", questionType: "free_text", answerOptions: [], sortOrder: 0, maxWords: 100, correctAnswerIndex: 0 }],
     academy_assessment_attempts: [{ id: 66, enrollmentId: 44, lessonId: 11, status: "feedback_pending", passed: false, score: 60, graderFeedback: "Private feedback", takenAt: anchor, submissionFileKey: "academy/document-assessments/submissions/44/work.pdf", submissionFileName: "work.pdf", submissionMimeType: "application/pdf", assessmentTemplateKey: "historic/template.pdf", answers: [{ historic: true }] }],
     academy_assessment_responses: [{ id: 7, attemptId: 66, questionId: 8, responseText: "Historic answer", score: 60, feedback: "Private feedback" }], academy_assessment_question_resets: [],
-    staff_academy_uploads: [{ id: 77, userId: 90, courseId: 33, objectKey: key, kind: "attachment" }], academy_audit_log: [], users: [],
+    staff_academy_uploads: [{ id: 77, userId: 90, courseId: 33, objectKey: key, kind: "attachment" }], academy_audit_log: [], users: [{ ...admin }],
   }); state.db = mock.db; routes = {};
   registerAcademyDocumentDownloadRoutes({ get(path: string, handler: any) { routes[path] = handler; } } as unknown as Express);
 });
@@ -422,6 +422,7 @@ describe("designation authority, staff previews and immutable completed/waived r
     expect(state.raw).toHaveBeenCalledWith(expect.stringContaining("isFirstClassTraining"), expect.any(Array));
   });
   it("old editor omission preserves true; only admin can turn designation off/on", async () => {
+    state.user = { ...admin };
     await caller(admin).admin.saveCourse(courseInput()); expect(mock.tables.academy_courses[0].isFirstClassTraining).toBe(true);
     await caller(admin).admin.saveCourse(courseInput({ isFirstClassTraining: false })); expect(mock.tables.academy_courses[0].isFirstClassTraining).toBe(false);
     await caller(admin).admin.saveCourse(courseInput({ isFirstClassTraining: true })); expect(mock.tables.academy_courses[0].isFirstClassTraining).toBe(true);
@@ -457,7 +458,9 @@ describe("designation authority, staff previews and immutable completed/waived r
     const dto = await caller().agent.course({ enrollmentId: 44 }); expect(dto.modules.every(module => !module.releaseLocked && module.lessons.every(lesson => !lesson.locked))).toBe(true);
     for (const kind of ["inline", "attachment", "template", "submission"] as const) expect((await http(kind, 12)).statusCode).toBe(200);
     expect(history()).toEqual(before); expect(mock.writes).toEqual([]);
+    const priorSession = state.user; state.user = { ...admin };
     await caller(admin).admin.saveCourse(courseInput({ isFirstClassTraining: true })); expect(history()).toEqual(before);
+    state.user = priorSession;
     mock.tables.agent_crm_profiles[0].membershipTier = "Business Class";
     await expect(caller().agent.course({ enrollmentId: 44 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect((await http("inline", 12)).statusCode).toBe(404);
     expect(history()).toEqual(before);

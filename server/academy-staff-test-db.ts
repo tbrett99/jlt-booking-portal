@@ -5,6 +5,9 @@ import { getTableName } from "drizzle-orm";
 export function academyMockDb(initial: Record<string, any[]>) {
   const tables: Record<string, any[]> = structuredClone(initial);
   const reads: Array<{ table: string; projection: any }> = [];
+  let transactionActive = false;
+  const locks: string[] = [];
+  let transactionLocksStart = 0;
   const writes: Array<{ table: string; operation: string; values?: any }> = [];
   const tableName = (table: any) => getTableName(table);
   const column = (value: any) => !!value?.table && typeof value.name === "string";
@@ -57,6 +60,12 @@ export function academyMockDb(initial: Record<string, any[]>) {
         where(condition: any) { predicate = condition; return query; },
         orderBy() { return query; },
         limit(n: number) { max = n; return query; },
+        for(mode: string) {
+          if (!transactionActive || mode !== "update") throw new Error("Row locks require an active test transaction");
+          if (locks.length === transactionLocksStart && base !== "academy_courses") throw new Error("Course must be locked before child rows");
+          locks.push(base);
+          return query;
+        },
         then(resolve: any, reject: any) { return Promise.resolve().then(() => bindings.filter(binding => matches(predicate, binding)).slice(0, max).map(binding => project(projection, binding, base))).then(resolve, reject); },
       };
       return query;
@@ -88,5 +97,31 @@ export function academyMockDb(initial: Record<string, any[]>) {
       } };
     },
   };
-  return { db, tables, reads, writes };
+  db.session = { client: { async execute(query: string, params: any[]) {
+    if (!transactionActive || locks.length === transactionLocksStart) throw new Error("Prepared insert escaped the locked transaction");
+    const match = query.match(/^\s*INSERT INTO (academy_lessons)\s*\(([^)]+)\)\s*VALUES/i);
+    if (!match) throw new Error("Unsupported transaction prepared SQL in test adapter");
+    const columns = match[2].split(",").map(column => column.trim());
+    if (columns.length !== params.length || (query.match(/\?/g) ?? []).length !== params.length || params.includes(undefined)) throw new Error("Invalid native prepared parameters");
+    const name = match[1];
+    const rows = tables[name] ??= [];
+    const id = rows.reduce((max, row) => Math.max(max, row.id ?? 0), 0) + 1;
+    const values = Object.fromEntries(columns.map((column, index) => [column, params[index]]));
+    writes.push({ table: name, operation: "insert", values });
+    rows.push({ id, ...values });
+    return [{ insertId: id }];
+  } } };
+  db.transaction = async (callback: any, config: any) => {
+    if (transactionActive || config?.isolationLevel !== "repeatable read") throw new Error("Invalid test transaction");
+    const before = structuredClone(tables); const writesBefore = writes.length;
+    transactionLocksStart = locks.length;
+    transactionActive = true;
+    try { return await callback(db); }
+    catch (error) {
+      for (const name of Object.keys(tables)) delete tables[name];
+      Object.assign(tables, before); writes.splice(writesBefore);
+      throw error;
+    } finally { transactionActive = false; }
+  };
+  return { db, tables, reads, writes, locks };
 }

@@ -94,6 +94,23 @@ const emptyLesson = {
   questions: [] as DraftQuestion[],
 };
 
+type LessonResourceRefresh = {
+  courseId: number;
+  moduleId: number;
+  lessonId: number;
+  session: number;
+  attachmentKey: string;
+  attachmentUrl: string;
+};
+
+// Recognition only, not authorization: the authoritative editor supplies the
+// owning course/module/lesson. Private identifiers are uploader-scoped, not course IDs.
+function isPrivateTeachingResource(key: string, url: string) {
+  return key.length <= 600 && !key.includes("..") &&
+    /^academy\/[1-9]\d*\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-[a-z0-9._-]+$/i.test(key) &&
+    url === `https://portal.thejltgroup.co.uk/api/academy/course-attachment/${encodeURIComponent(key)}`;
+}
+
 function academyQuestionDraftSignature(questions: DraftQuestion[]) {
   return JSON.stringify(questions.map((question) => ({
     id: question.id ?? null,
@@ -233,6 +250,10 @@ export default function AdminAcademy() {
     { enabled: !!courseId }
   );
   const [courseDraft, setCourseDraft] = useState(emptyCourse);
+  const courseSaveBusy = useRef(false);
+  const [courseSavePending, setCourseSavePending] = useState(false);
+  const [securingResources, setSecuringResources] = useState(false);
+  const hydratedCourseVersion = useRef("");
   const [moduleTitle, setModuleTitle] = useState("");
   const [moduleSummary, setModuleSummary] = useState("");
   const [moduleReleaseWeek, setModuleReleaseWeek] = useState(0);
@@ -262,6 +283,61 @@ export default function AdminAcademy() {
   const [readingAttachment, setReadingAttachment] = useState(false);
   const lessonEditorRef = useRef<HTMLDivElement | null>(null);
   const moduleLessonListRefs = useRef(new Map<number, HTMLDivElement>());
+  const resourceRefreshTarget = useRef<LessonResourceRefresh | null>(null);
+  // Verification belongs to the saved course, not the lifetime of an open draft.
+  const unverifiedCourseResources = useRef(new Map<number, Omit<LessonResourceRefresh, "session">[]>());
+  const verifiedCourseEditors = useRef(new Map<number, {
+    editor: NonNullable<typeof editor>;
+    staleResources: Omit<LessonResourceRefresh, "session">[];
+  }>());
+  const [resourceRefreshNeeded, setResourceRefreshNeeded] = useState(false);
+  const resourceRefreshBusy = useRef(false);
+  const [resourceRefreshPending, setResourceRefreshPending] = useState(false);
+  const currentLessonIdentity = useRef({ courseId, lessonModuleId, editingLessonId });
+  currentLessonIdentity.current = { courseId, lessonModuleId, editingLessonId };
+  function isCurrentResourceDraft(target: LessonResourceRefresh) {
+    const current = currentLessonIdentity.current;
+    return target.session === lessonDraftSession.current && target.courseId === current.courseId &&
+      target.moduleId === current.lessonModuleId && target.lessonId === current.editingLessonId;
+  }
+  function hasUncheckedResource() {
+    const target = resourceRefreshTarget.current;
+    return !!target && isCurrentResourceDraft(target) &&
+      lessonDraft.attachmentKey === target.attachmentKey && lessonDraft.attachmentUrl === target.attachmentUrl;
+  }
+  async function refreshSavedLessonResource(target: LessonResourceRefresh | null, owningCourseId = target!.courseId) {
+    // staleTime: 0 forces a server read even when invalidate failed or a query
+    // previously cached this course. Never reconcile from render-time cached data.
+    const fresh = await utils.academy.admin.editor.fetch({ courseId: owningCourseId }, { staleTime: 0 });
+    if (target && !isCurrentResourceDraft(target)) return;
+    const resources = unverifiedCourseResources.current.get(owningCourseId) ?? (target ? [target] : []);
+    if (!fresh || fresh.course.id !== owningCourseId || fresh.course.isFirstClassTraining !== true ||
+      resources.some(resource => {
+        const module = fresh.modules.find(module => module.id === resource.moduleId && module.courseId === owningCourseId);
+        const lesson = module?.lessons.find(lesson => lesson.id === resource.lessonId && lesson.moduleId === resource.moduleId);
+        const key = lesson?.attachmentKey ?? "";
+        const url = lesson?.attachmentUrl ?? "";
+        // A later confirmed removal is authoritative too, but a missing lesson isn't.
+        if (lesson && !key && !url) return false;
+        return !isPrivateTeachingResource(key, url) || (key === resource.attachmentKey && url === resource.attachmentUrl);
+      })) {
+      throw new Error("The saved private lesson resource could not be verified.");
+    }
+    verifiedCourseEditors.current.set(owningCourseId, { editor: fresh, staleResources: resources });
+    unverifiedCourseResources.current.delete(owningCourseId);
+    if (target) {
+      const lesson = fresh.modules.find(module => module.id === target.moduleId)!
+        .lessons.find(lesson => lesson.id === target.lessonId)!;
+      setLessonDraft(current => isCurrentResourceDraft(target) &&
+        current.attachmentKey === target.attachmentKey && current.attachmentUrl === target.attachmentUrl
+        ? { ...current, attachmentKey: lesson.attachmentKey ?? "", attachmentUrl: lesson.attachmentUrl ?? "" }
+        : current);
+    }
+    if (!target || resourceRefreshTarget.current === target) {
+      resourceRefreshTarget.current = null;
+      setResourceRefreshNeeded(false);
+    }
+  }
   const [lessonNavigationRequest, setLessonNavigationRequest] = useState<{
     moduleId: number;
     target: "editor" | "lessons";
@@ -293,14 +369,36 @@ export default function AdminAcademy() {
     utils.academy.agent.home.invalidate();
   };
   const saveCourse = trpc.academy.admin.saveCourse.useMutation({
-    onSuccess: result => {
-      toast.success("Course saved");
+    onSuccess: async (result, variables) => {
+      const savedMessage = variables.isFirstClassTraining ? "First Class training saved" : "Course saved";
+      toast.success(savedMessage);
       setIsCreatingCourse(false);
       setCourseId(result.id);
-      invalidateAcademy();
+      const refreshes = await Promise.allSettled([
+        () => utils.academy.admin.courses.invalidate(undefined, undefined, { throwOnError: true }),
+        async () => {
+          const target = resourceRefreshTarget.current;
+          // Try a forced fresh read even if ordinary invalidation rejects.
+          try {
+            await utils.academy.admin.editor.invalidate({ courseId: result.id }, undefined, { throwOnError: true });
+          } finally {
+            if (target?.courseId === result.id && isCurrentResourceDraft(target)) await refreshSavedLessonResource(target);
+            else if (unverifiedCourseResources.current.has(result.id)) await refreshSavedLessonResource(null, result.id);
+          }
+        },
+        () => utils.academy.agent.home.invalidate(undefined, undefined, { throwOnError: true }),
+      ].map(refresh => refresh()));
+      if (refreshes.some(refresh => refresh.status === "rejected")) {
+        toast.warning(`${savedMessage}, but this view could not refresh. Refresh the page to check the saved course before making further changes.`);
+      }
     },
-    onError: e => toast.error(e.message),
+    onError: (error, variables) => {
+      toast.error(variables.id && variables.isFirstClassTraining
+        ? `${error.message} Your draft has been kept. If the save timed out or you are unsure whether it finished, refresh and check the course before trying again.`
+        : error.message);
+    },
   });
+  const courseEditorPending = courseSavePending || saveCourse.isPending || resourceRefreshPending;
   const setStatus = trpc.academy.admin.setCourseStatus.useMutation({
     onSuccess: () => {
       toast.success("Course status updated");
@@ -438,6 +536,10 @@ export default function AdminAcademy() {
   }, [courses, courseId, isCreatingCourse]);
   useEffect(() => {
     if (!editor) return;
+    // A background read must not replace the draft while its save is in flight.
+    const version = JSON.stringify([editor.course.id, editor.course.updatedAt]);
+    if (courseSaveBusy.current || hydratedCourseVersion.current === version) return;
+    hydratedCourseVersion.current = version;
     setCourseDraft({
       title: editor.course.title,
       summary: editor.course.summary ?? "",
@@ -451,7 +553,7 @@ export default function AdminAcademy() {
         ? current
         : (editor.modules[0]?.id ?? null)
     );
-  }, [editor?.course.id, editor?.course.updatedAt]);
+  }, [editor?.course.id, editor?.course.updatedAt, courseEditorPending]);
 
   const selectedCourse = courses.find(course => course.id === courseId) ?? null;
   const alertAllowsModuleScope = ["week_released", "module_started", "module_completed", "written_assessment_ready", "three_attempt_lock"].includes(alertDraft.eventType);
@@ -486,13 +588,14 @@ export default function AdminAcademy() {
   }, [hasOpenDraft]);
 
   function confirmDiscardOpenDraft() {
-    if (lessonOperationBusy.current || lessonEditorPending) return false;
+    if (courseSaveBusy.current || resourceRefreshBusy.current || courseEditorPending || lessonOperationBusy.current || lessonEditorPending) return false;
     return !hasOpenDraft || window.confirm("You have an unsaved Academy draft open. Leave this area and discard those unsaved changes?");
   }
 
   function createCourse() {
     if (!confirmDiscardOpenDraft()) return;
     lessonDraftSession.current += 1;
+    hydratedCourseVersion.current = "";
     setIsCreatingCourse(true);
     setCourseId(null);
     setCourseDraft(emptyCourse);
@@ -501,9 +604,9 @@ export default function AdminAcademy() {
     setEditingLessonId(null);
     setLessonModuleId(null);
   }
-  function saveCourseDraft() {
-    if (saveCourse.isPending) return;
-    saveCourse.mutate({
+  async function saveCourseDraft() {
+    if (courseSaveBusy.current || resourceRefreshBusy.current || courseEditorPending || lessonOperationBusy.current || lessonEditorPending || setStatus.isPending) return;
+    const snapshot = {
       id: courseId ?? undefined,
       title: courseDraft.title,
       summary: courseDraft.summary || null,
@@ -511,7 +614,68 @@ export default function AdminAcademy() {
       isCoreAcademy: courseDraft.isCoreAcademy,
       isAcceleratorJourney: courseDraft.isAcceleratorJourney,
       isFirstClassTraining: courseDraft.isFirstClassTraining,
-    });
+    };
+    const activating = Boolean(snapshot.id && snapshot.isFirstClassTraining && editor?.course.isFirstClassTraining !== true);
+    const storedLesson = activating && editor && editor.course.id === snapshot.id
+      ? editor.modules.find(module => module.id === lessonModuleId && module.courseId === snapshot.id)
+          ?.lessons.find(lesson => lesson.id === editingLessonId && lesson.moduleId === lessonModuleId)
+      : undefined;
+    // Freeze the actual saved tuple, not potentially edited/uploaded draft fields.
+    const target = snapshot.id && lessonModuleId && editingLessonId && storedLesson?.attachmentKey && storedLesson.attachmentUrl &&
+      !isPrivateTeachingResource(storedLesson.attachmentKey, storedLesson.attachmentUrl)
+      ? { courseId: snapshot.id, moduleId: lessonModuleId, lessonId: editingLessonId, session: lessonDraftSession.current,
+          attachmentKey: storedLesson.attachmentKey, attachmentUrl: storedLesson.attachmentUrl }
+      : null;
+    const previousTarget = resourceRefreshTarget.current;
+    const previousObligation = snapshot.id ? unverifiedCourseResources.current.get(snapshot.id) : undefined;
+    if (activating && snapshot.id && editor) {
+      unverifiedCourseResources.current.set(snapshot.id, editor.modules.flatMap(module =>
+        module.courseId === snapshot.id ? module.lessons.flatMap(lesson =>
+          lesson.moduleId === module.id && lesson.attachmentKey && lesson.attachmentUrl &&
+          !isPrivateTeachingResource(lesson.attachmentKey, lesson.attachmentUrl)
+            ? [{ courseId: snapshot.id!, moduleId: module.id, lessonId: lesson.id,
+                attachmentKey: lesson.attachmentKey, attachmentUrl: lesson.attachmentUrl }]
+            : []) : []));
+    }
+    if (target) {
+      resourceRefreshTarget.current = target;
+      setResourceRefreshNeeded(true);
+    }
+    courseSaveBusy.current = true;
+    setCourseSavePending(true);
+    setSecuringResources(activating);
+    try {
+      await saveCourse.mutateAsync(snapshot);
+    } catch {
+      // The mutation reports the failure; keep every draft field for review.
+      if (activating && snapshot.id) {
+        if (previousObligation) unverifiedCourseResources.current.set(snapshot.id, previousObligation);
+        else unverifiedCourseResources.current.delete(snapshot.id);
+      }
+      if (target && resourceRefreshTarget.current === target) {
+        resourceRefreshTarget.current = previousTarget;
+        setResourceRefreshNeeded(!!previousTarget);
+      }
+    } finally {
+      courseSaveBusy.current = false;
+      setCourseSavePending(false);
+      setSecuringResources(false);
+    }
+  }
+  async function retryLessonResourceRefresh() {
+    const target = resourceRefreshTarget.current;
+    if (!target || !isCurrentResourceDraft(target) || resourceRefreshBusy.current || courseSaveBusy.current ||
+      courseEditorPending || lessonOperationBusy.current || lessonEditorPending) return;
+    resourceRefreshBusy.current = true;
+    setResourceRefreshPending(true);
+    try {
+      await refreshSavedLessonResource(target);
+    } catch {
+      toast.warning("The saved lesson resource could not refresh. Your draft has been kept. Try refreshing the saved resource again before saving this lesson.");
+    } finally {
+      resourceRefreshBusy.current = false;
+      setResourceRefreshPending(false);
+    }
   }
   function editModule(module: {
     id: number;
@@ -562,6 +726,18 @@ export default function AdminAcademy() {
     }
     if ((lessonModuleId !== null || editingModuleId !== null) && !confirmDiscardOpenDraft()) return;
     lessonDraftSession.current += 1;
+    const obligation = courseId ? unverifiedCourseResources.current.get(courseId)
+      ?.find(resource => resource.moduleId === moduleId && resource.lessonId === lesson.id) : undefined;
+    const verified = courseId ? verifiedCourseEditors.current.get(courseId) : undefined;
+    const staleResource = verified?.staleResources.find(resource => resource.moduleId === moduleId && resource.lessonId === lesson.id &&
+      resource.attachmentKey === lesson.attachmentKey && resource.attachmentUrl === lesson.attachmentUrl);
+    const freshLesson = staleResource ? verified?.editor.modules
+      .find(module => module.id === moduleId && module.courseId === courseId)
+      ?.lessons.find(saved => saved.id === lesson.id && saved.moduleId === moduleId) : undefined;
+    // Only a forced, verified full editor result can supersede stale query metadata.
+    if (!obligation && freshLesson) lesson = freshLesson;
+    resourceRefreshTarget.current = obligation ? Object.freeze({ ...obligation, session: lessonDraftSession.current }) : null;
+    setResourceRefreshNeeded(!!obligation);
     setOpenModuleId(moduleId);
     setEditingModuleId(null);
     setLessonModuleId(moduleId);
@@ -615,7 +791,8 @@ export default function AdminAcademy() {
     returnToModuleLessons(lessonModuleId);
   }
   async function submitLesson() {
-    if (!lessonModuleId || lessonOperationBusy.current || lessonEditorPending) return;
+    if (!lessonModuleId || courseSaveBusy.current || courseEditorPending || resourceRefreshBusy.current ||
+      lessonOperationBusy.current || lessonEditorPending || hasUncheckedResource()) return;
     const moduleId = lessonModuleId;
     const session = lessonDraftSession.current;
     const lessonIdBeforeSave = editingLessonId;
@@ -676,7 +853,7 @@ export default function AdminAcademy() {
     }
   }
   async function handleAttachment(file: File | undefined) {
-    if (!file || lessonModuleId === null || lessonOperationBusy.current || lessonEditorPending) return;
+    if (!file || lessonModuleId === null || courseSaveBusy.current || courseEditorPending || resourceRefreshBusy.current || lessonOperationBusy.current || lessonEditorPending) return;
     const owningCourseId = editor?.course.id;
     if (typeof owningCourseId !== "number" || !Number.isSafeInteger(owningCourseId) || owningCourseId <= 0 || owningCourseId !== courseId) {
       toast.error("Save and select the owning course before uploading a lesson resource.");
@@ -827,7 +1004,20 @@ export default function AdminAcademy() {
     );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <fieldset
+      className="mx-auto min-w-0 max-w-7xl space-y-6"
+      disabled={courseEditorPending}
+      aria-busy={courseEditorPending}
+      onClickCapture={event => {
+        if (courseSaveBusy.current || resourceRefreshBusy.current) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onChangeCapture={event => {
+        if (courseSaveBusy.current || resourceRefreshBusy.current) event.stopPropagation();
+      }}
+    >
       <header className="rounded-3xl border border-[#70FFE8]/45 bg-gradient-to-r from-[#414141] to-[#2d3534] p-6 text-white shadow-sm md:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -931,9 +1121,9 @@ export default function AdminAcademy() {
           {!courseId ? (
             <CourseSetup
               draft={courseDraft}
-              setDraft={setCourseDraft}
+              setDraft={next => { if (!courseSaveBusy.current) setCourseDraft(next); }}
               onSave={saveCourseDraft}
-              isSaving={saveCourse.isPending}
+              isSaving={courseEditorPending}
             />
           ) : editorLoading ? (
             <div className="h-96 rounded-2xl bg-muted animate-pulse" />
@@ -974,9 +1164,11 @@ export default function AdminAcademy() {
             <>
               <CourseSetup
                 draft={courseDraft}
-                setDraft={setCourseDraft}
+                setDraft={next => { if (!courseSaveBusy.current) setCourseDraft(next); }}
                 onSave={saveCourseDraft}
-                isSaving={saveCourse.isPending}
+                isSaving={courseEditorPending}
+                securingResources={securingResources}
+                saveDisabled={lessonEditorPending || setStatus.isPending}
                 existing
                 course={editor.course}
                 onStatus={status =>
@@ -1044,7 +1236,7 @@ export default function AdminAcademy() {
                 </div>
                 <div className="mt-4">
                   <Label>Email content</Label>
-                  <RichEmailEditor value={alertDraft.bodyHtmlTemplate} onChange={bodyHtmlTemplate => setAlertDraft(current => ({ ...current, bodyHtmlTemplate }))} placeholder="Write the alert email…" />
+                  <RichEmailEditor disabled={courseEditorPending} value={alertDraft.bodyHtmlTemplate} onChange={bodyHtmlTemplate => setAlertDraft(current => ({ ...current, bodyHtmlTemplate }))} placeholder="Write the alert email…" />
                   <p className="mt-2 text-xs text-muted-foreground">Use the Academy merge fields in the template guidance for the learner, course, milestone and direct course link.</p>
                 </div>
                 <div className="mt-4 flex justify-end">
@@ -1447,18 +1639,31 @@ export default function AdminAcademy() {
                                 tabIndex={-1}
                                 className="scroll-mt-6 border-t p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4"
                               >
+                                {resourceRefreshNeeded && hasUncheckedResource() && !courseSavePending && (
+                                  <div role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm">
+                                    <p>Your lesson draft has been kept. Refresh the saved resource before saving this lesson.</p>
+                                    <Button variant="outline" size="sm" className="mt-2"
+                                      disabled={courseEditorPending || lessonEditorPending}
+                                      onClick={() => void retryLessonResourceRefresh()}>
+                                      <RefreshCw className="mr-1 size-4" />
+                                      {resourceRefreshPending ? "Refreshing saved resource…" : "Refresh saved resource"}
+                                    </Button>
+                                  </div>
+                                )}
                                 <LessonEditor
                                   draft={lessonDraft}
-                                  setDraft={next => { if (!lessonEditorPending && !lessonOperationBusy.current) setLessonDraft(next); }}
+                                  setDraft={next => { if (!courseSaveBusy.current && !resourceRefreshBusy.current && !lessonEditorPending && !lessonOperationBusy.current) setLessonDraft(next); }}
                                   courseTitle={editor.course.title}
+                                  firstClass={isFirstClassCourse}
                                   editing={editingLessonId !== null}
                                   lessonId={editingLessonId}
                                   onCancel={cancelLessonEdit}
                                   onSave={submitLesson}
-                                  isSaving={lessonEditorPending}
+                                  isSaving={courseEditorPending || lessonEditorPending}
+                                  saveDisabled={hasUncheckedResource()}
                                   onUpload={handleAttachment}
                                   uploading={readingAttachment || uploadAttachment.isPending}
-                                  resourceBusy={() => lessonOperationBusy.current || lessonEditorPending}
+                                  resourceBusy={() => courseSaveBusy.current || resourceRefreshBusy.current || lessonOperationBusy.current || lessonEditorPending}
                                   onUploadAssessmentTemplate={handleDocumentAssessmentTemplate}
                                   uploadingAssessmentTemplate={uploadDocumentAssessmentTemplate.isPending}
                                   onImportQuizCsv={handleQuizCsvImport}
@@ -1477,7 +1682,7 @@ export default function AdminAcademy() {
           )}
         </main>
       </div>
-    </div>
+    </fieldset>
   );
 }
 
@@ -1486,6 +1691,8 @@ function CourseSetup({
   setDraft,
   onSave,
   isSaving,
+  securingResources = false,
+  saveDisabled = false,
   existing,
   course,
   onStatus,
@@ -1495,6 +1702,8 @@ function CourseSetup({
   setDraft: (draft: typeof emptyCourse) => void;
   onSave: () => void;
   isSaving: boolean;
+  securingResources?: boolean;
+  saveDisabled?: boolean;
   existing?: boolean;
   course?: any;
   onStatus?: (status: "draft" | "published" | "archived") => void;
@@ -1516,14 +1725,14 @@ function CourseSetup({
             <Button
               variant="outline"
               size="sm"
-              disabled={statusPending || course.status === "draft"}
+              disabled={isSaving || statusPending || course.status === "draft"}
               onClick={() => onStatus?.("draft")}
             >
               Draft
             </Button>
             <Button
               size="sm"
-              disabled={statusPending || course.status === "published"}
+              disabled={isSaving || statusPending || course.status === "published"}
               onClick={() => onStatus?.("published")}
             >
               Publish
@@ -1532,7 +1741,7 @@ function CourseSetup({
               variant="outline"
               size="sm"
               className="text-destructive"
-              disabled={statusPending || course.status === "archived"}
+              disabled={isSaving || statusPending || course.status === "archived"}
               onClick={() => onStatus?.("archived")}
             >
               <Archive className="mr-1" size={14} /> Archive
@@ -1546,6 +1755,7 @@ function CourseSetup({
           <Input
             className="mt-1.5"
             placeholder="e.g. JLT Academy"
+            disabled={isSaving}
             value={draft.title}
             onChange={e => setDraft({ ...draft, title: e.target.value })}
           />
@@ -1555,6 +1765,7 @@ function CourseSetup({
           <Textarea
             className="mt-1.5"
             placeholder="Explain the course outcome in clear practical language."
+            disabled={isSaving}
             value={draft.summary}
             onChange={e => setDraft({ ...draft, summary: e.target.value })}
           />
@@ -1566,6 +1777,7 @@ function CourseSetup({
               className="mt-1.5"
               type="number"
               min="0"
+              disabled={isSaving}
               value={draft.estimatedMinutes}
               onChange={e =>
                 setDraft({
@@ -1617,6 +1829,7 @@ function CourseSetup({
               <Label htmlFor="academy-first-class-training" className="font-semibold">First Class training</Label>
               <p id="academy-first-class-training-description" className="mt-0.5 text-xs leading-5 text-muted-foreground">
                 First Class members only. First module available at enrolment, then one module every seven days.
+                {existing && " Existing uploaded teaching resources are secured automatically when you save."}
               </p>
             </div>
             <Switch
@@ -1634,8 +1847,10 @@ function CourseSetup({
         </div>
       </div>
       <div className="mt-5 flex justify-end">
-        <Button disabled={!draft.title.trim() || isSaving} onClick={onSave}>
-          {isSaving ? "Saving..." : existing ? "Save course" : "Create course"}
+        <Button disabled={!draft.title.trim() || isSaving || saveDisabled} onClick={onSave}>
+          {isSaving
+            ? securingResources ? "Securing resources…" : "Saving..."
+            : existing ? "Save course" : "Create course"}
         </Button>
       </div>
     </section>
@@ -1645,11 +1860,13 @@ function CourseSetup({
 function LessonEditor({
   draft,
   setDraft,
+  firstClass,
   editing,
   lessonId,
   onCancel,
   onSave,
   isSaving,
+  saveDisabled = false,
   onUpload,
   uploading,
   resourceBusy,
@@ -1661,11 +1878,13 @@ function LessonEditor({
   draft: typeof emptyLesson;
   setDraft: (next: typeof emptyLesson) => void;
   courseTitle: string;
+  firstClass: boolean;
   editing: boolean;
   lessonId: number | null;
   onCancel: () => void;
   onSave: () => void;
   isSaving: boolean;
+  saveDisabled?: boolean;
   onUpload: (file: File | undefined) => void;
   uploading: boolean;
   resourceBusy: () => boolean;
@@ -1782,6 +2001,7 @@ function LessonEditor({
           <RichEmailEditor
             className="mt-2"
             disabled={isSaving}
+            restrictedAcademy={firstClass}
             value={draft.contentHtml}
             onChange={contentHtml => {
               setDraft({ ...draft, contentHtml });
@@ -2357,6 +2577,7 @@ function LessonEditor({
             disabled={
               !draft.title.trim() ||
               isSaving ||
+              saveDisabled ||
               (draft.requiresAssessment &&
                 draft.assessmentMode === "quiz" &&
                 draft.questions.some(

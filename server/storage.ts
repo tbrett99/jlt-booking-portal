@@ -122,7 +122,9 @@ export async function storagePut(
 export async function storagePutEncrypted(
   relKey: string,
   data: Buffer | Uint8Array | string,
+  signal?: AbortSignal,
 ): Promise<{ key: string }> {
+  signal?.throwIfAborted();
   const client = getS3Client();
   const bucket = getBucket();
   const key = normalizeKey(relKey);
@@ -134,7 +136,8 @@ export async function storagePutEncrypted(
     Body: body,
     ContentType: "application/octet-stream",
     CacheControl: "no-store",
-  }));
+  }), signal ? { abortSignal: signal } : undefined);
+  signal?.throwIfAborted();
   return { key };
 }
 
@@ -172,4 +175,55 @@ export async function storageGet(
     { expiresIn }
   );
   return { key, url };
+}
+
+/** Authenticated raw R2 read for server-authorized conversion only. The caller
+ * supplies a validated object key, never a URL. Bound actual streamed bytes,
+ * not just provider metadata; deliberately do not use transformToByteArray(). */
+export async function storageGetRawBounded(relKey: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
+  if (!relKey || relKey !== normalizeKey(relKey) || /[\\?#\x00-\x1f]/.test(relKey)
+    || relKey.split("/").some(part => !part || part === "." || part === "..")
+    || !Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > 100 * 1024 * 1024) {
+    throw new Error("Invalid bounded document read");
+  }
+  signal?.throwIfAborted();
+  const client = getS3Client();
+  const controller = new AbortController();
+  let body: (AsyncIterable<Uint8Array> & { destroy?: () => void }) | undefined;
+  let destroyed = false;
+  const destroyBody = () => {
+    if (body && !destroyed) {
+      destroyed = true;
+      // destroy without an Error: avoid unhandled stream error events.
+      try { body.destroy?.(); } catch { /* Preserve the original read/abort error. */ }
+    }
+  };
+  const abort = () => { controller.abort(signal?.reason); destroyBody(); };
+  signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(() => { controller.abort(new Error("Document read timed out")); destroyBody(); }, 30_000);
+  try {
+    const response = await client.send(new GetObjectCommand({ Bucket: getBucket(), Key: relKey }), { abortSignal: controller.signal });
+    body = response.Body as typeof body;
+    controller.signal.throwIfAborted();
+    if (response.ContentLength !== undefined && (!Number.isSafeInteger(response.ContentLength)
+      || response.ContentLength < 0 || response.ContentLength > maxBytes)) throw new Error("Document exceeds the conversion size limit");
+    if (!body || typeof body[Symbol.asyncIterator] !== "function") throw new Error("Document storage returned no readable file body");
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for await (const chunk of body) {
+      controller.signal.throwIfAborted();
+      if (!(chunk instanceof Uint8Array)) throw new Error("Document storage returned an invalid file body");
+      total += chunk.byteLength;
+      if (total > maxBytes) throw new Error("Document exceeds the conversion size limit");
+      chunks.push(Buffer.from(chunk));
+    }
+    controller.signal.throwIfAborted();
+    if (!total || (response.ContentLength !== undefined && response.ContentLength !== total)) throw new Error("Document storage returned an incomplete file");
+    return Buffer.concat(chunks, total);
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+    controller.abort();
+    destroyBody();
+  }
 }

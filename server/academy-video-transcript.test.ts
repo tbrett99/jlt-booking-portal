@@ -18,7 +18,7 @@ describe("Academy Loom transcript knowledge source", () => {
   it("preserves original timestamped transcript text and keeps it out of the agent course response", () => {
     expect(router).toContain("function preserveOptionalTranscript");
     expect(router).toContain("return value?.trim() ? value : null;");
-    expect(router).toContain("const { videoTranscript: _videoTranscript, ...agentLesson } = lesson;");
+    expect(router).toMatch(/const\s*\{\s*videoTranscript:\s*_videoTranscript,\s*assessmentTemplateKey:\s*_assessmentTemplateKey,\s*\.\.\.agentLesson\s*\}\s*=\s*lesson;/);
     expect(router).toContain("The transcript is private staff source material");
   });
 

@@ -6,10 +6,11 @@ import { academyMockDb } from "./academy-staff-test-db";
 const state = vi.hoisted(() => ({
   db: null as any, freshUser: null as any, managed: false, employeeActive: true, employeePermission: true,
   authenticate: vi.fn(), authority: vi.fn(), boundary: vi.fn(), encrypted: vi.fn(), publicPut: vi.fn(), decrypted: vi.fn(),
+  rawRead: vi.fn(),
   raw: vi.fn(), operation: vi.fn(), directEmail: vi.fn(), supportEmail: vi.fn(), alerts: vi.fn(), notify: vi.fn(), external: vi.fn(),
 }));
 vi.mock("./db", () => ({ getDb: async () => state.db, getRawDbPool: async () => ({ execute: state.raw }), createInAppNotification: state.notify, getUpcomingAgentEvents: vi.fn() }));
-vi.mock("./storage", () => ({ storagePut: state.publicPut, storagePutEncrypted: state.encrypted, storageGetDecrypted: state.decrypted }));
+vi.mock("./storage", () => ({ storagePut: state.publicPut, storagePutEncrypted: state.encrypted, storageGetDecrypted: state.decrypted, storageGetRawBounded: state.rawRead, decryptPrivateStoragePayload: vi.fn() }));
 vi.mock("./_core/sdk", () => ({ sdk: { authenticateRequest: state.authenticate } }));
 vi.mock("./business-staff-access", () => ({ getBusinessStaffAuthority: state.authority, assertBusinessStaffRouteAllowed: state.boundary }));
 vi.mock("./email", () => ({ sendDirectEmail: state.directEmail, sendSupportEmail: state.supportEmail }));
@@ -58,6 +59,7 @@ beforeEach(() => {
   });
   state.encrypted.mockReset().mockImplementation(async (objectKey: string) => ({ key: objectKey }));
   state.publicPut.mockReset().mockImplementation(async (objectKey: string) => ({ key: objectKey, url: `https://storage.example.test/${objectKey}` }));
+  state.rawRead.mockReset().mockRejectedValue(new Error("Synthetic missing legacy resource; no real storage reads"));
   state.raw.mockReset().mockImplementation(async (query: string, values: any[]) => {
     if (!query.trim().startsWith("INSERT INTO academy_assessment_attempts")) throw new Error("Unexpected raw SQL: offline unit mocks only");
     const columns = query.match(/\(([^)]+)\)/)![1].split(",").map(column => column.trim());
@@ -82,22 +84,25 @@ beforeEach(() => {
 afterEach(() => { expect(state.external).not.toHaveBeenCalled(); expect(state.decrypted).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("First Class configured teaching attachment boundary through actual routes", () => {
-  it.each(["designation", "publish"])("denies historical public teaching attachments before %s writes", async action => {
+  it.each(["designation", "publish"])("denies missing historical public resources on %s without writes", async action => {
     Object.assign(lesson(), { attachmentKey: key, attachmentUrl: publicUrl });
     if (action === "designation") {
       course().isFirstClassTraining = false;
-      await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("Remove the old teaching resource") });
+      await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("could not be copied and verified") });
+      expect(state.rawRead).toHaveBeenCalledWith(key, 10 * 1024 * 1024, expect.any(AbortSignal));
       expect(course().isFirstClassTraining).toBe(false);
     } else {
       course().status = "draft";
       await expect(caller().admin.setCourseStatus({ courseId: 33, status: "published" })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("Historical public URLs are not revoked") });
+      expect(state.rawRead).not.toHaveBeenCalled();
       expect(course().status).toBe("draft");
     }
     noWritesOrAlerts(); expect(state.encrypted).not.toHaveBeenCalled(); expect(state.publicPut).not.toHaveBeenCalled();
   });
   it("does not hide archived configured public resources when designating a course", async () => {
     Object.assign(lesson(), { attachmentKey: key, attachmentUrl: publicUrl, archivedAt: new Date() }); course().isFirstClassTraining = false;
-    await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST" }); noWritesOrAlerts();
+    await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("could not be copied and verified") }); noWritesOrAlerts();
+    expect(state.rawRead).toHaveBeenCalledWith(key, 10 * 1024 * 1024, expect.any(AbortSignal));
   });
   it("encrypts a full-admin First Class attachment and registers the same course/kind without public storage", async () => {
     const uploaded = await caller().admin.uploadAttachment(uploadInput());
@@ -143,6 +148,7 @@ describe("First Class configured teaching attachment boundary through actual rou
   it("supports removal, designation, private re-upload, save and publish without touching the historical object", async () => {
     course().isFirstClassTraining = false; Object.assign(lesson(), { attachmentKey: key, attachmentUrl: publicUrl, embedPdf: true });
     await caller().admin.saveLesson(draft({ attachmentKey: null, attachmentUrl: null, embedPdf: false }));
+    state.freshUser = { ...admin };
     await caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true, coverImageUrl: course().coverImageUrl });
     const uploaded = await caller().admin.uploadAttachment(uploadInput());
     await caller().admin.saveLesson(draft({ attachmentKey: uploaded.key, attachmentUrl: uploaded.url, videoUrl: "https://www.youtube.com/watch?v=synthetic", contentHtml: '<p>Teaching <img src="https://example.test/content-image.png"></p>' }));

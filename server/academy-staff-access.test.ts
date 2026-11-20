@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { academyMockDb } from "./academy-staff-test-db";
-import { businessStaffMemberships } from "../drizzle/schema";
+import { businessStaffMemberships, staffAccessAudit } from "../drizzle/schema";
 
 const state = vi.hoisted(() => ({ db: null as any, courseIds: [1] as number[], audit: vi.fn(), put: vi.fn(), encrypted: vi.fn(), decrypted: vi.fn(), notify: vi.fn(), email: vi.fn(), user: null as any }));
 vi.mock("./db", () => ({ getDb: async () => state.db, getRawDbPool: vi.fn(() => { throw new Error("No real/raw database calls in mock tests"); }), createInAppNotification: (...args: any[]) => state.notify(...args), getUpcomingAgentEvents: vi.fn() }));
@@ -65,6 +65,11 @@ beforeEach(() => {
     users: [{ id: 20, name: "Learner", email: "learner@example.test", passwordHash: "NEVER_EXPOSE", phone: "private", notes: "CRM_SECRET" }, { id: 10, name: "Instructor", email: "staff@example.test" }],
     academy_access: [{ id: 1, agentId: 10, status: "active" }], staff_academy_uploads: [], academy_audit_log: [], academy_assessment_question_resets: [], academy_lesson_progress: [],
   });
+  const insert = mock.db.insert.bind(mock.db);
+  mock.db.insert = (table: any) => table === staffAccessAudit ? { values: async (row: any) => {
+    await state.audit(agent, row.action, row.metadata);
+    return insert(table).values(row);
+  } } : insert(table);
   state.db = mock.db;
 });
 

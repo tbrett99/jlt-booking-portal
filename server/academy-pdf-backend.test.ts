@@ -71,6 +71,7 @@ beforeEach(() => {
     await mock.db.insert((await import("../drizzle/schema")).academyLessons).values(Object.fromEntries(columns.map((column, i) => [column, values[i]])));
     return [{ insertId: 12 }];
   });
+  mock.db.session.client.execute = state.raw;
   routes = {}; registerAcademyDocumentDownloadRoutes({ get(path: string, handler: any) { routes[path] = handler; } } as unknown as Express);
 });
 afterEach(() => vi.unstubAllEnvs());

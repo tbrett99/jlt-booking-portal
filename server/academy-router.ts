@@ -10,7 +10,7 @@ import { storagePut, storagePutEncrypted } from "./storage";
 import { randomUUID } from "node:crypto";
 import { assertNotSelfReview, getInstructorCourseIds, isFullAdmin, recordStaffOperation, requireInstructorCourse } from "./staff-access";
 import { academyPrivateAttachmentUrl, assertAcademyImageUrls, assertAcademyLessonFiles, assertInstructorModuleReleaseWeek, rememberAcademyUpload, requireAcademyAttempt, requireAcademyLesson, requireAcademyModule, requireAcademyUploadCourse, teachingAttempt } from "./academy-staff-access";
-import { sanitiseInstructorLessonHtml } from "./academy-staff-html";
+import { instructorHtmlImageSources, sanitiseInstructorLessonHtml } from "./academy-staff-html";
 import { setAcademyLessonArchived } from "./academy-lesson-archive";
 import {
   academyDocumentObjectKey,
@@ -37,6 +37,7 @@ import {
   adminOnboardingChecklist,
   agentCrmProfiles,
   staffAcademyUploads,
+  staffAccessAudit,
   users,
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
@@ -47,6 +48,7 @@ import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from ".
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
 import { assertExclusiveAcademyCourseDesignation, firstClassModuleRelease, isFirstClassRecap } from "../shared/academy-first-class";
 import { hasCurrentFirstClassMembership, requireFirstClassCourseMembership } from "./academy-first-class-access";
+import { convertFirstClassCourseResources, lockAcademyCourse, type AcademyTransaction } from "./academy-first-class-conversion";
 import {
   getAcademyMigrationStageReviewCategory,
   getBulkAcademyMigrationDisposition,
@@ -141,7 +143,7 @@ function normaliseOptionalText(value: string | null | undefined) {
  * External video embeds and public catalog/content images are not attachments. */
 async function assertFirstClassTeachingAttachment(courseId: number, resource: {
   attachmentUrl?: string | null; attachmentKey?: string | null;
-}) {
+}, connection?: Pick<AcademyTransaction, "select">) {
   const key = normaliseOptionalText(resource.attachmentKey);
   const url = normaliseOptionalText(resource.attachmentUrl);
   if (!key && !url) return; // Removing old resources permits designation first.
@@ -151,13 +153,72 @@ async function assertFirstClassTeachingAttachment(courseId: number, resource: {
   });
   if (!key || url !== academyPrivateAttachmentUrl(key)
     || !/^academy\/[1-9]\d*\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-[a-z0-9._-]+$/i.test(key)) throw invalid();
-  const db = await getDb();
+  const db = connection ?? await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-  const [upload] = await db.select({ objectKey: staffAcademyUploads.objectKey, courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind })
+  const query = db.select({ objectKey: staffAcademyUploads.objectKey, courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind })
     .from(staffAcademyUploads).where(and(
       eq(staffAcademyUploads.objectKey, key), eq(staffAcademyUploads.courseId, courseId), eq(staffAcademyUploads.kind, "attachment"),
     )).limit(1);
+  const [upload] = await (connection ? query.for("update") : query);
   if (!upload || upload.objectKey !== key || upload.courseId !== courseId || upload.kind !== "attachment") throw invalid();
+}
+
+/** Repeat instructor file authority against the locked current lesson, using
+ * only the transaction connection. An early editor read cannot grant authority
+ * over a file that was replaced while this request was awaiting other work. */
+async function assertLockedInstructorLessonFiles(tx: AcademyTransaction, user: typeof users.$inferSelect, courseId: number,
+  input: { attachmentKey?: string | null; attachmentUrl?: string | null; assessmentTemplateKey?: string | null; contentHtml?: string | null },
+  existing?: { attachmentKey?: string | null; attachmentUrl?: string | null; assessmentTemplateKey?: string | null; contentHtml?: string | null }) {
+  if (isFullAdmin(user)) return;
+  const forbidden = (message: string) => new TRPCError({ code: "FORBIDDEN", message });
+  for (const [kind, key, old] of [
+    ["attachment", input.attachmentKey, existing?.attachmentKey],
+    ["document_template", input.assessmentTemplateKey, existing?.assessmentTemplateKey],
+  ] as const) {
+    if (!key || key === old) continue;
+    const [upload] = await tx.select().from(staffAcademyUploads).where(and(
+      eq(staffAcademyUploads.userId, user.id), eq(staffAcademyUploads.courseId, courseId),
+      eq(staffAcademyUploads.kind, kind), eq(staffAcademyUploads.objectKey, key),
+    )).limit(1).for("update");
+    if (!upload) throw forbidden("Use this lesson's current file or your own upload for this course");
+  }
+  if (input.attachmentUrl) {
+    if (!(input.attachmentKey === existing?.attachmentKey && input.attachmentUrl === existing?.attachmentUrl)
+      && !(input.attachmentKey && input.attachmentUrl === academyPrivateAttachmentUrl(input.attachmentKey))) throw forbidden("Attachment URL must match this lesson's file or its scoped upload");
+  } else if (input.attachmentKey) throw forbidden("Attachment key requires its matching authorized download URL");
+  const oldUrls = instructorHtmlImageSources(existing?.contentHtml);
+  const newUrls = instructorHtmlImageSources(input.contentHtml).filter(url => !oldUrls.includes(url));
+  const base = process.env.S3_PUBLIC_URL?.replace(/\/+$/, "");
+  if (newUrls.length) {
+    if (!base || newUrls.some(url => !url.startsWith(`${base}/`))) throw forbidden("Use an image uploaded for this course");
+    const keys = newUrls.map(url => url.slice(base.length + 1));
+    const uploads = await tx.select().from(staffAcademyUploads).where(and(
+      eq(staffAcademyUploads.userId, user.id), eq(staffAcademyUploads.courseId, courseId),
+      eq(staffAcademyUploads.kind, "image"), inArray(staffAcademyUploads.objectKey, keys),
+    )).for("update");
+    if (keys.some(key => !uploads.some(upload => upload.objectKey === key))) throw forbidden("Use an image uploaded for this course");
+  }
+}
+
+/** Keep instructor audit failure fail-closed, on the same transaction as content.
+ * Global staff auditing remains unchanged for unrelated routes. */
+async function recordLockedAcademyStaffOperation(tx: AcademyTransaction, user: typeof users.$inferSelect, action: string, metadata: Record<string, unknown>) {
+  if (isFullAdmin(user)) return;
+  try {
+    await tx.insert(staffAccessAudit).values({ actorId: user.id, targetUserId: user.id, action, metadata });
+  } catch {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Staff audit storage unavailable" });
+  }
+}
+
+/** mysql2 native prepared execution on Drizzle's *transaction* connection.
+ * Keep TiDB's explicit-column INSERT and transcript fallback without obtaining
+ * the global pool (which would silently escape the course-row lock). Fail closed
+ * if the adapter is not the configured mysql2 transactional adapter. */
+function academyTransactionPreparedConnection(tx: AcademyTransaction) {
+  const connection = (tx as unknown as { session: { client: Pick<import("mysql2/promise").PoolConnection, "execute"> } }).session?.client;
+  if (!connection || typeof connection.execute !== "function") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy transactional storage is unavailable" });
+  return connection;
 }
 
 /** No template is a valid upload-only assessment, not an incomplete template.
@@ -450,8 +511,8 @@ async function addAudit(input: {
   action: string;
   summary: string;
   metadata?: unknown;
-}) {
-  const db = await getDb();
+}, connection?: Pick<AcademyTransaction, "insert">) {
+  const db = connection ?? await getDb();
   if (!db) return;
   await db.insert(academyAuditLog).values({
     agentId: input.agentId ?? null,
@@ -498,9 +559,9 @@ async function courseStructure(courseId: number, opts: { includeArchived?: boole
  * assessment. We keep the original records intact rather than hard-deleting
  * them underneath a learner's progress, feedback or staff audit trail.
  */
-async function hasAcademyLearnerEvidence(lessonIds: number[]) {
+async function hasAcademyLearnerEvidence(lessonIds: number[], connection?: Pick<AcademyTransaction, "select">) {
   if (!lessonIds.length) return false;
-  const db = await getDb();
+  const db = connection ?? await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const [progress] = await db.select({ id: academyLessonProgress.id })
     .from(academyLessonProgress).where(inArray(academyLessonProgress.lessonId, lessonIds)).limit(1);
@@ -2900,6 +2961,9 @@ export const academyRouter = router({
       if (coverImageUrl && !safeHttpsUrl(coverImageUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Course cover image must use HTTPS" });
       const payload = { title: input.title, summary: normaliseOptionalText(input.summary), coverImageUrl, isCoreAcademy: input.isCoreAcademy, isAcceleratorJourney: input.isAcceleratorJourney, isFirstClassTraining, estimatedMinutes: input.estimatedMinutes, updatedById: ctx.user.id };
       if (input.id && isFirstClassTraining) {
+        if (isFullAdmin(ctx.user)) {
+          return convertFirstClassCourseResources({ db, actor: ctx.user, req: ctx.req, courseId: input.id, expectedCourse: existingDesignation!, payload });
+        }
         const { lessons } = await courseStructure(input.id, { includeArchived: true });
         for (const lesson of lessons) await assertFirstClassTeachingAttachment(input.id, lesson);
       }
@@ -2968,27 +3032,29 @@ export const academyRouter = router({
       if (!isFullAdmin(ctx.user) && input.id) await requireAcademyModule(ctx.user, input.id, input.courseId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [course] = await db.select({ isAcceleratorJourney: academyCourses.isAcceleratorJourney }).from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
-      if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
-      if (!course.isAcceleratorJourney && input.releaseWeek !== 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Only Agent Accelerator journeys can use scheduled weekly module release" });
-      if (input.id) {
-        const [module] = await db.select().from(academyModules).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId))).limit(1);
-        if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
-        assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek, module.releaseWeek);
-        await recordStaffOperation(ctx.user, "academy.module_update", { courseId: input.courseId, moduleId: input.id, phase: "authorized_write" });
-        await db.update(academyModules).set({ title: input.title, summary: normaliseOptionalText(input.summary),
-          ...(isFullAdmin(ctx.user) ? { releaseWeek: input.releaseWeek } : {}),
-        }).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId)));
-        await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_updated", summary: `Updated module: ${input.title}` });
-        return { id: input.id };
-      }
-      assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek);
-      const existing = await db.select().from(academyModules).where(eq(academyModules.courseId, input.courseId)).orderBy(desc(academyModules.sortOrder)).limit(1);
-      await recordStaffOperation(ctx.user, "academy.module_create", { courseId: input.courseId, title: input.title, phase: "authorized_write" });
-      const result = await db.insert(academyModules).values({ courseId: input.courseId, title: input.title, summary: normaliseOptionalText(input.summary), releaseWeek: input.releaseWeek, sortOrder: (existing[0]?.sortOrder ?? -1) + 1 } as any);
-      const id = Number((result as any).insertId);
-      await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_created", summary: `Added module: ${input.title}` });
-      return { id };
+      const saved = await db.transaction(async tx => {
+        const course = await lockAcademyCourse(tx, input.courseId);
+        if (!course.isAcceleratorJourney && input.releaseWeek !== 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Only Agent Accelerator journeys can use scheduled weekly module release" });
+        if (input.id) {
+          const [module] = await tx.select().from(academyModules).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId))).limit(1).for("update");
+          if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
+          assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek, module.releaseWeek);
+          await recordLockedAcademyStaffOperation(tx, ctx.user, "academy.module_update", { courseId: input.courseId, moduleId: input.id, phase: "authorized_write" });
+          await tx.update(academyModules).set({ title: input.title, summary: normaliseOptionalText(input.summary),
+            ...(isFullAdmin(ctx.user) ? { releaseWeek: input.releaseWeek } : {}),
+          }).where(and(eq(academyModules.id, input.id), eq(academyModules.courseId, input.courseId)));
+          await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_updated", summary: `Updated module: ${input.title}` }, tx);
+          return { id: input.id };
+        }
+        assertInstructorModuleReleaseWeek(ctx.user, input.releaseWeek);
+        const existing = await tx.select().from(academyModules).where(eq(academyModules.courseId, input.courseId)).orderBy(desc(academyModules.sortOrder)).limit(1);
+        await recordLockedAcademyStaffOperation(tx, ctx.user, "academy.module_create", { courseId: input.courseId, title: input.title, phase: "authorized_write" });
+        const result = await tx.insert(academyModules).values({ courseId: input.courseId, title: input.title, summary: normaliseOptionalText(input.summary), releaseWeek: input.releaseWeek, sortOrder: (existing[0]?.sortOrder ?? -1) + 1 } as any);
+        const id = Number((Array.isArray(result) ? result[0] : result as any).insertId);
+        await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "module_created", summary: `Added module: ${input.title}` }, tx);
+        return { id };
+      }, { isolationLevel: "repeatable read" });
+      return saved;
     }),
 
     deleteModule: adminProcedure.input(z.object({ moduleId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -3041,68 +3107,134 @@ export const academyRouter = router({
       }
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
-      const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
-      const payload = {
-        title: input.title,
-        summary: normaliseOptionalText(input.summary),
-        contentHtml: safeContentHtml,
-        videoUrl,
-        videoTranscript: preserveOptionalTranscript(input.videoTranscript),
-        attachmentUrl,
-        attachmentKey: normaliseOptionalText(input.attachmentKey),
-        attachmentName: normaliseOptionalText(input.attachmentName),
-        embedPdf: input.embedPdf ?? (currentLesson?.embedPdf === true
-          && attachmentUrl === currentLesson.attachmentUrl
-          && normaliseOptionalText(input.attachmentKey) === currentLesson.attachmentKey),
-        estimatedMinutes: input.estimatedMinutes,
-        isRequired: input.isRequired,
-        requiresAcknowledgement: input.requiresAcknowledgement,
-        requiresAssessment: input.requiresAssessment,
-        assessmentMode: input.requiresAssessment ? input.assessmentMode : "quiz" as const,
-        ...template,
-        assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
-      };
-      const [course] = await db.select({ isFirstClassTraining: academyCourses.isFirstClassTraining })
-        .from(academyCourses).where(eq(academyCourses.id, module.courseId)).limit(1);
-      if (course?.isFirstClassTraining) await assertFirstClassTeachingAttachment(module.courseId, payload);
-      if (payload.embedPdf) {
-        if (!isCanonicalAcademyPdfAttachment(payload)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Inline PDF display requires a PDF teaching attachment uploaded to Academy with its matching file URL." });
+      const saved = await db.transaction(async tx => {
+        const course = await lockAcademyCourse(tx, module.courseId);
+        const [lockedModule] = await tx.select().from(academyModules).where(and(eq(academyModules.id, input.moduleId), eq(academyModules.courseId, course.id))).limit(1).for("update");
+        if (!lockedModule || lockedModule.courseId !== module.courseId) throw new TRPCError({ code: "CONFLICT", message: "This lesson's parent course changed. Refresh and try again." });
+        if (input.id) {
+          const [lockedLesson] = await tx.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, lockedModule.id))).limit(1).for("update");
+          if (!lockedLesson || !currentLesson || lockedLesson.moduleId !== currentLesson.moduleId) throw new TRPCError({ code: "CONFLICT", message: "This lesson's parent module changed. Refresh and try again." });
+          currentLesson = lockedLesson;
         }
-        const [upload] = await db.select({ courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind }).from(staffAcademyUploads)
-          .where(eq(staffAcademyUploads.objectKey, payload.attachmentKey!)).limit(1);
-        // Historical global-admin public uploads predate the scoped registry.
-        // Private files always require attachment-kind registration in this course.
-        const privateFile = payload.attachmentUrl === academyPrivateAttachmentUrl(payload.attachmentKey!);
-        if ((privateFile && !upload) || (upload && (upload.kind !== "attachment" || upload.courseId !== module.courseId))) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Choose an ordinary teaching attachment uploaded for this course, not an assessment document." });
-        }
-      }
-      const { videoTranscript, ...legacyPayload } = payload;
-      if (input.id) {
-        const lesson = currentLesson;
-        if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
-        const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
-        const documentAssessmentChanged = lesson.assessmentMode !== payload.assessmentMode
-          || normaliseOptionalText(lesson.assessmentTemplateKey) !== payload.assessmentTemplateKey
-          || normaliseOptionalText(lesson.assessmentTemplateName) !== payload.assessmentTemplateName
-          || normaliseOptionalText(lesson.assessmentTemplateMimeType) !== payload.assessmentTemplateMimeType;
-        const assessmentTemplateRemoved = lesson.assessmentMode === "document_upload"
-          && payload.assessmentMode === "document_upload"
-          && Object.values(template).every((value) => value === null)
-          && [lesson.assessmentTemplateKey, lesson.assessmentTemplateName, lesson.assessmentTemplateMimeType, lesson.assessmentTemplateSize]
-            .some((value) => value != null && value !== "");
-        if (hasLearnerEvidence && documentAssessmentChanged) {
-          if (!assessmentTemplateRemoved) {
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: "This lesson has learner activity. Its assessment type cannot change and a document assessment template cannot be added or replaced; create a replacement lesson for a revised template. You may remove the template to allow upload-only submissions while preserving historical attempts.",
-            });
+        await assertLockedInstructorLessonFiles(tx, ctx.user, course.id, { ...input, contentHtml: safeContentHtml }, currentLesson);
+        const attachmentUrl = normaliseOptionalText(input.attachmentUrl);
+        const payload = {
+          title: input.title,
+          summary: normaliseOptionalText(input.summary),
+          contentHtml: safeContentHtml,
+          videoUrl,
+          videoTranscript: preserveOptionalTranscript(input.videoTranscript),
+          attachmentUrl,
+          attachmentKey: normaliseOptionalText(input.attachmentKey),
+          attachmentName: normaliseOptionalText(input.attachmentName),
+          embedPdf: input.embedPdf ?? (currentLesson?.embedPdf === true
+            && attachmentUrl === currentLesson.attachmentUrl
+            && normaliseOptionalText(input.attachmentKey) === currentLesson.attachmentKey),
+          estimatedMinutes: input.estimatedMinutes,
+          isRequired: input.isRequired,
+          requiresAcknowledgement: input.requiresAcknowledgement,
+          requiresAssessment: input.requiresAssessment,
+          assessmentMode: input.requiresAssessment ? input.assessmentMode : "quiz" as const,
+          ...template,
+          assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
+        };
+        if (course.isFirstClassTraining) await assertFirstClassTeachingAttachment(course.id, payload, tx);
+        if (payload.embedPdf) {
+          if (!isCanonicalAcademyPdfAttachment(payload)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Inline PDF display requires a PDF teaching attachment uploaded to Academy with its matching file URL." });
+          }
+          const [upload] = await tx.select({ courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind }).from(staffAcademyUploads)
+            .where(eq(staffAcademyUploads.objectKey, payload.attachmentKey!)).limit(1).for("update");
+          // Historical global-admin public uploads predate the scoped registry.
+          // Private files always require attachment-kind registration in this course.
+          const privateFile = payload.attachmentUrl === academyPrivateAttachmentUrl(payload.attachmentKey!);
+          if ((privateFile && !upload) || (upload && (upload.kind !== "attachment" || upload.courseId !== module.courseId))) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Choose an ordinary teaching attachment uploaded for this course, not an assessment document." });
           }
         }
-        await recordStaffOperation(ctx.user, "academy.lesson_update", { courseId: module.courseId, lessonId: input.id, phase: "authorized_write" });
+        const { videoTranscript, ...legacyPayload } = payload;
+        if (input.id) {
+          const lesson = currentLesson;
+          if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+          const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id], tx);
+          const documentAssessmentChanged = lesson.assessmentMode !== payload.assessmentMode
+            || normaliseOptionalText(lesson.assessmentTemplateKey) !== payload.assessmentTemplateKey
+            || normaliseOptionalText(lesson.assessmentTemplateName) !== payload.assessmentTemplateName
+            || normaliseOptionalText(lesson.assessmentTemplateMimeType) !== payload.assessmentTemplateMimeType;
+          const assessmentTemplateRemoved = lesson.assessmentMode === "document_upload"
+            && payload.assessmentMode === "document_upload"
+            && Object.values(template).every((value) => value === null)
+            && [lesson.assessmentTemplateKey, lesson.assessmentTemplateName, lesson.assessmentTemplateMimeType, lesson.assessmentTemplateSize]
+              .some((value) => value != null && value !== "");
+          if (hasLearnerEvidence && documentAssessmentChanged) {
+            if (!assessmentTemplateRemoved) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "This lesson has learner activity. Its assessment type cannot change and a document assessment template cannot be added or replaced; create a replacement lesson for a revised template. You may remove the template to allow upload-only submissions while preserving historical attempts.",
+              });
+            }
+          }
+          await recordLockedAcademyStaffOperation(tx, ctx.user, "academy.lesson_update", { courseId: module.courseId, lessonId: input.id, phase: "authorized_write" });
+          try {
+            await tx.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+          } catch (error) {
+            if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
+            if (isMissingAcademyDocumentAssessmentColumn(error)) {
+              throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
+            }
+            if (!isMissingAcademyTranscriptColumn(error)) throw error;
+            if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
+            await tx.update(academyLessons).set(legacyPayload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+          }
+          await addAudit({
+            courseId: module.courseId,
+            actorId: ctx.user.id,
+            action: "lesson_updated",
+            summary: hasLearnerEvidence ? `Updated lesson after learner activity: ${input.title}` : `Updated lesson: ${input.title}`,
+            metadata: hasLearnerEvidence || assessmentTemplateRemoved ? {
+              ...(hasLearnerEvidence ? { learnerEvidencePresent: true, contentRevision: true } : {}),
+              ...(assessmentTemplateRemoved ? { lessonId: lesson.id, assessmentTemplateRemoved: true } : {}),
+            } : undefined,
+          }, tx);
+          return { id: input.id };
+        }
+        const existing = await tx.select({ sortOrder: academyLessons.sortOrder }).from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
+        // TiDB's Drizzle insert result does not reliably expose insertId. Use the
+        // native prepared statement so a new lesson can be immediately linked to
+        // its knowledge-check questions without sending a NaN lessonId to tRPC.
+        const connection = academyTransactionPreparedConnection(tx);
+        const insertValues = [
+          input.moduleId,
+          payload.title,
+          payload.summary,
+          payload.contentHtml,
+          payload.videoUrl,
+          payload.videoTranscript,
+          payload.attachmentUrl,
+          payload.attachmentKey,
+          payload.attachmentName,
+          payload.embedPdf,
+          payload.estimatedMinutes,
+          payload.isRequired,
+          payload.requiresAcknowledgement,
+          payload.requiresAssessment,
+          payload.assessmentMode,
+          payload.assessmentTemplateKey,
+          payload.assessmentTemplateName,
+          payload.assessmentTemplateMimeType,
+          payload.assessmentTemplateSize,
+          payload.assessmentPassMark,
+          (existing[0]?.sortOrder ?? -1) + 1,
+        ];
+        let result: unknown;
+        await recordLockedAcademyStaffOperation(tx, ctx.user, "academy.lesson_create", { courseId: module.courseId, moduleId: input.moduleId, title: input.title, phase: "authorized_write" });
         try {
-          await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+          [result] = await connection.execute(
+            `INSERT INTO academy_lessons
+              (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            insertValues,
+          );
         } catch (error) {
           if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
           if (isMissingAcademyDocumentAssessmentColumn(error)) {
@@ -3110,79 +3242,22 @@ export const academyRouter = router({
           }
           if (!isMissingAcademyTranscriptColumn(error)) throw error;
           if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
-          await db.update(academyLessons).set(legacyPayload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
+          const legacyInsertValues = insertValues.filter((_, index) => index !== 5);
+          [result] = await connection.execute(
+            `INSERT INTO academy_lessons
+              (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            legacyInsertValues,
+          );
         }
-        await addAudit({
-          courseId: module.courseId,
-          actorId: ctx.user.id,
-          action: "lesson_updated",
-          summary: hasLearnerEvidence ? `Updated lesson after learner activity: ${input.title}` : `Updated lesson: ${input.title}`,
-          metadata: hasLearnerEvidence || assessmentTemplateRemoved ? {
-            ...(hasLearnerEvidence ? { learnerEvidencePresent: true, contentRevision: true } : {}),
-            ...(assessmentTemplateRemoved ? { lessonId: lesson.id, assessmentTemplateRemoved: true } : {}),
-          } : undefined,
-        });
-        return { id: input.id };
-      }
-      const existing = await db.select({ sortOrder: academyLessons.sortOrder }).from(academyLessons).where(eq(academyLessons.moduleId, input.moduleId)).orderBy(desc(academyLessons.sortOrder)).limit(1);
-      // TiDB's Drizzle insert result does not reliably expose insertId. Use the
-      // native prepared statement so a new lesson can be immediately linked to
-      // its knowledge-check questions without sending a NaN lessonId to tRPC.
-      const pool = await getRawDbPool();
-      if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const insertValues = [
-        input.moduleId,
-        payload.title,
-        payload.summary,
-        payload.contentHtml,
-        payload.videoUrl,
-        payload.videoTranscript,
-        payload.attachmentUrl,
-        payload.attachmentKey,
-        payload.attachmentName,
-        payload.embedPdf,
-        payload.estimatedMinutes,
-        payload.isRequired,
-        payload.requiresAcknowledgement,
-        payload.requiresAssessment,
-        payload.assessmentMode,
-        payload.assessmentTemplateKey,
-        payload.assessmentTemplateName,
-        payload.assessmentTemplateMimeType,
-        payload.assessmentTemplateSize,
-        payload.assessmentPassMark,
-        (existing[0]?.sortOrder ?? -1) + 1,
-      ];
-      let result: unknown;
-      await recordStaffOperation(ctx.user, "academy.lesson_create", { courseId: module.courseId, moduleId: input.moduleId, title: input.title, phase: "authorized_write" });
-      try {
-        [result] = await pool.execute(
-          `INSERT INTO academy_lessons
-            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          insertValues,
-        );
-      } catch (error) {
-        if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
-        if (isMissingAcademyDocumentAssessmentColumn(error)) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
+        const id = Number((result as any).insertId);
+        if (!Number.isSafeInteger(id) || id < 1) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy lesson insert did not return an ID" });
         }
-        if (!isMissingAcademyTranscriptColumn(error)) throw error;
-        if (videoTranscript) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Loom transcript storage is not ready on Railway yet. Apply the Academy transcript database update, then save this transcript." });
-        const legacyInsertValues = insertValues.filter((_, index) => index !== 5);
-        [result] = await pool.execute(
-          `INSERT INTO academy_lessons
-            (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          legacyInsertValues,
-        );
-      }
-      const id = Number((result as any).insertId);
-      if (!Number.isSafeInteger(id) || id < 1) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Academy lesson insert did not return an ID" });
-      }
-      await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_created", summary: `Added lesson: ${input.title}` });
-      return { id };
+        await addAudit({ courseId: module.courseId, actorId: ctx.user.id, action: "lesson_created", summary: `Added lesson: ${input.title}` }, tx);
+        return { id };
+      }, { isolationLevel: "repeatable read" });
+      return saved;
     }),
 
     setLessonArchived: adminProcedure.input(z.object({ lessonId: z.number().int().positive(), archived: z.boolean() })).mutation(({ ctx, input }) =>

@@ -88,6 +88,7 @@ beforeEach(() => {
     const result = await mock.db.insert(table).values(Object.fromEntries(columns.map((column, index) => [column, values[index]])));
     return [result];
   });
+  mock.db.session.client.execute = state.raw;
 });
 afterEach(() => { expect(state.external).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -121,7 +122,7 @@ describe("optional template lesson saves through actual tRPC and prepared SQL", 
     await caller(user).admin.saveLesson(draft({ id: 11, ...emptyTemplate }));
     expect(lesson()).toMatchObject(emptyTemplate); expect(history()).toEqual(before);
     expect(mock.tables.academy_audit_log.slice(0, priorAudit.length)).toEqual(priorAudit);
-    expect(mock.writes.map(write => write.table)).toEqual(["academy_lessons", "academy_audit_log"]);
+    expect(mock.writes.map(write => write.table)).toEqual([...(user.role === "admin" ? [] : ["staff_access_audit"]), "academy_lessons", "academy_audit_log"]);
     expect(mock.tables.academy_audit_log.at(-1).metadata).toEqual({ learnerEvidencePresent: true, contentRevision: true, lessonId: 11, assessmentTemplateRemoved: true });
     expect(state.encrypted).not.toHaveBeenCalled(); expect(state.raw).not.toHaveBeenCalled();
   });
