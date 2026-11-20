@@ -39,6 +39,7 @@ export const systemRouter = router({
       academyLiveQuestionWording: 1,
       academyFirstClassWeeklyAccess: 1,
       academyFirstClassResourceConversion: 1,
+      academyFirstClassConversionDiagnostics: 1,
       crmMembershipMultiFilters: 1,
     })),
 

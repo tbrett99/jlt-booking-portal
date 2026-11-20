@@ -483,13 +483,13 @@ describe("conversion-scoped cancellation and finite overall preparation deadline
     const controller = new AbortController(); const stalled = gate(); const entered = gate();
     const body = { async *[Symbol.asyncIterator]() { entered.release(); await stalled.wait; yield pdf; }, destroy: vi.fn(() => stalled.release()) };
     const remove = vi.spyOn(controller.signal, "removeEventListener"); state.send.mockResolvedValue({ Body: body });
-    const result = storageGetRawBounded(key, 100, controller.signal); const rejected = expect(result).rejects.toThrow("Offline cancel");
+    const result = storageGetRawBounded(key, 100, controller.signal); const rejected = expect(result).rejects.toMatchObject({ category: "cancelled" });
     await entered.wait; controller.abort(new Error("Offline cancel")); await rejected;
     expect(body.destroy).toHaveBeenCalledOnce(); expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   });
   it("already aborted GET/PUT signals never start SDK work; nonconversion encrypted PUT remains compatible", async () => {
     const controller = new AbortController(); controller.abort(new Error("Offline cancel"));
-    await expect(storageGetRawBounded(key, 100, controller.signal)).rejects.toThrow("Offline cancel");
+    await expect(storageGetRawBounded(key, 100, controller.signal)).rejects.toMatchObject({ category: "cancelled" });
     await expect(storagePutEncrypted(privateKey, pdf, controller.signal)).rejects.toThrow("Offline cancel"); expect(state.send).not.toHaveBeenCalled();
     expect(await storagePutEncrypted(privateKey, pdf)).toEqual({ key: privateKey }); expect(decryptPrivateStoragePayload(objects.get(privateKey)!)).toEqual(pdf);
   });

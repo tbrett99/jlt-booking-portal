@@ -14,18 +14,16 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
+import { StorageReadError, StorageConfigurationError, classifyStorageFailure } from "./academy-conversion-errors";
+export { StorageReadError, StorageConfigurationError, classifyStorageFailure, type StorageReadCategory } from "./academy-conversion-errors";
+
 function getS3Client(): S3Client {
   const endpoint = process.env.S3_ENDPOINT;
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
-    const missing = ["S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]
-      .filter((v) => !process.env[v])
-      .join(", ");
-    throw new Error(
-      `Document storage is not configured on this server (missing: ${missing}). Please contact support.`
-    );
+    throw new StorageConfigurationError("storage_unconfigured");
   }
 
   return new S3Client({
@@ -37,7 +35,7 @@ function getS3Client(): S3Client {
 
 function getBucket(): string {
   const bucket = process.env.S3_BUCKET;
-  if (!bucket) throw new Error("S3_BUCKET environment variable is not set");
+  if (!bucket) throw new StorageConfigurationError("storage_unconfigured");
   return bucket;
 }
 
@@ -61,7 +59,7 @@ const PRIVATE_OBJECT_TAG_BYTES = 16;
 
 function privateStorageKey() {
   const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("Private document storage requires JWT_SECRET");
+  if (!secret) throw new StorageConfigurationError("private_key_unconfigured");
   return createHash("sha256").update(`jlt-private-storage-v1:${secret}`).digest();
 }
 
@@ -184,10 +182,9 @@ export async function storageGetRawBounded(relKey: string, maxBytes: number, sig
   if (!relKey || relKey !== normalizeKey(relKey) || /[\\?#\x00-\x1f]/.test(relKey)
     || relKey.split("/").some(part => !part || part === "." || part === "..")
     || !Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > 100 * 1024 * 1024) {
-    throw new Error("Invalid bounded document read");
+    throw new StorageReadError("invalid_read");
   }
-  signal?.throwIfAborted();
-  const client = getS3Client();
+  if (signal?.aborted) throw new StorageReadError("cancelled");
   const controller = new AbortController();
   let body: (AsyncIterable<Uint8Array> & { destroy?: () => void }) | undefined;
   let destroyed = false;
@@ -200,26 +197,34 @@ export async function storageGetRawBounded(relKey: string, maxBytes: number, sig
   };
   const abort = () => { controller.abort(signal?.reason); destroyBody(); };
   signal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(() => { controller.abort(new Error("Document read timed out")); destroyBody(); }, 30_000);
+  const timeout = setTimeout(() => { controller.abort(new StorageReadError("timeout")); destroyBody(); }, 30_000);
   try {
+    const client = getS3Client();
     const response = await client.send(new GetObjectCommand({ Bucket: getBucket(), Key: relKey }), { abortSignal: controller.signal });
     body = response.Body as typeof body;
     controller.signal.throwIfAborted();
     if (response.ContentLength !== undefined && (!Number.isSafeInteger(response.ContentLength)
-      || response.ContentLength < 0 || response.ContentLength > maxBytes)) throw new Error("Document exceeds the conversion size limit");
-    if (!body || typeof body[Symbol.asyncIterator] !== "function") throw new Error("Document storage returned no readable file body");
+      || response.ContentLength < 0)) throw new StorageReadError("invalid_metadata");
+    if (response.ContentLength !== undefined && response.ContentLength > maxBytes) throw new StorageReadError("oversize");
+    if (!body || typeof body[Symbol.asyncIterator] !== "function") throw new StorageReadError("unreadable");
     const chunks: Buffer[] = [];
     let total = 0;
     for await (const chunk of body) {
       controller.signal.throwIfAborted();
-      if (!(chunk instanceof Uint8Array)) throw new Error("Document storage returned an invalid file body");
+      if (!(chunk instanceof Uint8Array)) throw new StorageReadError("invalid_chunk");
       total += chunk.byteLength;
-      if (total > maxBytes) throw new Error("Document exceeds the conversion size limit");
+      if (total > maxBytes) throw new StorageReadError("oversize");
       chunks.push(Buffer.from(chunk));
     }
     controller.signal.throwIfAborted();
-    if (!total || (response.ContentLength !== undefined && response.ContentLength !== total)) throw new Error("Document storage returned an incomplete file");
+    if (!total) throw new StorageReadError("empty");
+    if (response.ContentLength !== undefined && response.ContentLength !== total) throw new StorageReadError("truncated");
     return Buffer.concat(chunks, total);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new StorageReadError(controller.signal.reason instanceof StorageReadError && controller.signal.reason.category === "timeout" ? "timeout" : "cancelled");
+    }
+    throw new StorageReadError(classifyStorageFailure(error));
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);

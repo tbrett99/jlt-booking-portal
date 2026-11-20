@@ -9,6 +9,8 @@ import { MAX_ACADEMY_DOCUMENT_BYTES, isAcademyDocumentMimeType, validateAcademyD
 import { isFullAdmin } from "./staff-access";
 import { decryptPrivateStoragePayload, storageGetRawBounded, storagePutEncrypted } from "./storage";
 
+import { AcademyConversionError, academyConversionReason, classifyAcademyConversionError, logAcademyConversionFailure, type AcademyConversionStage } from "./academy-conversion-errors";
+
 // Bounds apply to distinct source files, not every reference to a reused file.
 // Three workers cap simultaneous plaintext buffers; completed preparations retain
 // only keys/hashes. No storage work or global DB helpers run inside the cutover.
@@ -117,32 +119,50 @@ export async function convertFirstClassCourseResources(args: {
     const controller = new AbortController();
     const expiresAt = Date.now() + FIRST_CLASS_CONVERSION_PREPARATION_MS;
     const checkPreparation = () => {
-      if (Date.now() >= expiresAt && !controller.signal.aborted) controller.abort(new Error("Private resource preparation deadline exceeded"));
+      if (Date.now() >= expiresAt && !controller.signal.aborted) controller.abort(new AcademyConversionError("deadline_exceeded"));
       controller.signal.throwIfAborted();
     };
-    const deadline = setTimeout(() => controller.abort(new Error("Private resource preparation deadline exceeded")), FIRST_CLASS_CONVERSION_PREPARATION_MS);
+    const deadline = setTimeout(() => controller.abort(new AcademyConversionError("deadline_exceeded")), FIRST_CLASS_CONVERSION_PREPARATION_MS);
     const worker = async () => {
       while (!failure && !controller.signal.aborted && next < sources.length) {
         const source = sources[next++];
+        let stage: AcademyConversionStage = "source_read";
         try {
           checkPreparation();
           const bytes = await storageGetRawBounded(source.key, MAX_ACADEMY_DOCUMENT_BYTES, controller.signal);
           checkPreparation();
-          if (!bytes.length || bytes.length > MAX_ACADEMY_DOCUMENT_BYTES) throw new Error("file exceeds 10 MB or is empty");
+          stage = "validate";
+          if (!bytes.length) throw new AcademyConversionError("empty");
+          if (bytes.length > MAX_ACADEMY_DOCUMENT_BYTES) throw new AcademyConversionError("oversize");
           totalBytes += bytes.length;
-          if (totalBytes > FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES) throw new Error("files exceed the 100 MB total conversion limit");
-          if (isAcademyDocumentMimeType(source.mimeType)) validateAcademyDocument({ fileName: source.basename, mimeType: source.mimeType, bytes });
+          if (totalBytes > FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES) throw new AcademyConversionError("total_oversize");
+          if (isAcademyDocumentMimeType(source.mimeType)) {
+            try { validateAcademyDocument({ fileName: source.basename, mimeType: source.mimeType, bytes }); }
+            catch { throw new AcademyConversionError(source.mimeType === "application/pdf" ? "invalid_pdf" : "invalid_document"); }
+          }
           const targetKey = `academy/${args.actor.id}/${randomUUID()}-${source.basename.slice(-255)}`;
+          stage = "encrypted_write";
           const stored = await storagePutEncrypted(targetKey, bytes, controller.signal);
           checkPreparation();
-          if (stored.key !== targetKey) throw new Error("private storage returned an unexpected file key");
-          const verified = decryptPrivateStoragePayload(await storageGetRawBounded(targetKey, bytes.length + PRIVATE_ENVELOPE_BYTES, controller.signal));
+          if (stored.key !== targetKey) throw new AcademyConversionError("unexpected_write_key");
+          stage = "readback_read";
+          const encrypted = await storageGetRawBounded(targetKey, bytes.length + PRIVATE_ENVELOPE_BYTES, controller.signal);
+          stage = "readback_decrypt";
+          const verified = decryptPrivateStoragePayload(encrypted);
           checkPreparation();
-          if (verified.length !== bytes.length || hash(verified) !== hash(bytes) || !verified.equals(bytes)) throw new Error("private copy could not be verified");
+          stage = "readback_verify";
+          if (verified.length !== bytes.length || hash(verified) !== hash(bytes) || !verified.equals(bytes)) throw new AcademyConversionError("verification_failed");
           prepared.push({ sourceKey: source.key, key: targetKey, size: bytes.length, hash: hash(bytes) });
-        } catch {
-          failure ??= resourceError(source.lesson, "the file is missing, too large, invalid or could not be copied and verified");
-          controller.abort(failure);
+        } catch (error) {
+          // Only the first cause is reported/logged; peer cancellation must not
+          // replace it. The shared deadline is distinct from a per-GET timeout.
+          if (!failure) {
+            const cause = controller.signal.reason instanceof AcademyConversionError && controller.signal.reason.code === "deadline_exceeded" ? controller.signal.reason : error;
+            const code = classifyAcademyConversionError(cause, stage);
+            failure = resourceError(source.lesson, academyConversionReason(code, stage));
+            logAcademyConversionFailure(code, stage, args.courseId, source.lesson.id);
+            controller.abort(failure);
+          }
         }
       }
     };
@@ -194,6 +214,11 @@ export async function convertFirstClassCourseResources(args: {
     }
   } catch (error) {
     if (error instanceof TRPCError) throw error;
+    if (error instanceof AcademyConversionError) {
+      logAcademyConversionFailure(error.code, "preparation", args.courseId);
+      throw new TRPCError({ code: "BAD_REQUEST", message: `${academyConversionReason(error.code, "preparation")}. No course changes were saved.` });
+    }
+    logAcademyConversionFailure("preparation_failed", "preparation", args.courseId);
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The private resource conversion could not be saved. No course changes were committed; refresh and try again." });
   }
 }

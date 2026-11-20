@@ -88,7 +88,7 @@ describe("First Class configured teaching attachment boundary through actual rou
     Object.assign(lesson(), { attachmentKey: key, attachmentUrl: publicUrl });
     if (action === "designation") {
       course().isFirstClassTraining = false;
-      await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("could not be copied and verified") });
+      await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("the original file could not be read from storage") });
       expect(state.rawRead).toHaveBeenCalledWith(key, 10 * 1024 * 1024, expect.any(AbortSignal));
       expect(course().isFirstClassTraining).toBe(false);
     } else {
@@ -101,7 +101,7 @@ describe("First Class configured teaching attachment boundary through actual rou
   });
   it("does not hide archived configured public resources when designating a course", async () => {
     Object.assign(lesson(), { attachmentKey: key, attachmentUrl: publicUrl, archivedAt: new Date() }); course().isFirstClassTraining = false;
-    await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("could not be copied and verified") }); noWritesOrAlerts();
+    await expect(caller().admin.saveCourse({ id: 33, title: "Offline course", isFirstClassTraining: true })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("the original file could not be read from storage") }); noWritesOrAlerts();
     expect(state.rawRead).toHaveBeenCalledWith(key, 10 * 1024 * 1024, expect.any(AbortSignal));
   });
   it("encrypts a full-admin First Class attachment and registers the same course/kind without public storage", async () => {
