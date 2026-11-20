@@ -43,7 +43,14 @@ export function AcademyQuestionRichTextEditor({
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: "academy-question-rich-editor min-h-[180px] px-3 py-2 text-sm leading-6 focus:outline-none",
+        class: [
+          "academy-question-rich-editor min-h-[180px] px-3 py-2 text-sm leading-6 focus:outline-none",
+          // Match the question renderer without styling other rich-text editors.
+          // Space blocks, not hard breaks or the paragraphs inside list items.
+          "[&>*+*]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold",
+          "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li+li]:mt-1",
+          "[&_strong]:font-bold [&_em]:italic",
+        ].join(" "),
         "aria-label": label,
       },
       // ProseMirror's default plain-text paste parser collapses a single return
@@ -107,7 +114,10 @@ export function AcademyQuestionRichTextEditor({
         <ToolButton title="Redo" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolButton>
       </div>
       <EditorContent editor={editor} />
-      <p className="border-t bg-muted/10 px-3 py-2 text-xs text-muted-foreground">Paste from Word, Google Docs or ChatGPT to keep headings, bold, italics, bullets, numbered lists and paragraph breaks. Formatting is stored safely with the question.</p>
+      <p className="border-t bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+        Edit directly in this box — formatting appears as you type.
+        <span className="mt-0.5 block">Paste from Word, Google Docs or ChatGPT to keep supported formatting.</span>
+      </p>
     </div>
   );
 }

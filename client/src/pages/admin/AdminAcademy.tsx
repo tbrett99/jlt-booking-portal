@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   Archive,
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BookOpenCheck,
   CheckCircle2,
@@ -209,24 +210,6 @@ function AcademyStructuredText({
   );
 }
 
-function QuestionFormatPreview({
-  title,
-  text,
-}: {
-  title: string;
-  text: string;
-}) {
-  if (!text.trim()) return null;
-  return (
-    <div className="mt-3 rounded-lg border border-dashed bg-background/80 p-3">
-      <p className="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">
-        {title}
-      </p>
-      <AcademyStructuredText text={text} className="mt-2 text-sm" />
-    </div>
-  );
-}
-
 export default function AdminAcademy() {
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
@@ -270,6 +253,23 @@ export default function AdminAcademy() {
   const [lessonModuleId, setLessonModuleId] = useState<number | null>(null);
   const [lessonDraft, setLessonDraft] = useState(emptyLesson);
   const [originalQuestionSignature, setOriginalQuestionSignature] = useState("");
+  const lessonDraftSession = useRef(0);
+  const lessonOperationBusy = useRef(false);
+  const [lessonOperationPending, setLessonOperationPending] = useState(false);
+  const lessonEditorRef = useRef<HTMLDivElement | null>(null);
+  const moduleLessonListRefs = useRef(new Map<number, HTMLDivElement>());
+  const [lessonNavigationRequest, setLessonNavigationRequest] = useState<{
+    moduleId: number;
+    target: "editor" | "lessons";
+  } | null>(null);
+  useEffect(() => {
+    if (!lessonNavigationRequest) return;
+    const element = lessonNavigationRequest.target === "editor"
+      ? lessonEditorRef.current
+      : moduleLessonListRefs.current.get(lessonNavigationRequest.moduleId);
+    element?.focus({ preventScroll: true });
+    element?.scrollIntoView({ behavior: "auto", block: lessonNavigationRequest.target === "editor" ? "start" : "nearest" });
+  }, [lessonNavigationRequest]);
   const [alertDraft, setAlertDraft] = useState({
     moduleId: "",
     eventType: "week_released" as "week_released" | "module_started" | "module_completed" | "action_submitted_for_review" | "action_overdue" | "course_completed" | "written_assessment_ready" | "three_attempt_lock" | "knowledge_check_passed",
@@ -326,32 +326,6 @@ export default function AdminAcademy() {
     onError: e => toast.error(e.message),
   });
   const saveLesson = trpc.academy.admin.saveLesson.useMutation({
-    onSuccess: async result => {
-      const lessonId = Number(result.id);
-      if (!Number.isSafeInteger(lessonId) || lessonId < 1) {
-        toast.error(
-          "The lesson was not assigned a valid ID. Please refresh before trying again."
-        );
-        return;
-      }
-      const shouldReplaceQuestions = lessonDraft.requiresAssessment && lessonDraft.assessmentMode === "quiz" && (
-        editingLessonId === null
-        || originalQuestionSignature !== academyQuestionDraftSignature(lessonDraft.questions)
-      );
-      if (shouldReplaceQuestions)
-        await replaceQuestions.mutateAsync({
-          lessonId,
-          questions: lessonDraft.questions.map(question => ({
-            ...question,
-            allowPaste: question.questionType === "free_text" && question.allowPaste === true,
-          })),
-        });
-      toast.success("Lesson saved");
-      setEditingLessonId(null);
-      setLessonModuleId(null);
-      setLessonDraft(emptyLesson);
-      invalidateAcademy();
-    },
     onError: e => toast.error(e.message),
   });
   const deleteLesson = trpc.academy.admin.deleteLesson.useMutation({
@@ -449,6 +423,9 @@ export default function AdminAcademy() {
     onSuccess: invalidateAcademy,
     onError: e => toast.error(e.message),
   });
+  const lessonEditorPending = lessonOperationPending || saveLesson.isPending ||
+    replaceQuestions.isPending || uploadAttachment.isPending ||
+    uploadDocumentAssessmentTemplate.isPending || importMultipleChoiceQuestions.isPending;
 
   useEffect(() => {
     if (!courseId && !isCreatingCourse && courses.length) {
@@ -494,11 +471,13 @@ export default function AdminAcademy() {
   }, [hasOpenDraft]);
 
   function confirmDiscardOpenDraft() {
+    if (lessonOperationBusy.current || lessonEditorPending) return false;
     return !hasOpenDraft || window.confirm("You have an unsaved Academy draft open. Leave this area and discard those unsaved changes?");
   }
 
   function createCourse() {
     if (!confirmDiscardOpenDraft()) return;
+    lessonDraftSession.current += 1;
     setIsCreatingCourse(true);
     setCourseId(null);
     setCourseDraft(emptyCourse);
@@ -523,6 +502,7 @@ export default function AdminAcademy() {
     summary?: string | null;
     releaseWeek?: number | null;
   }) {
+    if (lessonOperationBusy.current || lessonEditorPending) return;
     setOpenModuleId(module.id);
     setEditingModuleId(module.id);
     setEditingModuleDraft({
@@ -542,15 +522,31 @@ export default function AdminAcademy() {
     });
   }
   function startNewLesson(moduleId: number) {
+    if (lessonOperationBusy.current || lessonEditorPending) return;
+    if (lessonModuleId === moduleId && editingLessonId === null) {
+      setLessonNavigationRequest({ moduleId, target: "editor" });
+      return;
+    }
+    if ((lessonModuleId !== null || editingModuleId !== null) && !confirmDiscardOpenDraft()) return;
+    lessonDraftSession.current += 1;
     setOpenModuleId(moduleId);
     setEditingModuleId(null);
     setEditingLessonId(null);
     setLessonModuleId(moduleId);
     setLessonDraft(emptyLesson);
     setOriginalQuestionSignature("");
+    setLessonNavigationRequest({ moduleId, target: "editor" });
   }
   function editLesson(moduleId: number, lesson: any) {
+    if (lessonOperationBusy.current || lessonEditorPending) return;
+    if (lessonModuleId === moduleId && editingLessonId === lesson.id) {
+      setLessonNavigationRequest({ moduleId, target: "editor" });
+      return;
+    }
+    if ((lessonModuleId !== null || editingModuleId !== null) && !confirmDiscardOpenDraft()) return;
+    lessonDraftSession.current += 1;
     setOpenModuleId(moduleId);
+    setEditingModuleId(null);
     setLessonModuleId(moduleId);
     setEditingLessonId(lesson.id);
     const questions = lesson.questions.map((q: any) => ({
@@ -585,25 +581,81 @@ export default function AdminAcademy() {
       questions,
     });
     setOriginalQuestionSignature(academyQuestionDraftSignature(questions));
+    setLessonNavigationRequest({ moduleId, target: "editor" });
   }
-  function submitLesson() {
-    if (!lessonModuleId) return;
-    saveLesson.mutate({
-      id: editingLessonId ?? undefined,
-      moduleId: lessonModuleId,
+  function returnToModuleLessons(moduleId: number) {
+    lessonDraftSession.current += 1;
+    setOpenModuleId(moduleId);
+    setEditingLessonId(null);
+    setLessonModuleId(null);
+    setLessonDraft(emptyLesson);
+    setOriginalQuestionSignature("");
+    setLessonNavigationRequest({ moduleId, target: "lessons" });
+  }
+  function cancelLessonEdit() {
+    if (lessonModuleId === null || !confirmDiscardOpenDraft()) return;
+    returnToModuleLessons(lessonModuleId);
+  }
+  async function submitLesson() {
+    if (!lessonModuleId || lessonOperationBusy.current || lessonEditorPending) return;
+    const moduleId = lessonModuleId;
+    const session = lessonDraftSession.current;
+    const lessonIdBeforeSave = editingLessonId;
+    // Keep this operation's data independent of subsequent renders or drafts.
+    const snapshot = {
       ...lessonDraft,
-      summary: lessonDraft.summary || null,
-      contentHtml: lessonDraft.contentHtml || null,
-      videoUrl: lessonDraft.videoUrl || null,
-      videoTranscript: lessonDraft.videoTranscript || null,
-      attachmentUrl: lessonDraft.attachmentUrl || null,
-      attachmentKey: lessonDraft.attachmentKey || null,
-      attachmentName: lessonDraft.attachmentName || null,
-      assessmentTemplateKey: lessonDraft.assessmentTemplateKey || null,
-      assessmentTemplateName: lessonDraft.assessmentTemplateName || null,
-      assessmentTemplateMimeType: lessonDraft.assessmentTemplateMimeType || null,
-      assessmentTemplateSize: lessonDraft.assessmentTemplateSize || null,
-    });
+      questions: lessonDraft.questions.map(question => ({
+        ...question,
+        answerOptions: [...question.answerOptions],
+      })),
+    };
+    const shouldReplaceQuestions = snapshot.requiresAssessment && snapshot.assessmentMode === "quiz" && (
+      lessonIdBeforeSave === null
+      || originalQuestionSignature !== academyQuestionDraftSignature(snapshot.questions)
+    );
+    lessonOperationBusy.current = true;
+    setLessonOperationPending(true);
+    try {
+      const result = await saveLesson.mutateAsync({
+        id: lessonIdBeforeSave ?? undefined,
+        moduleId,
+        ...snapshot,
+        summary: snapshot.summary || null,
+        contentHtml: snapshot.contentHtml || null,
+        videoUrl: snapshot.videoUrl || null,
+        videoTranscript: snapshot.videoTranscript || null,
+        attachmentUrl: snapshot.attachmentUrl || null,
+        attachmentKey: snapshot.attachmentKey || null,
+        attachmentName: snapshot.attachmentName || null,
+        assessmentTemplateKey: snapshot.assessmentTemplateKey || null,
+        assessmentTemplateName: snapshot.assessmentTemplateName || null,
+        assessmentTemplateMimeType: snapshot.assessmentTemplateMimeType || null,
+        assessmentTemplateSize: snapshot.assessmentTemplateSize || null,
+      });
+      const lessonId = Number(result.id);
+      if (!Number.isSafeInteger(lessonId) || lessonId < 1) {
+        toast.error("The lesson was not assigned a valid ID. Please refresh before trying again.");
+        return;
+      }
+      // A question-save failure must leave a new lesson retryable, not create it twice.
+      if (session === lessonDraftSession.current) setEditingLessonId(lessonId);
+      if (shouldReplaceQuestions)
+        await replaceQuestions.mutateAsync({
+          lessonId,
+          questions: snapshot.questions.map(question => ({
+            ...question,
+            allowPaste: question.questionType === "free_text" && question.allowPaste === true,
+          })),
+        });
+      toast.success("Lesson saved");
+      if (session === lessonDraftSession.current) returnToModuleLessons(moduleId);
+      invalidateAcademy();
+    } catch {
+      // Mutation onError reports the error; retain the draft for a retry.
+    } finally {
+      lessonOperationBusy.current = false;
+      setLessonOperationPending(false);
+    }
   }
   async function handleAttachment(file: File | undefined) {
     if (!file) return;
@@ -769,7 +821,9 @@ export default function AdminAcademy() {
                 type="button"
                 key={course.id}
                 onClick={() => {
-                  if (course.id !== courseId && !confirmDiscardOpenDraft()) return;
+                  if (course.id === courseId) return;
+                  if (!confirmDiscardOpenDraft()) return;
+                  lessonDraftSession.current += 1;
                   setIsCreatingCourse(false);
                   setCourseId(course.id);
                   setOpenModuleId(null);
@@ -1014,7 +1068,8 @@ export default function AdminAcademy() {
                 </div>
                 <div className="mt-5 space-y-4">
                   {editor.modules.map((module, index) => {
-                    const isOpen = openModuleId === module.id;
+                    // Keep the current draft visible while browsing another module.
+                    const isOpen = openModuleId === module.id || lessonModuleId === module.id;
                     const activeLessons = module.lessons.filter(lesson => !isLessonArchived(lesson));
                     const lessonCountLabel = `${activeLessons.length} lesson${activeLessons.length === 1 ? "" : "s"}`;
                     const videoLessonCount = module.lessons.filter(
@@ -1031,11 +1086,15 @@ export default function AdminAcademy() {
                             className="flex min-w-0 flex-1 items-center gap-3 text-left"
                             aria-expanded={isOpen}
                             aria-controls={`academy-module-${module.id}`}
-                            onClick={() =>
+                            onClick={() => {
+                              if (lessonModuleId === module.id) {
+                                setLessonNavigationRequest({ moduleId: module.id, target: "editor" });
+                                return;
+                              }
                               setOpenModuleId(current =>
                                 current === module.id ? null : module.id
-                              )
-                            }
+                              );
+                            }}
                           >
                             <ChevronRight
                               className={`shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
@@ -1095,6 +1154,7 @@ export default function AdminAcademy() {
                               size="icon"
                               className="text-destructive"
                               title="Delete module"
+                              disabled={lessonEditorPending || lessonModuleId === module.id}
                               onClick={() =>
                                 window.confirm(
                                   `Delete ${module.title} and all its lessons?`
@@ -1168,7 +1228,16 @@ export default function AdminAcademy() {
                                 </p>
                               </div>
                             )}
-                            <div className="divide-y">
+                            <div
+                              className="divide-y scroll-mt-6 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              id={`academy-module-${module.id}-lessons`}
+                              aria-label={`${module.title} lessons`}
+                              tabIndex={-1}
+                              ref={element => {
+                                if (element) moduleLessonListRefs.current.set(module.id, element);
+                                else moduleLessonListRefs.current.delete(module.id);
+                              }}
+                            >
                               {module.lessons.map((lesson, lessonIndex) => (showArchivedLessons || !isLessonArchived(lesson)) && (
                                 <div
                                   key={lesson.id}
@@ -1247,6 +1316,7 @@ export default function AdminAcademy() {
                                       variant="ghost"
                                       size="icon"
                                       title="Edit lesson name and content"
+                                      disabled={lessonEditorPending}
                                       onClick={() =>
                                         editLesson(module.id, lesson)
                                       }
@@ -1268,7 +1338,7 @@ export default function AdminAcademy() {
                                       size="icon"
                                       className="text-destructive"
                                       title={`Delete ${lesson.title} permanently`}
-                                      disabled={lessonArchivePending || deleteLesson.isPending}
+                                      disabled={lessonArchivePending || deleteLesson.isPending || lessonEditorPending || editingLessonId === lesson.id}
                                       onClick={() =>
                                         window.confirm(
                                           `Delete ${lesson.title}?`
@@ -1293,11 +1363,39 @@ export default function AdminAcademy() {
                               <Button
                                 variant="outline"
                                 size="sm"
+                                disabled={lessonEditorPending}
                                 onClick={() => startNewLesson(module.id)}
                               >
                                 <Plus className="mr-1" size={15} /> Add lesson
                               </Button>
                             </div>
+                            {lessonModuleId === module.id && (
+                              <div
+                                ref={lessonEditorRef}
+                                id={`academy-module-${module.id}-lesson-editor`}
+                                role="region"
+                                aria-label={`Lesson editor for ${module.title}`}
+                                tabIndex={-1}
+                                className="scroll-mt-6 border-t p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4"
+                              >
+                                <LessonEditor
+                                  draft={lessonDraft}
+                                  setDraft={next => { if (!lessonEditorPending && !lessonOperationBusy.current) setLessonDraft(next); }}
+                                  courseTitle={editor.course.title}
+                                  editing={editingLessonId !== null}
+                                  lessonId={editingLessonId}
+                                  onCancel={cancelLessonEdit}
+                                  onSave={submitLesson}
+                                  isSaving={lessonEditorPending}
+                                  onUpload={handleAttachment}
+                                  uploading={uploadAttachment.isPending}
+                                  onUploadAssessmentTemplate={handleDocumentAssessmentTemplate}
+                                  uploadingAssessmentTemplate={uploadDocumentAssessmentTemplate.isPending}
+                                  onImportQuizCsv={handleQuizCsvImport}
+                                  importingQuizCsv={importMultipleChoiceQuestions.isPending}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </section>
@@ -1305,28 +1403,6 @@ export default function AdminAcademy() {
                   })}
                 </div>
               </section>
-              {lessonModuleId !== null && (
-                <LessonEditor
-                  draft={lessonDraft}
-                  setDraft={setLessonDraft}
-                  courseTitle={editor.course.title}
-                  editing={editingLessonId !== null}
-                  lessonId={editingLessonId}
-                  onCancel={() => {
-                    setEditingLessonId(null);
-                    setLessonModuleId(null);
-                    setLessonDraft(emptyLesson);
-                  }}
-                  onSave={submitLesson}
-                  isSaving={saveLesson.isPending || replaceQuestions.isPending}
-                  onUpload={handleAttachment}
-                  uploading={uploadAttachment.isPending}
-                  onUploadAssessmentTemplate={handleDocumentAssessmentTemplate}
-                  uploadingAssessmentTemplate={uploadDocumentAssessmentTemplate.isPending}
-                  onImportQuizCsv={handleQuizCsvImport}
-                  importingQuizCsv={importMultipleChoiceQuestions.isPending}
-                />
-              )}
             </>
           )}
         </main>
@@ -1532,11 +1608,11 @@ function LessonEditor({
             {editing ? draft.title : "Build a lesson"}
           </h2>
         </div>
-        <Button variant="ghost" onClick={onCancel}>
-          Cancel
+        <Button variant="ghost" disabled={isSaving} onClick={onCancel}>
+          <ArrowLeft className="mr-1" size={16} /> Back to lessons
         </Button>
       </div>
-      <div className="mt-5 space-y-5">
+      <fieldset disabled={isSaving} className="mt-5 min-w-0 space-y-5">
         <div className="grid gap-4 md:grid-cols-[1fr_150px]">
           <div>
             <Label>Lesson title</Label>
@@ -1608,6 +1684,7 @@ function LessonEditor({
           )}
           <RichEmailEditor
             className="mt-2"
+            disabled={isSaving}
             value={draft.contentHtml}
             onChange={contentHtml => {
               setDraft({ ...draft, contentHtml });
@@ -1968,15 +2045,12 @@ function LessonEditor({
                           <AcademyQuestionRichTextEditor
                             className="mt-1.5"
                             label={`Written question ${index + 1}`}
+                            disabled={isSaving}
                             value={question.prompt}
                             placeholder="Explain the task clearly, then use headings, bold text, bullet points or numbered steps to make it easy to follow."
                             onChange={prompt =>
                               updateQuestion(index, { prompt })
                             }
-                          />
-                          <QuestionFormatPreview
-                            title="Agent preview"
-                            text={question.prompt}
                           />
                         </>
                       ) : (
@@ -2042,16 +2116,14 @@ function LessonEditor({
                         <AcademyQuestionRichTextEditor
                           className="mt-1.5"
                           label={`Private marking guide for question ${index + 1}`}
+                          disabled={isSaving}
                           value={question.explanation ?? ""}
                           placeholder="Set out assessment criteria with headings, bold or italic emphasis, bullet points, numbered steps and paragraph breaks. This is never shown to the agent."
                           onChange={explanation =>
                             updateQuestion(index, { explanation })
                           }
                         />
-                        <QuestionFormatPreview
-                          title="Staff marking-guide preview"
-                          text={question.explanation ?? ""}
-                        />
+                        <p className="mt-1.5 text-xs text-muted-foreground">Only staff can see this marking guide. It is never shown to agents.</p>
                       </div>
                     </div>
                   ) : (
@@ -2165,7 +2237,7 @@ function LessonEditor({
             {isSaving ? "Saving..." : "Save lesson"}
           </Button>
         </div>
-      </div>
+      </fieldset>
     </section>
   );
 }

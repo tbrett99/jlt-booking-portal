@@ -58,14 +58,14 @@ describe("JLT Academy interface wiring", () => {
   it("never submits quiz questions with an invalid lesson ID", () => {
     expect(manager).toContain("const lessonId = Number(result.id)");
     expect(manager).toContain("Number.isSafeInteger(lessonId)");
-    expect(manager).toMatch(/lessonId,\s+questions: lessonDraft\.questions/);
+    expect(manager).toMatch(/lessonId,\s+questions: snapshot\.questions/);
   });
 
   it("does not re-submit unchanged assessment questions when saving an existing lesson's content", () => {
     expect(manager).toContain("originalQuestionSignature");
     expect(manager).toContain("academyQuestionDraftSignature");
     expect(manager).toContain("const shouldReplaceQuestions");
-    expect(manager).toContain("editingLessonId === null");
+    expect(manager).toContain("lessonIdBeforeSave === null");
     expect(manager).toContain("Saving lesson wording, resources or layout does not update these questions.");
     expect(manager).toContain("you can revise question wording and private marking guides");
   });

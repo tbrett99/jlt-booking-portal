@@ -77,8 +77,8 @@ describe("JLT Academy written assessment safeguards", () => {
   });
 
   it("formats long written prompts and private marking guides for their intended readers", () => {
-    expect(manager).toContain('Agent preview');
-    expect(manager).toContain('Staff marking-guide preview');
+    expect(manager).not.toContain('QuestionFormatPreview');
+    expect(manager).not.toContain('Staff marking-guide preview');
     expect(manager).toContain('Private marking guide');
     expect(manager).toMatch(/<AcademyStructuredText\s+text=\{response\.prompt\}/);
     expect(learner).toContain('AcademyStructuredQuestion text={question.prompt}');
