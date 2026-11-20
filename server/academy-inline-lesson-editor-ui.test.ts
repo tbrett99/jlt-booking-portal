@@ -268,4 +268,29 @@ describe("Academy inline lesson authoring on the actual manager", () => {
     delete mock.reject[savePath]; await click(button("Save lesson"));
     expect(region()).toBeNull(); expect(mock.calls.filter(item => item.path === savePath)).toHaveLength(2);
   });
+  it.each([false, true])("saves live multiple-choice prompt wording with answer-option correction %s while retaining IDs and the answer key", async changeOption => {
+    const multipleChoice = {
+      id: 214, lessonId: 14, prompt: "What is the main difference between a net rate and a commissionable rate?",
+      questionType: "multiple_choice", answerOptions: [
+        "A net rate requires the agent to add margin, while a commissionable rate includes commission",
+        "A net rate always includes breakfast", "A commissionable rate is always non-refundable", "There is no difference",
+      ],
+      correctAnswerIndex: 0, maxWords: 250, allowPaste: false,
+      explanation: "With a net rate, the agent adds their own margin.", sortOrder: 1,
+    };
+    mock.data["academy.admin.editor"].modules[0].lessons[0].questions.push(multipleChoice);
+    await render(); await click(edit());
+    const prompt = region()!.querySelector<HTMLInputElement>('input[placeholder="Ask a clear, single-answer question"]')!;
+    const revisedPrompt = "How does the agent's margin differ between net and commissionable hotel rates?";
+    await input(prompt, revisedPrompt);
+    const revisedOption = "The agent adds a margin to a net rate; commission is already included in a commissionable rate.";
+    if (changeOption) await input(region()!.querySelector<HTMLInputElement>('input[placeholder="Answer option 1"]')!, revisedOption);
+    await click(button("Save lesson"));
+    const saved = mock.calls.find(item => item.path === questionPath)!.input;
+    expect(saved.lessonId).toBe(14); expect(saved.questions.map((question: any) => question.id)).toEqual([114, 214]);
+    expect(saved.questions[0]).toMatchObject({ allowPaste: true, maxWords: 250 });
+    expect(saved.questions[1]).toMatchObject({ prompt: revisedPrompt, correctAnswerIndex: 0, maxWords: 250, allowPaste: false });
+    expect(saved.questions[1].answerOptions).toEqual([changeOption ? revisedOption : multipleChoice.answerOptions[0], ...multipleChoice.answerOptions.slice(1)]);
+    expect(region()).toBeNull(); expect(mock.error).not.toHaveBeenCalled();
+  });
 });

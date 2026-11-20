@@ -460,7 +460,12 @@ function isAssessmentQuestionNarrativeRevision(existingQuestions: Array<typeof a
       const submitted = submittedQuestions[index];
       return submitted?.id === existing.id
         && submitted.questionType === existing.questionType
-        && sameStringArray(existing.answerOptions, submitted.answerOptions)
+        // Options have index slots, not semantic IDs. Wording may change at
+        // each slot; count and the unchanged key preserve positional grading,
+        // not the semantic meaning of arbitrary text substitutions.
+        && (existing.questionType === "multiple_choice"
+          ? Array.isArray(existing.answerOptions) && existing.answerOptions.length === submitted.answerOptions.length
+          : sameStringArray(existing.answerOptions, []) && sameStringArray(submitted.answerOptions, []))
         && submitted.correctAnswerIndex === existing.correctAnswerIndex
         && submitted.maxWords === existing.maxWords;
     });
@@ -3105,6 +3110,7 @@ export const academyRouter = router({
           await Promise.all(existingQuestions.map((question, index) => db.update(academyQuestions).set({
             prompt: input.questions[index].prompt,
             explanation: normaliseOptionalText(input.questions[index].explanation),
+            ...(question.questionType === "multiple_choice" ? { answerOptions: input.questions[index].answerOptions } : {}),
             allowPaste: savedAllowPaste[index],
           }).where(eq(academyQuestions.id, question.id))));
           const [module] = await db.select().from(academyModules).where(eq(academyModules.id, lesson.moduleId)).limit(1);
@@ -3119,7 +3125,7 @@ export const academyRouter = router({
         }
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "This knowledge check has learner evidence. You can revise question wording and private marking guides, as well as written-response paste permissions, but answer options, the correct answer, question type, word limit and question order are protected so completed results remain meaningful.",
+          message: "This knowledge check already has learner activity. You can still edit question text, answer-option wording, private marking guides and written-response paste permissions. To keep existing results intact, the number of questions and answer options, correct answer, question type, word limit and question order must stay the same. Written questions must keep answer options empty.",
         });
       }
       await recordStaffOperation(ctx.user, "academy.questions_replace", { courseId: scope.courseId, lessonId: input.lessonId, questionCount: input.questions.length, ...(pastePolicyChanges.length ? { pastePolicyChanges } : {}), phase: "authorized_write" });

@@ -897,8 +897,10 @@ function QuestionForm({
       <h3 className="text-lg font-semibold">Assessment questions</h3>
       <p className="text-xs leading-5 text-muted-foreground">
         Save questions separately after saving lesson details. After learner
-        activity, wording, private marking guides and whether agents can paste
-        written answers can change; the server protects the assessment structure.
+        activity, question and answer-option wording, private marking guides and
+        whether agents can paste written answers can change. Existing results are
+        kept; the number of questions and answer options, marked correct answers,
+        question types, question order and word limits stay protected.
       </p>
       <fieldset disabled={!allowed || save.isPending} className="space-y-4">
         {draft.map((question, index) => (

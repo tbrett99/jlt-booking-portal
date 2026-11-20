@@ -1931,7 +1931,7 @@ function LessonEditor({
                   Up to {MAX_ACADEMY_ASSESSMENT_QUESTIONS} questions per knowledge check or final exam. CSV import is recommended for longer exams.
                 </p>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Saving lesson wording, resources or layout does not update these questions. If learners already have activity, you can revise question wording and private marking guides, and change whether agents can paste written answers; answer options, the correct answer, question type, question order and word limits stay protected.
+                  Saving lesson wording, resources or layout does not update these questions. Live questions can be edited: you can revise question wording and private marking guides, edit answer-option wording, and change whether agents can paste written answers. Existing results are kept. The number of questions and answer options, marked correct answers, question types, question order and word limits stay protected.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">

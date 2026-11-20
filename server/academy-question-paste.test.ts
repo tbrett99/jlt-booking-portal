@@ -289,3 +289,122 @@ describe("paste setting input and authority boundaries", () => {
     expect(state.execute).not.toHaveBeenCalled();
   });
 });
+
+describe("live multiple-choice wording revisions preserve evidence", () => {
+  const oldPrompt = "What is the difference between a net rate and a commissionable rate?";
+  const revisedPrompt = "Question 8: How does a net rate differ from a commissionable rate?";
+  const oldOptions = [
+    "A net rate excludes commission; a commissionable rate includes commission.",
+    "A net rate includes commission; a commissionable rate excludes commission.",
+    "Both rates always include commission.",
+    "Both rates are the same.",
+  ];
+  const revisedOptions = [
+    "A net rate is the supplier's price before your markup; a commissionable rate includes the commission paid to you.",
+    "A net rate already includes your commission; a commissionable rate is the supplier's price before your markup.",
+    "Both rates include the same fixed commission payment.",
+    "There is no difference between a net rate and a commissionable rate.",
+  ];
+  const liveChoice = (id = 18, overrides: Record<string, any> = {}) => multipleChoice(id, {
+    prompt: oldPrompt, answerOptions: oldOptions, correctAnswerIndex: 0, sortOrder: 7, ...overrides,
+  });
+  const historicalBytes = () => JSON.stringify(Object.fromEntries(protectedTables.map(table => [table, mock.tables[table]])));
+  const assertSaveBoundary = (history: string) => {
+    expect(historicalBytes()).toBe(history);
+    expect(mock.writes.every(write => ["academy_questions", "academy_audit_log"].includes(write.table))).toBe(true);
+    expect(questionWrites().every(write => write.operation === "update")).toBe(true);
+    expect(mock.reads.some(read => read.table === "academy_assessment_responses")).toBe(false);
+    expect(mock.reads.filter(read => ["academy_lesson_progress", "academy_assessment_attempts"].includes(read.table)).every(read => Object.keys(read.projection).join() === "id")).toBe(true);
+    expect(mock.reads.filter(read => read.table === "academy_lessons").every(read => read.projection && !Object.keys(read.projection).some(key => ["videoTranscript", "assessmentTemplateKey"].includes(key)))).toBe(true);
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.notify).not.toHaveBeenCalled();
+    expect(state.email).not.toHaveBeenCalled();
+  };
+
+  it.each([
+    { role: "admin", user: admin, kind: "progress" }, { role: "admin", user: admin, kind: "attempt" },
+    { role: "instructor", user: instructor, kind: "progress" }, { role: "instructor", user: instructor, kind: "attempt" },
+  ] as const)("lets $role revise question 8 wording and options with $kind evidence", async ({ user, kind }) => {
+    if (user === admin) state.courseIds = [];
+    mock.tables.academy_questions = [
+      ...Array.from({ length: 7 }, (_, index) => written(11 + index, { sortOrder: index, ...(index === 0 ? { allowPaste: true } : {}) })),
+      liveChoice(18, { allowPaste: true }), written(19, { lessonId: 2 }),
+    ];
+    addEvidence(kind);
+    mock.tables.academy_assessment_question_resets.push({ id: 61, enrollmentId: 21, lessonId: 1, questionId: 11, createdAt: new Date("2025-01-01"), reason: "Synthetic retained reset" });
+    const history = historicalBytes();
+    const otherLesson = JSON.stringify(mock.tables.academy_questions[8]);
+    const inputs = mock.tables.academy_questions.slice(0, 8).map(question => questionInput(question));
+    inputs[7] = { id: 18, prompt: revisedPrompt, questionType: "multiple_choice", answerOptions: revisedOptions, explanation: "PRIVATE_REVISED_RATE_GUIDE" } as any;
+    await expect(save(inputs, user)).resolves.toEqual({ success: true, narrativeRevision: true });
+    expect(mock.tables.academy_questions.map(question => question.id)).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    expect(mock.tables.academy_questions[7]).toMatchObject({ id: 18, prompt: revisedPrompt, answerOptions: revisedOptions, correctAnswerIndex: 0, maxWords: 250, questionType: "multiple_choice", sortOrder: 7, allowPaste: false, explanation: "PRIVATE_REVISED_RATE_GUIDE" });
+    expect(mock.tables.academy_questions.slice(0, 7).map(question => question.allowPaste)).toEqual([true, false, false, false, false, false, false]);
+    expect(JSON.stringify(mock.tables.academy_questions[8])).toBe(otherLesson);
+    expect(questionWrites()).toHaveLength(8);
+    expect(questionWrites().slice(0, 7).every(write => !("answerOptions" in write.values))).toBe(true);
+    assertSaveBoundary(history);
+    const audit = JSON.stringify([mock.tables.academy_audit_log, state.audit.mock.calls]);
+    for (const text of [oldPrompt, revisedPrompt, ...oldOptions, ...revisedOptions, "PRIVATE_REVISED_RATE_GUIDE", "Synthetic private marking guide", "SYNTHETIC_PRIVATE_ANSWER"]) expect(audit).not.toContain(text);
+  });
+
+  it.each([admin, instructor])("allows prompt/guide-only edits when older options contain whitespace for role $role", async user => {
+    mock.tables.academy_questions = [written(11, { allowPaste: true }), liveChoice(18, { answerOptions: oldOptions.map(option => `  ${option} \n`) })];
+    addEvidence();
+    const history = historicalBytes();
+    await expect(save([
+      questionInput(mock.tables.academy_questions[0]),
+      questionInput(mock.tables.academy_questions[1], { prompt: revisedPrompt, explanation: "PRIVATE_WHITESPACE_GUIDE" }),
+    ], user)).resolves.toEqual({ success: true, narrativeRevision: true });
+    expect(mock.tables.academy_questions[1]).toMatchObject({ id: 18, prompt: revisedPrompt, answerOptions: oldOptions, explanation: "PRIVATE_WHITESPACE_GUIDE", correctAnswerIndex: 0 });
+    expect(mock.tables.academy_questions[0].allowPaste).toBe(true);
+    expect(auditRow().action).toBe("assessment_question_text_updated");
+    expect(JSON.stringify([mock.tables.academy_audit_log, state.audit.mock.calls])).not.toContain("PRIVATE_WHITESPACE_GUIDE");
+    assertSaveBoundary(history);
+  });
+
+  it.each([
+    ["correct key", { correctAnswerIndex: 1 }],
+    ["option removal", { answerOptions: revisedOptions.slice(0, 3) }],
+    ["option addition", { answerOptions: [...revisedOptions, "An additional slot"] }],
+    ["type", { questionType: "free_text", answerOptions: [] }],
+    ["word limit", { maxWords: 300 }],
+    ["missing ID", { id: undefined }],
+  ])("rejects live MC %s changes before any write", async (_name, overrides) => {
+    mock.tables.academy_questions = [liveChoice()];
+    addEvidence();
+    const history = historicalBytes();
+    await expect(save([questionInput(mock.tables.academy_questions[0], { prompt: revisedPrompt, answerOptions: revisedOptions, ...overrides })])).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(mock.writes).toEqual([]);
+    expect(state.audit).not.toHaveBeenCalled();
+    expect(historicalBytes()).toBe(history);
+  });
+
+  it("keeps stored MC scores and actual learner resit states unchanged after wording edits", async () => {
+    mock.tables.academy_questions = [liveChoice(18, { sortOrder: 0 }), liveChoice(19, { sortOrder: 1 })];
+    mock.tables.academy_assessment_attempts.push({ id: 41, enrollmentId: 21, lessonId: 1, status: "feedback_acknowledged", score: 50, passed: false, answers: [{ questionId: 18, selectedIndex: 0 }, { questionId: 19, selectedIndex: 1 }], graderFeedback: "Retained historical feedback", takenAt: new Date("2026-01-01") });
+    mock.tables.academy_assessment_responses.push(
+      { id: 51, attemptId: 41, questionId: 18, selectedIndex: 0, score: 100, feedback: "Retained correct feedback" },
+      { id: 52, attemptId: 41, questionId: 19, selectedIndex: 1, score: 0, feedback: "Retained incorrect feedback" },
+    );
+    const history = historicalBytes();
+    const before = await caller(learner).agent.course({ enrollmentId: 21 });
+    const beforeLesson = before.modules[0].lessons[0];
+    await save(mock.tables.academy_questions.map(question => questionInput(question, { prompt: revisedPrompt, answerOptions: revisedOptions })));
+    const after = await caller(learner).agent.course({ enrollmentId: 21 });
+    const afterLesson = after.modules[0].lessons[0];
+    expect(afterLesson.questions.map(question => question.resit)).toEqual(beforeLesson.questions.map(question => question.resit));
+    expect(afterLesson.questions.map(question => question.resit)).toMatchObject([{ questionId: 18, lastScore: 100, passed: true, attemptCount: 1 }, { questionId: 19, lastScore: 0, passed: false, attemptCount: 1 }]);
+    expect(afterLesson.attempts).toEqual(beforeLesson.attempts);
+    expect(after.progress).toEqual(before.progress);
+    expect(historicalBytes()).toBe(history);
+    for (const question of afterLesson.questions) {
+      expect(question).not.toHaveProperty("correctAnswerIndex");
+      expect(question).not.toHaveProperty("explanation");
+    }
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.notify).not.toHaveBeenCalled();
+    expect(state.email).not.toHaveBeenCalled();
+    expect(mock.writes.every(write => ["academy_questions", "academy_audit_log"].includes(write.table))).toBe(true);
+  });
+});

@@ -47,8 +47,11 @@ describe("Academy workspace and governance overhaul", () => {
     const assessmentSaveSection = router.slice(router.indexOf("replaceQuestions:"), router.indexOf("importMultipleChoiceQuestions:"));
     expect(assessmentSaveSection).toContain("isAssessmentQuestionNarrativeRevision");
     expect(assessmentSaveSection).toContain('action: "assessment_question_text_updated"');
-    expect(assessmentSaveSection).toContain("You can revise question wording and private marking guides");
-    expect(assessmentSaveSection).toContain("answer options, the correct answer, question type, word limit and question order are protected");
+    expect(assessmentSaveSection).toContain("answer-option wording");
+    expect(assessmentSaveSection).toContain("correct answer");
+    expect(assessmentSaveSection).toContain("question type");
+    expect(assessmentSaveSection).toContain("word limit");
+    expect(assessmentSaveSection).toContain("question order");
   });
 
   it("makes staff overrides use the same Accelerator journey and entry-Action hand-off as normal completion", () => {
