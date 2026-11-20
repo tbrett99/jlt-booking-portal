@@ -7,6 +7,7 @@ import { flightRequests, flightRequestActions, bookings, users } from "../drizzl
 import { createInAppNotification, createNote } from "./db";
 import { sendNotificationEmail } from "./email";
 import { getBookingActorScope, assertBookingActorAccess, withBookingActorWrite } from "./business-staff-booking-scope";
+import { appendStaffWorkEvent, withWorkTransaction, lockWorkRequest, insertedAuditId, flightAuditAction, flightWorkEventType, type WorkActor, type WorkMetadata } from "./staff-work-ledger";
 
 async function logFlightRequestAction(
   db: any,
@@ -18,9 +19,13 @@ async function logFlightRequestAction(
     newStatus?: string | null;
     performedById?: number | null;
     details?: string | null;
+    actor: WorkActor;
+    metadata?: WorkMetadata;
   },
 ) {
-  await db.insert(flightRequestActions).values({
+  const row = await lockWorkRequest(db, flightRequests, data.flightRequestId, data.bookingId);
+  const now = new Date();
+  const sourceEventId = insertedAuditId(await db.insert(flightRequestActions).values({
     flightRequestId: data.flightRequestId,
     bookingId: data.bookingId,
     action: data.action,
@@ -28,7 +33,12 @@ async function logFlightRequestAction(
     newStatus: data.newStatus ?? null,
     performedById: data.performedById ?? null,
     details: data.details ?? null,
-  });
+    createdAt: now,
+  }));
+  await appendStaffWorkEvent(db, { domain: "flight", requestId: data.flightRequestId, bookingId: data.bookingId,
+    eventType: flightWorkEventType(data.action), beforeStatus: data.previousStatus, afterStatus: data.newStatus,
+    actor: data.actor, occurredAt: now, receivedAt: row.createdAt, requestType: row.requestType,
+    sourceEventId, metadata: data.metadata });
 }
 
 export const flightRequestsRouter = router({
@@ -68,8 +78,8 @@ export const flightRequestsRouter = router({
         }
       }
       return withBookingActorWrite(ctx, input.bookingId, async (writer, scope) => {
-      const connection = writer ?? db;
-      const current = await getBookingById(input.bookingId, writer);
+      return withWorkTransaction(db, writer, async connection => {
+      const current = await getBookingById(input.bookingId, connection);
       if (!current) throw new TRPCError({ code: "NOT_FOUND" });
       await assertBookingActorAccess(ctx, current, "operate");
       const result = await connection.insert(flightRequests).values({
@@ -95,6 +105,7 @@ export const flightRequestsRouter = router({
         action: "submitted",
         newStatus: "pending",
         performedById: ctx.user.id,
+        actor: ctx.user,
         details: `Flight ${input.requestType} request submitted.`,
       });
       const [created] = await connection
@@ -102,6 +113,7 @@ export const flightRequestsRouter = router({
         .from(flightRequests)
         .where(eq(flightRequests.id, insertId));
       return created;
+      });
       }, "operate", { operation: "flight_request_create" });
     }),
 
@@ -288,57 +300,61 @@ export const flightRequestsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "A message is required when setting status to Query." });
       }
 
+      await db.transaction(async tx => {
+      const current = await lockWorkRequest(tx, flightRequests, input.id, req.bookingId);
+      const statusChanged = input.status !== undefined && input.status !== current.status;
+      // Query sends intentionally notify/write a booking message even when text repeats.
+      const queryPerformed = input.status === "query";
+      const cancellationChanged = input.cancellationStatus !== undefined && input.cancellationStatus !== current.cancellationStatus;
       // Build the update object — only update fields that were provided
       const updateFields: Record<string, unknown> = {};
-      if (input.status !== undefined) {
+      if (statusChanged || queryPerformed) {
         updateFields.status = input.status;
         if (input.status === "query") {
-          updateFields.queryMessage = input.queryMessage;
+          updateFields.queryMessage = input.queryMessage?.trim();
         } else {
           updateFields.queryMessage = null;
         }
       }
-      if (input.cancellationStatus !== undefined) {
+      if (cancellationChanged) {
         updateFields.cancellationStatus = input.cancellationStatus;
       }
 
       if (Object.keys(updateFields).length > 0) {
-        await db
+        await tx
           .update(flightRequests)
           .set(updateFields)
           .where(eq(flightRequests.id, input.id));
       }
 
-      if (input.status !== undefined) {
-        const action = input.status === "ticketed" || input.status === "completed"
-          ? "ticketed"
-          : input.status === "cancelled"
-            ? "cancelled"
-            : input.status === "query"
-              ? "queried"
-              : input.status === "pending"
-                ? "reopened"
-                : "status_updated";
-        await logFlightRequestAction(db, {
+      if ((statusChanged || queryPerformed) && input.status !== undefined) {
+        const action = flightAuditAction(current.status, input.status);
+        await logFlightRequestAction(tx, {
           flightRequestId: req.id,
           bookingId: req.bookingId,
           action,
-          previousStatus: req.status,
+          previousStatus: current.status,
           newStatus: input.status,
           performedById: ctx.user.id,
+          actor: ctx.user,
+          // This is the whole request's status, including cancellation-only Mark Complete.
+          // Only the separate cancellationStatus branch is a secondary component action.
           details: input.status === "query" ? input.queryMessage?.trim() ?? null : null,
         });
       }
-      if (input.cancellationStatus !== undefined) {
-        await logFlightRequestAction(db, {
+      if (cancellationChanged) {
+        await logFlightRequestAction(tx, {
           flightRequestId: req.id,
           bookingId: req.bookingId,
           action: input.cancellationStatus === "cancelled" ? "cancellation_completed" : "cancellation_reopened",
-          previousStatus: req.cancellationStatus,
+          previousStatus: current.cancellationStatus,
           newStatus: input.cancellationStatus,
           performedById: ctx.user.id,
+          actor: ctx.user,
+          metadata: { component: "cancellation" },
         });
       }
+      });
 
       // Notify agent based on what changed
       const notifications: string[] = [];
@@ -430,8 +446,10 @@ export const flightRequestsRouter = router({
       const originalPrice = Number(req.flightCost ?? 0);
       const increase = input.newPrice - originalPrice;
 
+      await db.transaction(async tx => {
+      const current = await lockWorkRequest(tx, flightRequests, input.id, req.bookingId);
       // Update the flight request with price increase details and set status to price_increase_pending
-      await db
+      await tx
         .update(flightRequests)
         .set({
           priceIncreaseAmount: String(input.newPrice),
@@ -444,14 +462,16 @@ export const flightRequestsRouter = router({
         } as any)
         .where(eq(flightRequests.id, input.id));
 
-      await logFlightRequestAction(db, {
+      await logFlightRequestAction(tx, {
         flightRequestId: req.id,
         bookingId: req.bookingId,
         action: "price_increase_notified",
-        previousStatus: req.status,
+        previousStatus: current.status,
         newStatus: "price_increase_pending",
         performedById: ctx.user.id,
+        actor: ctx.user,
         details: `New price £${input.newPrice.toFixed(2)}. ${input.note?.trim() ?? ""}`.trim(),
+      });
       });
 
       // Send urgent in-app notification to agent
@@ -513,12 +533,12 @@ export const flightRequestsRouter = router({
       if (initial.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
 
       return withBookingActorWrite(ctx, initial.bookingId, async (writer) => {
-      const connection = writer ?? db;
-      const currentBooking = await getBookingById(initial.bookingId, writer);
+      return withWorkTransaction(db, writer, async connection => {
+      const currentBooking = await getBookingById(initial.bookingId, connection);
       if (!currentBooking) throw new TRPCError({ code: "NOT_FOUND" });
       await assertBookingActorAccess(ctx, currentBooking, "operate");
       const query = connection.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
-      const [req] = await (writer ? query.for("update") : query);
+      const [req] = await query.for("update");
       if (!req || req.bookingId !== initial.bookingId || req.agentId !== currentBooking.agentId) throw new TRPCError({ code: "FORBIDDEN", message: "Flight request has changed." });
       if (req.status !== "price_increase_pending") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
@@ -544,6 +564,7 @@ export const flightRequestsRouter = router({
         previousStatus: "price_increase_pending",
         newStatus: "pending",
         performedById: ctx.user.id,
+        actor: ctx.user,
         details: `New agreed price £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
       });
 
@@ -553,10 +574,11 @@ export const flightRequestsRouter = router({
         authorId: ctx.user.id,
         content: `[Flight Price Increase Accepted] ${ctx.user.name ?? "Agent"} accepted the price increase for request #${req.id}, PNR ${req.pnr}. New agreed price: £${Number(req.priceIncreaseAmount ?? 0).toFixed(2)}.`,
         isInternal: false,
-      }, writer);
+      }, connection);
 
       const [updated] = await connection.select().from(flightRequests).where(eq(flightRequests.id, input.id));
       return updated;
+      });
       }, "operate", { operation: "flight_price_accept" });
     }),
 
@@ -575,12 +597,12 @@ export const flightRequestsRouter = router({
       if (initial.agentId !== booking.agentId) throw new TRPCError({ code: "FORBIDDEN" });
 
       return withBookingActorWrite(ctx, initial.bookingId, async (writer) => {
-      const connection = writer ?? db;
-      const currentBooking = await getBookingById(initial.bookingId, writer);
+      return withWorkTransaction(db, writer, async connection => {
+      const currentBooking = await getBookingById(initial.bookingId, connection);
       if (!currentBooking) throw new TRPCError({ code: "NOT_FOUND" });
       await assertBookingActorAccess(ctx, currentBooking, "operate");
       const query = connection.select().from(flightRequests).where(eq(flightRequests.id, input.id)).limit(1);
-      const [req] = await (writer ? query.for("update") : query);
+      const [req] = await query.for("update");
       if (!req || req.bookingId !== initial.bookingId || req.agentId !== currentBooking.agentId) throw new TRPCError({ code: "FORBIDDEN", message: "Flight request has changed." });
       if (req.status !== "price_increase_pending") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No pending price increase on this request." });
@@ -604,6 +626,7 @@ export const flightRequestsRouter = router({
         previousStatus: "price_increase_pending",
         newStatus: "query",
         performedById: ctx.user.id,
+        actor: ctx.user,
       });
 
       // Log decline as a note
@@ -612,10 +635,11 @@ export const flightRequestsRouter = router({
         authorId: ctx.user.id,
         content: `[Flight Price Increase Declined] ${ctx.user.name ?? "Agent"} declined the price increase for request #${req.id}, PNR ${req.pnr}. Please contact the agent to discuss next steps.`,
         isInternal: false,
-      }, writer);
+      }, connection);
 
       const [updated] = await connection.select().from(flightRequests).where(eq(flightRequests.id, input.id));
       return updated;
+      });
       }, "operate", { operation: "flight_price_decline" });
     }),
 
@@ -625,20 +649,19 @@ export const flightRequestsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const [req] = await db
-        .select({ id: flightRequests.id, bookingId: flightRequests.bookingId, status: flightRequests.status })
-        .from(flightRequests)
-        .where(eq(flightRequests.id, input.id));
-      if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Flight request not found" });
-      await logFlightRequestAction(db, {
+      return db.transaction(async tx => {
+      const req = await lockWorkRequest(tx, flightRequests, input.id);
+      await logFlightRequestAction(tx, {
         flightRequestId: req.id,
         bookingId: req.bookingId,
         action: "deleted",
         previousStatus: req.status,
         performedById: ctx.user.id,
+        actor: ctx.user,
       });
-      await db.delete(flightRequests).where(eq(flightRequests.id, input.id));
+      await tx.delete(flightRequests).where(eq(flightRequests.id, input.id));
       return { success: true };
+      });
     }),
 
   // ─── Admin: toggle invoice checkbox ─────────────────────────────────────
@@ -647,23 +670,24 @@ export const flightRequestsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const [req] = await db
-        .select({ id: flightRequests.id, bookingId: flightRequests.bookingId, status: flightRequests.status })
-        .from(flightRequests)
-        .where(eq(flightRequests.id, input.id));
-      if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "Flight request not found" });
-      await db
+      return db.transaction(async tx => {
+      const req = await lockWorkRequest(tx, flightRequests, input.id);
+      if (req.invoiceAddedToPts === input.invoiceAddedToPts) return { success: true };
+      await tx
         .update(flightRequests)
         .set({ invoiceAddedToPts: input.invoiceAddedToPts })
         .where(eq(flightRequests.id, input.id));
-      await logFlightRequestAction(db, {
+      await logFlightRequestAction(tx, {
         flightRequestId: req.id,
         bookingId: req.bookingId,
         action: input.invoiceAddedToPts ? "invoice_marked_added" : "invoice_marked_not_added",
         previousStatus: req.status,
         newStatus: req.status,
         performedById: ctx.user.id,
+        actor: ctx.user,
+        metadata: { beforeInvoiceAdded: req.invoiceAddedToPts, afterInvoiceAdded: input.invoiceAddedToPts },
       });
       return { success: true };
+      });
     }),
 });

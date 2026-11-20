@@ -30,6 +30,7 @@ import {
 import { ENV } from "./_core/env";
 import { isBookingReadyForCommissionReview } from "./commission-workflow-utils";
 import { canReconcileHistoricalCommissionClaim } from "./historical-commission-utils";
+import { appendStaffWorkEvent, appendRawStaffWorkEvent, withWorkTransaction, lockWorkRequest, preserveAmendmentCompletion, preserveAmendmentRejection, preserveReimbursementTimestamps, amendmentWorkStatus, insertedAuditId, type WorkActor, type WorkMetadata } from "./staff-work-ledger";
 import { assertAgentNotMerged, getArchivedAgentMergeIds } from "./agent-merge-identity";
 import { assertNewAdminTaskAssignee } from "./admin-task-identity";
 import { writableAgentUser } from "./agent-merge-user-write";
@@ -906,19 +907,22 @@ export async function createAmendment(data: {
     oldCost?: string | null;
     notes?: string | null;
   }>;
-}, writer?: any) {
+}, writer?: any, actor?: WorkActor) {
   const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(amendments).values({
+  return withWorkTransaction(db, writer, async (tx) => {
+  const receivedAt = new Date();
+  const [result] = await tx.insert(amendments).values({
     bookingId: data.bookingId,
     agentId: data.agentId,
     details: data.details,
     isReimbursementDoc: data.isReimbursementDoc ?? false,
+    createdAt: receivedAt,
   });
   const amendmentId = (result as any).insertId as number;
   if (data.lineItems && data.lineItems.length > 0) {
     const { amendmentLineItems } = await import("../drizzle/schema");
-    await db.insert(amendmentLineItems).values(
+    await tx.insert(amendmentLineItems).values(
       data.lineItems.map((item) => ({
         amendmentId,
         type: item.type,
@@ -929,7 +933,12 @@ export async function createAmendment(data: {
       }))
     );
   }
+  await appendStaffWorkEvent(tx, { domain: "amendment", requestId: amendmentId, bookingId: data.bookingId,
+    eventType: "created", afterStatus: "To Do", actor, receivedAt, occurredAt: receivedAt,
+    requestType: data.isReimbursementDoc ? "reimbursement_doc" : null,
+    eventKey: `amendment:${amendmentId}:created` });
   return amendmentId;
+  });
 }
 
 export async function getLineItemsByAmendment(amendmentId: number) {
@@ -1008,50 +1017,69 @@ export async function getAllAmendments() {
   }));
 }
 
-export async function actionAmendment(amendmentId: number, adminId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  await db
-    .update(amendments)
-    .set({ status: "actioned", actionedAt: new Date(), actionedById: adminId })
-    .where(eq(amendments.id, amendmentId));
+export async function actionAmendment(amendmentId: number, adminId: number, expectedBookingId?: number, actor?: WorkActor, writer?: any) {
+  return updateAmendmentPipeline(amendmentId, { pipelineStage: "Actioned", actionedById: adminId }, actor, expectedBookingId, writer);
 }
 
 export async function updateAmendmentPipeline(amendmentId: number, data: {
   pipelineStage?: "To Do" | "In Progress" | "Actioned";
   assignedToId?: number | null;
   actionedById?: number | null;
-}) {
-  const db = await getDb();
+}, actor?: WorkActor, expectedBookingId?: number, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  const updateData: Record<string, unknown> = {};
-  if (data.pipelineStage !== undefined) {
-    updateData.pipelineStage = data.pipelineStage;
-    // Keep legacy status field in sync so history notes stay consistent
-    if (data.pipelineStage === "Actioned") {
-      updateData.status = "actioned";
-      updateData.actionedAt = new Date();
-      if (data.actionedById !== undefined) updateData.actionedById = data.actionedById;
-    } else {
-      // Moving back out of Actioned resets legacy status
-      updateData.status = "pending";
-      updateData.actionedAt = null;
-      updateData.actionedById = null;
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, amendments, amendmentId, expectedBookingId);
+    const beforeStatus = amendmentWorkStatus(row);
+    const now = new Date();
+    const updateData: Record<string, unknown> = {};
+    const performer = actor ?? (data.actionedById != null ? { id: data.actionedById } : undefined);
+    if (data.pipelineStage !== undefined) {
+      const afterStatus = data.pipelineStage;
+      if (beforeStatus !== afterStatus) {
+        await preserveAmendmentCompletion(tx, row);
+        updateData.pipelineStage = afterStatus;
+        updateData.status = afterStatus === "Actioned" ? "actioned" : "pending";
+        updateData.actionedAt = afterStatus === "Actioned" ? now : null;
+        updateData.actionedById = afterStatus === "Actioned" ? performer?.id ?? null : null;
+        await appendStaffWorkEvent(tx, { domain: "amendment", requestId: row.id, bookingId: row.bookingId,
+          eventType: beforeStatus === "Actioned" ? "reopened" : "status_changed", beforeStatus, afterStatus,
+          requestType: row.isReimbursementDoc ? "reimbursement_doc" : null,
+          actor: performer, occurredAt: now, receivedAt: row.createdAt });
+      } else if (row.pipelineStage !== afterStatus) {
+        // Reconcile an old action route's legacy stage without re-crediting or rewriting completion.
+        updateData.pipelineStage = afterStatus;
+      }
     }
-  }
-  if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
-  await db.update(amendments).set(updateData as any).where(eq(amendments.id, amendmentId));
-  const result = await db.select().from(amendments).where(eq(amendments.id, amendmentId)).limit(1);
-  return result[0];
+    if (data.assignedToId !== undefined && data.assignedToId !== row.assignedToId) {
+      updateData.assignedToId = data.assignedToId;
+      await appendStaffWorkEvent(tx, { domain: "amendment", requestId: row.id, bookingId: row.bookingId,
+        eventType: "assigned", beforeStatus, afterStatus: data.pipelineStage ?? beforeStatus,
+        requestType: row.isReimbursementDoc ? "reimbursement_doc" : null,
+        actor: performer, occurredAt: now, receivedAt: row.createdAt,
+        metadata: { beforeAssigneeId: row.assignedToId, afterAssigneeId: data.assignedToId } });
+    }
+    if (Object.keys(updateData).length) await tx.update(amendments).set(updateData).where(eq(amendments.id, amendmentId));
+    return { ...row, ...updateData };
+  });
 }
 
-export async function rejectAmendment(amendmentId: number, adminId: number, reason: string) {
-  const db = await getDb();
+export async function rejectAmendment(amendmentId: number, adminId: number, reason: string, expectedBookingId?: number, actor?: WorkActor, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db
-    .update(amendments)
-    .set({ status: "rejected", rejectionReason: reason, rejectedAt: new Date(), rejectedById: adminId })
-    .where(eq(amendments.id, amendmentId));
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, amendments, amendmentId, expectedBookingId);
+    if (row.status === "rejected") return row;
+    await preserveAmendmentCompletion(tx, row);
+    await preserveAmendmentRejection(tx, row);
+    const now = new Date();
+    await tx.update(amendments).set({ status: "rejected", rejectionReason: reason, rejectedAt: now, rejectedById: adminId }).where(eq(amendments.id, amendmentId));
+    await appendStaffWorkEvent(tx, { domain: "amendment", requestId: row.id, bookingId: row.bookingId,
+      eventType: "status_changed", beforeStatus: amendmentWorkStatus(row), afterStatus: "rejected",
+      requestType: row.isReimbursementDoc ? "reimbursement_doc" : null,
+      actor: actor ?? { id: adminId }, occurredAt: now, receivedAt: row.createdAt });
+    return { ...row, status: "rejected" };
+  });
 }
 
 // ─── Cancellations ────────────────────────────────────────────────────────────
@@ -2274,24 +2302,44 @@ export async function addAdminTaskComment(data: {
 }
 
 // ─── Delete Booking (cascade) ─────────────────────────────────────────────────
-export async function deleteBooking(bookingId: number) {
+export async function deleteBooking(bookingId: number, actor?: WorkActor) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const { adminTasks } = await import("../drizzle/schema");
-  // Cascade delete in dependency order
-  await db.delete(pipelineHistory).where(eq(pipelineHistory.bookingId, bookingId));
-  await db.delete(notes).where(eq(notes.bookingId, bookingId));
-  await db.delete(reimbursementDocs).where(eq(reimbursementDocs.bookingId, bookingId));
-  await db.delete(commissionClaims).where(eq(commissionClaims.bookingId, bookingId));
-  await db.delete(amendments).where(eq(amendments.bookingId, bookingId));
-  await db.delete(cancellations).where(eq(cancellations.bookingId, bookingId));
-  await db.delete(refunds).where(eq(refunds.bookingId, bookingId));
-  // Unlink admin tasks (don't delete tasks, just clear the link)
-  await db.update(adminTasks)
-    .set({ linkedType: "none", linkedId: null } as any)
-    .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, bookingId)));
-  // Finally delete the booking itself
-  await db.delete(bookings).where(eq(bookings.id, bookingId));
+  return db.transaction(async (tx: any) => {
+    // Lock the actual booking and only the amendment evidence needed for retention.
+    const [booking] = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.id, bookingId)).limit(1).for("update");
+    if (!booking) {
+      const { TRPCError } = await import("@trpc/server");
+      throw new TRPCError({ code: "NOT_FOUND", message: "Booking not found" });
+    }
+    const amendmentRows = await tx.select({ id: amendments.id, bookingId: amendments.bookingId,
+      status: amendments.status, pipelineStage: amendments.pipelineStage, isReimbursementDoc: amendments.isReimbursementDoc,
+      actionedAt: amendments.actionedAt, actionedById: amendments.actionedById,
+      rejectedAt: amendments.rejectedAt, rejectedById: amendments.rejectedById, createdAt: amendments.createdAt,
+    }).from(amendments).where(eq(amendments.bookingId, bookingId)).orderBy(amendments.id).for("update");
+    // Cascade delete in the existing dependency order, with all retention in this same transaction.
+    await tx.delete(pipelineHistory).where(eq(pipelineHistory.bookingId, bookingId));
+    await tx.delete(notes).where(eq(notes.bookingId, bookingId));
+    await tx.delete(reimbursementDocs).where(eq(reimbursementDocs.bookingId, bookingId));
+    await tx.delete(commissionClaims).where(eq(commissionClaims.bookingId, bookingId));
+    for (const row of amendmentRows) {
+      await preserveAmendmentCompletion(tx, row);
+      await preserveAmendmentRejection(tx, row);
+      await appendStaffWorkEvent(tx, { domain: "amendment", requestId: row.id, bookingId: row.bookingId,
+        eventType: "deleted", beforeStatus: amendmentWorkStatus(row), actor, receivedAt: row.createdAt,
+        requestType: row.isReimbursementDoc ? "reimbursement_doc" : null });
+    }
+    await tx.delete(amendments).where(eq(amendments.bookingId, bookingId));
+    await tx.delete(cancellations).where(eq(cancellations.bookingId, bookingId));
+    await tx.delete(refunds).where(eq(refunds.bookingId, bookingId));
+    // Unlink admin tasks (don't delete tasks, just clear the link)
+    await tx.update(adminTasks)
+      .set({ linkedType: "none", linkedId: null } as any)
+      .where(and(eq(adminTasks.linkedType, "booking"), eq(adminTasks.linkedId, bookingId)));
+    // Finally delete the booking itself
+    await tx.delete(bookings).where(eq(bookings.id, bookingId));
+  });
 }
 
 // ─── Merge Bookings ───────────────────────────────────────────────────────────
@@ -2683,7 +2731,7 @@ export async function createReimbursementItems(items: Array<{
   amount: number;
   isLate?: boolean;
   jltCompanyCard?: boolean;
-}>, writer?: any) {
+}>, writer?: any, actor?: WorkActor) {
   const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
   if (items.length === 0) return [];
@@ -2707,6 +2755,11 @@ export async function createReimbursementItems(items: Array<{
     }
     const created = await writer.select().from(reimbursementItems).where(inArray(reimbursementItems.id, createdIds));
     const createdById = new Map<number, any>(created.map((item: any) => [item.id, item]));
+    for (const item of created) {
+      await writeReimbursementAuditLog({ reimbursementItemId: item.id, bookingId: item.bookingId,
+        action: "created", newStatus: "pending", actedById: actor?.id ?? null,
+        actor, receivedAt: item.createdAt, occurredAt: item.createdAt }, writer);
+    }
     return createdIds.map(id => {
       const item = createdById.get(id);
       if (!item) throw new Error("Created reimbursement items could not be reloaded");
@@ -2725,10 +2778,11 @@ export async function createReimbursementItems(items: Array<{
   try {
     await connection.beginTransaction();
     for (const item of items) {
+      const receivedAt = new Date();
       const [result] = await connection.execute(
         `INSERT INTO reimbursement_items
-          (bookingId, agentId, supplierName, amount, status, isLate, jltCompanyCard)
-         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+          (bookingId, agentId, supplierName, amount, status, isLate, jltCompanyCard, createdAt)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
         [
           item.bookingId,
           item.agentId,
@@ -2736,6 +2790,7 @@ export async function createReimbursementItems(items: Array<{
           String(item.amount),
           item.isLate ?? false,
           item.jltCompanyCard ?? false,
+          receivedAt,
         ],
       );
       const id = Number((result as { insertId?: number }).insertId);
@@ -2743,6 +2798,18 @@ export async function createReimbursementItems(items: Array<{
         throw new Error("Reimbursement item insert did not return an ID");
       }
       createdIds.push(id);
+      // Use this exact prepared connection before commit (TiDB compatibility path).
+      let sourceEventId: number | null = null;
+      if (actor?.id != null) {
+        const [audit] = await connection.execute(
+          "INSERT INTO reimbursement_audit_logs (reimbursementItemId, bookingId, action, newStatus, actedById, actedAt) VALUES (?, ?, 'created', 'pending', ?, ?)",
+          [id, item.bookingId, actor.id, receivedAt],
+        );
+        sourceEventId = insertedAuditId(audit);
+      }
+      await appendRawStaffWorkEvent(connection, { domain: "reimbursement", requestId: id, bookingId: item.bookingId,
+        eventType: "created", afterStatus: "pending", actor: actor ?? { id: null, role: "system" },
+        occurredAt: receivedAt, receivedAt, sourceEventId, eventKey: `reimbursement:${id}:created` });
     }
     await connection.commit();
   } catch (error) {
@@ -2814,25 +2881,48 @@ export async function getReimbursementsByBooking(bookingId: number, expectedAgen
   }));
 }
 
-export async function updateReimbursementAssignee(id: number, assignedToId: number | null) {
-  const db = await getDb();
+export async function updateReimbursementAssignee(id: number, assignedToId: number | null, actor?: WorkActor, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(reimbursementItems).set({ assignedToId } as any).where(eq(reimbursementItems.id, id));
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, reimbursementItems, id);
+    if (row.assignedToId === assignedToId) return row;
+    await tx.update(reimbursementItems).set({ assignedToId }).where(eq(reimbursementItems.id, id));
+    await writeReimbursementAuditLog({ reimbursementItemId: id, bookingId: row.bookingId,
+      action: "assigned", oldStatus: row.status, newStatus: row.status, actedById: actor?.id ?? null,
+      actor, receivedAt: row.createdAt, metadata: { beforeAssigneeId: row.assignedToId, afterAssigneeId: assignedToId } }, tx);
+    return { ...row, assignedToId };
+  });
 }
 
-export async function markReimbursementActioned(id: number) {
-  const db = await getDb();
+export async function markReimbursementActioned(id: number, actor?: WorkActor, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(reimbursementItems).set({ actionedAt: new Date() } as any).where(eq(reimbursementItems.id, id));
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, reimbursementItems, id);
+    if (row.actionedAt) return row;
+    const now = new Date();
+    await tx.update(reimbursementItems).set({ actionedAt: now }).where(eq(reimbursementItems.id, id));
+    // This checkbox is not a scheduled/paid status transition and cannot imply either.
+    await writeReimbursementAuditLog({ reimbursementItemId: id, bookingId: row.bookingId,
+      action: "actioned", oldStatus: row.status, newStatus: row.status, actedById: actor?.id ?? null,
+      actor, receivedAt: row.createdAt, occurredAt: now }, tx);
+    return { ...row, actionedAt: now };
+  });
 }
 
-export async function deleteReimbursementItem(id: number) {
-  const db = await getDb();
+export async function deleteReimbursementItem(id: number, actor?: WorkActor, writer?: any) {
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  // Delete associated docs first (FK constraint)
-  await db.delete(reimbursementItemDocs).where(eq(reimbursementItemDocs.reimbursementItemId, id));
-  // Delete the item itself
-  await db.delete(reimbursementItems).where(eq(reimbursementItems.id, id));
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, reimbursementItems, id);
+    await preserveReimbursementTimestamps(tx, row);
+    await writeReimbursementAuditLog({ reimbursementItemId: id, bookingId: row.bookingId,
+      action: "deleted", oldStatus: row.status, actedById: actor?.id ?? null, actor, receivedAt: row.createdAt }, tx);
+    // Preserve audit rows and ledger; only the existing documents/item are deleted.
+    await tx.delete(reimbursementItemDocs).where(eq(reimbursementItemDocs.reimbursementItemId, id));
+    await tx.delete(reimbursementItems).where(eq(reimbursementItems.id, id));
+  });
 }
 
 export async function getReimbursementsAdmin(filters?: {
@@ -2922,20 +3012,34 @@ export async function writeReimbursementAuditLog(opts: {
   action: string;
   oldStatus?: string | null;
   newStatus?: string | null;
-  actedById: number;
+  actedById: number | null;
   note?: string;
-}) {
-  const db = await getDb();
-  if (!db) return;
+  actor?: WorkActor;
+  receivedAt?: Date | null;
+  occurredAt?: Date;
+  metadata?: WorkMetadata;
+}, writer?: any) {
+  const db = writer ?? await getDb();
+  if (!db) throw new Error("DB unavailable");
   const { reimbursementAuditLogs } = await import("../drizzle/schema");
-  await db.insert(reimbursementAuditLogs).values({
-    reimbursementItemId: opts.reimbursementItemId,
-    bookingId: opts.bookingId,
-    action: opts.action,
-    oldStatus: opts.oldStatus ?? null,
-    newStatus: opts.newStatus ?? null,
-    actedById: opts.actedById,
-    note: opts.note ?? null,
+  return withWorkTransaction(db, writer, async tx => {
+    const now = opts.occurredAt ?? new Date();
+    // Old audit schema requires an actor ID; system actions have no invented user.
+    const sourceEventId = opts.actedById == null ? null : insertedAuditId(await tx.insert(reimbursementAuditLogs).values({
+      reimbursementItemId: opts.reimbursementItemId, bookingId: opts.bookingId, action: opts.action,
+      oldStatus: opts.oldStatus ?? null, newStatus: opts.newStatus ?? null,
+      actedById: opts.actedById, note: opts.note ?? null, actedAt: now,
+    }));
+    const eventType = opts.action === "agent_chased" ? "queried"
+      : opts.action === "created" ? "created" : opts.action === "deleted" ? "deleted"
+      : opts.action === "assigned" ? "assigned"
+      : (opts.oldStatus === "scheduled" || opts.oldStatus === "paid") && (opts.newStatus === "pending" || opts.newStatus === "awaiting_agent") ? "reopened"
+      : "status_changed";
+    await appendStaffWorkEvent(tx, { domain: "reimbursement", requestId: opts.reimbursementItemId,
+      bookingId: opts.bookingId, eventType, beforeStatus: opts.oldStatus, afterStatus: opts.newStatus,
+      actor: opts.actor ?? { id: opts.actedById, role: opts.actedById == null ? "system" : null },
+      occurredAt: now, receivedAt: opts.receivedAt, sourceEventId, metadata: opts.metadata });
+    return sourceEventId;
   });
 }
 
@@ -2966,33 +3070,30 @@ export async function getReimbursementAuditLog(bookingId: number) {
 export async function updateReimbursementStatus(
   id: number,
   status: "pending" | "scheduled" | "paid",
-  actorId: number
+  actorId: number | null,
+  actor?: WorkActor,
+  writer?: any,
 ) {
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  const now = new Date();
-  // Fetch current status for audit log
-  const existing = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
-  const oldStatus = existing[0]?.status ?? null;
-  const updates: Record<string, unknown> = { status };
-  if (status === "pending") updates.nextFollowUpAt = null;
-  if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; updates.nextFollowUpAt = null; }
-  if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; updates.nextFollowUpAt = null; }
-  await db.update(reimbursementItems).set(updates as any).where(eq(reimbursementItems.id, id));
-  const rows = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
-  const updated = rows[0];
-  // Write audit log entry
-  if (updated) {
+  return withWorkTransaction(db, writer, async tx => {
+    const row = await lockWorkRequest(tx, reimbursementItems, id);
+    if (row.status === status) return row;
+    await preserveReimbursementTimestamps(tx, row);
+    const now = new Date();
+    const updates: Record<string, unknown> = { status };
+    if (status === "pending") updates.nextFollowUpAt = null;
+    if (status === "scheduled") { updates.scheduledAt = now; updates.actionedAt = now; updates.nextFollowUpAt = null; }
+    if (status === "paid") { updates.paidAt = now; updates.paidById = actorId; updates.actionedAt = now; updates.nextFollowUpAt = null; }
+    await tx.update(reimbursementItems).set(updates).where(eq(reimbursementItems.id, id));
     await writeReimbursementAuditLog({
-      reimbursementItemId: id,
-      bookingId: updated.bookingId,
-      action: "status_changed",
-      oldStatus,
-      newStatus: status,
-      actedById: actorId,
-    });
-  }
-  return updated;
+      reimbursementItemId: id, bookingId: row.bookingId, action: "status_changed",
+      oldStatus: row.status, newStatus: status, actedById: actorId, actor,
+      occurredAt: now, receivedAt: row.createdAt,
+      metadata: { beforeFollowUpAt: row.nextFollowUpAt?.toISOString() ?? null, afterFollowUpAt: null },
+    }, tx);
+    return { ...row, ...updates };
+  });
 }
 
 export async function setReimbursementAwaitingAgent(
@@ -3000,15 +3101,16 @@ export async function setReimbursementAwaitingAgent(
   actorId: number,
   note: string,
   nextFollowUpAt: Date,
+  actor?: WorkActor,
+  writer?: any,
 ) {
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) throw new Error("DB unavailable");
-  const existing = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
-  const item = existing[0];
-  if (!item) throw new Error("Reimbursement item not found");
+  return withWorkTransaction(db, writer, async tx => {
+  const item = await lockWorkRequest(tx, reimbursementItems, id);
   if (item.status === "paid") throw new Error("A paid reimbursement cannot be moved to Awaiting agent");
   const now = new Date();
-  await db.update(reimbursementItems).set({
+  await tx.update(reimbursementItems).set({
     status: "awaiting_agent",
     nextFollowUpAt,
     lastChasedAt: now,
@@ -3022,25 +3124,25 @@ export async function setReimbursementAwaitingAgent(
     newStatus: "awaiting_agent",
     actedById: actorId,
     note,
-  });
-  const updated = await db.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
+    actor, occurredAt: now, receivedAt: item.createdAt,
+    metadata: { beforeFollowUpAt: item.nextFollowUpAt?.toISOString() ?? null, afterFollowUpAt: nextFollowUpAt.toISOString() },
+  }, tx);
+  const updated = await tx.select().from(reimbursementItems).where(eq(reimbursementItems.id, id)).limit(1);
   return updated[0];
+  });
 }
 
-export async function scheduleReimbursementsForBooking(bookingId: number) {
+export async function scheduleReimbursementsForBooking(bookingId: number, actor?: WorkActor, writer?: any) {
   // Called when booking moves to "Added to PTS" — auto-schedule all pending non-late items
-  const db = await getDb();
+  const db = writer ?? await getDb();
   if (!db) return;
-  await db
-    .update(reimbursementItems)
-    .set({ status: "scheduled", scheduledAt: new Date() } as any)
-    .where(
-      and(
-        eq(reimbursementItems.bookingId, bookingId),
-        eq(reimbursementItems.status, "pending"),
-        eq(reimbursementItems.isLate, false)
-      )
-    );
+  return withWorkTransaction(db, writer, async tx => {
+    const rows = await tx.select().from(reimbursementItems).where(and(
+      eq(reimbursementItems.bookingId, bookingId), eq(reimbursementItems.status, "pending"), eq(reimbursementItems.isLate, false),
+    )).orderBy(reimbursementItems.id).for("update");
+    for (const row of rows) await updateReimbursementStatus(row.id, "scheduled", actor?.id ?? null,
+      actor ?? { id: null, role: "system" }, tx);
+  });
 }
 
 export async function getReimbursementDashboardStats() {

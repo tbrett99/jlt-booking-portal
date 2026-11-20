@@ -1033,7 +1033,7 @@ export const appRouter = router({
           const created = await createBooking({ ...input, agentId: scope.ownerUserId }, writer);
           if (scope.managed && !created?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The booking could not be verified." });
           if (created?.id && input.reimbursementItems?.length) {
-            await createReimbursementItems(input.reimbursementItems.map(item => ({ bookingId: created.id, agentId: scope.ownerUserId, supplierName: item.supplierName, amount: item.amount, isLate: false, jltCompanyCard: item.jltCompanyCard ?? false })), writer);
+            await createReimbursementItems(input.reimbursementItems.map(item => ({ bookingId: created.id, agentId: scope.ownerUserId, supplierName: item.supplierName, amount: item.amount, isLate: false, jltCompanyCard: item.jltCompanyCard ?? false })), writer, ctx.user);
           }
           if (input.isHistoricBooking && created?.id) {
             await updateBookingStage(created.id, "Added to PTS", ctx.user.id, writer);
@@ -1882,7 +1882,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const booking = await getBookingById(input.id);
         if (!booking) throw new TRPCError({ code: "NOT_FOUND" });
-        await deleteBooking(input.id);
+        await deleteBooking(input.id, ctx.user);
         return { success: true, deletedId: input.id, clientName: booking.clientName };
       }),
     // Admin: merge source booking into target booking
@@ -2672,7 +2672,7 @@ export const appRouter = router({
           const current = await getBookingById(input.bookingId, writer);
           if (!current) throw new TRPCError({ code: "NOT_FOUND" });
           await assertFormalBookingAccess(ctx, current, "operate");
-          const requestId = await createAmendment({ ...input, agentId: scope.ownerUserId, lineItems: input.lineItems }, writer);
+          const requestId = await createAmendment({ ...input, agentId: scope.ownerUserId, lineItems: input.lineItems }, writer, ctx.user);
           await createNote({
             bookingId: input.bookingId,
             authorId: ctx.user.id,
@@ -2733,7 +2733,7 @@ export const appRouter = router({
     action: adminProcedure
       .input(z.object({ amendmentId: z.number(), bookingId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        await actionAmendment(input.amendmentId, ctx.user.id);
+        await actionAmendment(input.amendmentId, ctx.user.id, input.bookingId, ctx.user);
         const booking = await getBookingById(input.bookingId);
         if (booking) {
           const agent = await getUserById(booking.agentId);
@@ -2770,7 +2770,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const { rejectAmendment } = await import("./db");
-        await rejectAmendment(input.amendmentId, ctx.user.id, input.reason);
+        await rejectAmendment(input.amendmentId, ctx.user.id, input.reason, input.bookingId, ctx.user);
         const booking = await getBookingById(input.bookingId);
         if (booking) {
           const agent = await getUserById(booking.agentId);
@@ -2816,7 +2816,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const { amendmentId, bookingId: bId, ...data } = input;
-        const updated = await updateAmendmentPipeline(amendmentId, { ...data, actionedById: ctx.user.id } as any);
+        const updated = await updateAmendmentPipeline(amendmentId, { ...data, actionedById: ctx.user.id }, ctx.user, bId);
         // Notify agent when assigned or actioned
         const resolvedBookingId = bId ?? updated?.bookingId;
         if (resolvedBookingId) {
@@ -5021,7 +5021,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
         status: z.enum(["pending", "scheduled", "paid"]),
       }))
       .mutation(async ({ input, ctx }) => {
-        const item = await updateReimbursementStatus(input.id, input.status, ctx.user.id);
+        const item = await updateReimbursementStatus(input.id, input.status, ctx.user.id, ctx.user);
         // If a late reimbursement is moved to scheduled, notify the agent
         if (item && item.isLate && input.status === "scheduled") {
           await createInAppNotification({
@@ -5068,6 +5068,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
           ctx.user.id,
           input.note,
           input.nextFollowUpAt,
+          ctx.user,
         );
         if (!item) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Reimbursement item not found" });
@@ -5154,7 +5155,7 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
               amount: item.amount,
               isLate,
               jltCompanyCard: item.jltCompanyCard ?? false,
-            })), writer
+            })), writer, ctx.user
           );
           await createNote({
             bookingId: input.bookingId,
@@ -5343,18 +5344,18 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Admin: assign a reimbursement item to an admin user
     assign: adminProcedure
       .input(z.object({ id: z.number(), assignedToId: z.number().nullable() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { updateReimbursementAssignee } = await import("./db");
-        await updateReimbursementAssignee(input.id, input.assignedToId);
+        await updateReimbursementAssignee(input.id, input.assignedToId, ctx.user);
         return { success: true };
       }),
 
     // Admin: mark a late reimbursement as actioned
     markActioned: adminProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { markReimbursementActioned } = await import("./db");
-        await markReimbursementActioned(input.id);
+        await markReimbursementActioned(input.id, ctx.user);
         return { success: true };
       }),
 
@@ -5549,9 +5550,9 @@ ${input.note ? `<p><strong>Note from JLT:</strong> ${input.note.replace(/\n/g, '
     // Admin: delete a reimbursement item and all its associated docs
     deleteItem: adminProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { deleteReimbursementItem } = await import("./db");
-        await deleteReimbursementItem(input.id);
+        await deleteReimbursementItem(input.id, ctx.user);
         return { success: true };
       }),
   }),

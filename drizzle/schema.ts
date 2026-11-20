@@ -162,6 +162,35 @@ export const amendments = mysqlTable("amendments", {
 
 export type Amendment = typeof amendments.$inferSelect;
 
+// Append-only work history. No foreign keys: request deletion must not erase it.
+export const staffWorkEvents = mysqlTable("staff_work_events", {
+  id: int("id").autoincrement().primaryKey(),
+  eventKey: varchar("eventKey", { length: 255 }).notNull(),
+  domain: varchar("domain", { length: 20 }).notNull(),
+  requestId: int("requestId").notNull(),
+  bookingId: int("bookingId"),
+  eventType: varchar("eventType", { length: 50 }).notNull(),
+  beforeStatus: varchar("beforeStatus", { length: 50 }),
+  afterStatus: varchar("afterStatus", { length: 50 }),
+  actorId: int("actorId"),
+  actorRole: varchar("actorRole", { length: 32 }),
+  actorName: varchar("actorName", { length: 255 }), // Performing staff snapshot only
+  occurredAt: timestamp("occurredAt").notNull(),
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  requestType: varchar("requestType", { length: 32 }),
+  sourceEventId: int("sourceEventId"),
+  receivedAt: timestamp("receivedAt"),
+  metadata: json("metadata"), // Allowlisted workflow context, never message/PNR/finance
+}, (table) => [
+  uniqueIndex("staff_work_events_event_key_unique").on(table.eventKey),
+  index("staff_work_events_time_idx").on(table.occurredAt),
+  index("staff_work_events_domain_time_idx").on(table.domain, table.occurredAt),
+  index("staff_work_events_entity_idx").on(table.domain, table.requestId, table.occurredAt),
+  index("staff_work_events_booking_idx").on(table.bookingId),
+]);
+export type StaffWorkEvent = typeof staffWorkEvents.$inferSelect;
+export type InsertStaffWorkEvent = typeof staffWorkEvents.$inferInsert;
+
 // ─── Amendment Line Items ─────────────────────────────────────────────────────
 
 export const amendmentLineItems = mysqlTable("amendment_line_items", {

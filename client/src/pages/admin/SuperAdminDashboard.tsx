@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import GoCardlessIncomeReport from "./GoCardlessIncomeReport";
 import FinancialsIncomeCard from "./FinancialsIncomeCard";
+import StaffWorkloadReport from "@/components/StaffWorkloadReport";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
 import {
@@ -1461,7 +1462,7 @@ function DiscountCodesTab() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
   const { user } = useAuth();
-  const [viewMode, setViewMode] = useState<"week" | "month" | "comparison" | "payouts">("week");
+  const [viewMode, setViewMode] = useState<"week" | "month" | "comparison" | "payouts" | "workload">("week");
   const [currentMonday, setCurrentMonday] = useState(() => getMondayOfWeek(new Date()));
   const [currentMonth, setCurrentMonth] = useState(() => getFirstOfMonth(new Date()));
   const [comparisonYear, setComparisonYear] = useState(() => new Date().getFullYear());
@@ -1558,7 +1559,15 @@ export default function SuperAdminDashboard() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {/* View mode toggle */}
-          <div className="flex items-center bg-muted rounded-lg p-1 gap-1">
+          <div className="flex flex-wrap items-center bg-muted rounded-lg p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setViewMode("workload")}
+              aria-pressed={viewMode === "workload"}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${viewMode === "workload" ? "bg-[#70FFE8] text-slate-900 shadow-sm" : "text-[#1a8a78] bg-[#70FFE8]/15 hover:bg-[#70FFE8]/30"}`}
+            >
+              <Activity size={13} className="inline mr-1" />Workload &amp; Productivity
+            </button>
             <button
               onClick={() => setViewMode("week")}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "week" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
@@ -1612,7 +1621,7 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {viewMode === "payouts" ? <GoCardlessIncomeReport /> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><div><p className="font-semibold">Joining fees and membership income already paid out</p><p className="mt-1 text-sm">Use the dedicated GoCardless report for exact payment counts, gross amounts, payers and acquisition sources by payout-event date—not collection or joining date.</p></div><Button variant="outline" onClick={() => setViewMode("payouts")}>View GoCardless payouts <ArrowRight className="ml-2" size={16} /></Button></div>}
+      {viewMode === "workload" ? <StaffWorkloadReport /> : viewMode === "payouts" ? <GoCardlessIncomeReport /> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><div><p className="font-semibold">Joining fees and membership income already paid out</p><p className="mt-1 text-sm">Use the dedicated GoCardless report for exact payment counts, gross amounts, payers and acquisition sources by payout-event date—not collection or joining date.</p></div><Button variant="outline" onClick={() => setViewMode("payouts")}>View GoCardless payouts <ArrowRight className="ml-2" size={16} /></Button></div>}
 
       {/* Calendar-year comparison */}
       {viewMode === "comparison" && <BusinessPerformanceComparison year={comparisonYear} />}

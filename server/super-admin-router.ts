@@ -17,6 +17,7 @@ import { buildDepartureReasonBreakdown, normaliseDepartureReasons } from "../sha
 import { DEPARTURE_REASON_LABELS } from "../shared/departure-reasons";
 import { readFinancialsIncome } from "./financials-income";
 import type { FinancialsIncome } from "../shared/financials-income";
+import { staffWorkloadProcedures } from "./staff-workload-router";
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "super_admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Super admin access required" });
@@ -25,6 +26,7 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 export const superAdminRouter = router({
+  ...staffWorkloadProcedures,
   /** Read-only provider payout history; never invokes financial recovery or account effects. */
   paidOutIncome: superAdminProcedure
     .input(z.object({ rangeStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), rangeEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), refreshKey: z.number().int().positive().optional() }))
