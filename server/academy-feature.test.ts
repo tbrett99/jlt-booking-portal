@@ -28,7 +28,8 @@ describe("JLT Academy feature safeguards", () => {
   it("uses a native prepared insert for new Academy courses on production TiDB", () => {
     expect(source).toContain("getRawDbPool");
     expect(source).toContain("INSERT INTO academy_courses");
-    expect(source).toContain("VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    expect(source).toMatch(/INSERT INTO academy_courses\s+\(title, summary, coverImageUrl, isCoreAcademy, isAcceleratorJourney, isFirstClassTraining, estimatedMinutes, createdById, updatedById\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?, \?\)/);
+    expect(source).toContain("[payload.title, payload.summary, payload.coverImageUrl, payload.isCoreAcademy, payload.isAcceleratorJourney, payload.isFirstClassTraining, payload.estimatedMinutes, ctx.user.id, ctx.user.id]");
     expect(source).toContain("Academy course insert did not return an ID");
   });
 

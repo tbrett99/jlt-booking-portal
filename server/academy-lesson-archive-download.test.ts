@@ -4,6 +4,7 @@ import type { Express, Request, Response } from "express";
 import {
   academyAccess,
   academyAssessmentAttempts,
+  academyCourses,
   academyEnrollments,
   academyLessons,
   academyModules,
@@ -53,6 +54,7 @@ import {
 } from "./academy-document-download-routes";
 
 type Tables = {
+  academy_courses: (typeof academyCourses.$inferInsert)[];
   academy_modules: (typeof academyModules.$inferInsert)[];
   academy_lessons: (typeof academyLessons.$inferInsert)[];
   academy_enrollments: (typeof academyEnrollments.$inferInsert)[];
@@ -72,6 +74,30 @@ const plaintext = Buffer.from("Synthetic private assessment bytes");
 const attachmentKey = "synthetic/private-resource";
 function initialTables(): Tables {
   return {
+    // Learner downloads use the real published-course entitlement gate. Staff
+    // grants remain independent so archived evidence keeps its historical path.
+    academy_courses: [
+      {
+        id: 33,
+        title: "Synthetic published course",
+        status: "published",
+        isCoreAcademy: false,
+        isAcceleratorJourney: false,
+        isFirstClassTraining: false,
+        createdById: 99,
+        updatedById: 99,
+      },
+      {
+        id: 34,
+        title: "Other published course",
+        status: "published",
+        isCoreAcademy: false,
+        isAcceleratorJourney: false,
+        isFirstClassTraining: false,
+        createdById: 99,
+        updatedById: 99,
+      },
+    ],
     academy_modules: [
       { id: 22, courseId: 33, title: "Synthetic module" },
       { id: 23, courseId: 34, title: "Other course" },

@@ -44,13 +44,15 @@ function managed(overrides: Partial<BusinessStaffAuthority> = {}): BusinessStaff
 const ordinary = (): BusinessStaffAuthority => ({ managed: false, active: false, membership: null, owner: null, orbitReady: false, orbitNotice: "Synthetic notice" });
 function initialTables() {
   return {
-    academy_modules: [{ id: 22, courseId: 33, title: "Synthetic module" }],
-    academy_lessons: [{ id: 11, moduleId: 22, title: "Synthetic document lesson", archivedAt: null, assessmentMode: "document_upload",
+    academy_courses: [{ id: 33, title: "Synthetic course", status: "published", isCoreAcademy: false, isAcceleratorJourney: false, isFirstClassTraining: false }],
+    academy_modules: [{ id: 22, courseId: 33, title: "Synthetic module", sortOrder: 0, releaseWeek: 0 }],
+    academy_lessons: [{ id: 11, moduleId: 22, title: "Synthetic document lesson", archivedAt: null, isRequired: true, sortOrder: 0, assessmentMode: "document_upload",
       assessmentTemplateKey: "synthetic/template", assessmentTemplateName: "template.pdf", assessmentTemplateMimeType: "application/pdf",
       attachmentKey: objectKey, attachmentName: "resource.pdf" }],
-    academy_enrollments: [{ id: 44, courseId: 33, agentId: 20, enrolledById: 99, status: "active" }],
+    academy_enrollments: [{ id: 44, courseId: 33, agentId: 20, enrolledById: 99, status: "in_progress", enrolledAt: epoch, journeyStartedAt: null, startedAt: epoch, completedAt: null }],
     academy_access: [{ id: 55, agentId: 20, status: "active", grantedById: 99 }],
-    academy_assessment_attempts: [{ id: 66, enrollmentId: 44, lessonId: 11, status: "submitted", answers: [],
+    academy_lesson_progress: [{ id: 88, enrollmentId: 44, lessonId: 11, startedAt: epoch, completedAt: null }],
+    academy_assessment_attempts: [{ id: 66, enrollmentId: 44, lessonId: 11, status: "awaiting_marking", answers: [],
       submissionFileKey: "synthetic/submission", submissionFileName: "submission.pdf", submissionMimeType: "application/pdf" }],
     staff_academy_uploads: [{ id: 77, userId: 90, courseId: 33, kind: "attachment", objectKey }],
   };
@@ -114,25 +116,27 @@ describe("real Academy registration: current business staff authority before DB/
     const exactFixture = `${encoded}.${createHmac("sha256", jwtSecret).update(encoded).digest("base64url")}`;
     expect(token).toBe(exactFixture);
     expectPrivateSuccess(await document(token), `${kind}.pdf`);
-    expect(external.authority).toHaveBeenCalledWith(user);
+    expect(external.authority).toHaveBeenCalledTimes(2); expect(external.authority).toHaveBeenNthCalledWith(1, user); expect(external.authority).toHaveBeenNthCalledWith(2, user);
     expect(external.authority.mock.invocationCallOrder[0]).toBeLessThan(external.getDb.mock.invocationCallOrder[0]);
     expect(external.getDb.mock.invocationCallOrder[0]).toBeLessThan(external.storage.mock.invocationCallOrder[0]);
+    expect(external.storage).toHaveBeenCalledOnce(); expect(external.storage.mock.invocationCallOrder[0]).toBeLessThan(external.authority.mock.invocationCallOrder[1]);
     expect(external.requireCourse).not.toHaveBeenCalled(); expect(external.selfReview).not.toHaveBeenCalled(); expect(db.writes).toEqual([]);
   });
   it.each(["permission", "revocation", "owner-ineligible"])("an exact already-minted token is denied after fresh %s change in the same session", async change => {
     const token = mint(); const sameUser = user;
     expectPrivateSuccess(await document(token), "template.pdf");
+    expect(external.authority).toHaveBeenCalledTimes(2);
     if (change === "permission") authority.membership!.permissions.academyAccess = false;
     else { authority.active = false; if (change === "revocation") authority.membership!.status = "revoked"; }
     external.getDb.mockClear(); external.storage.mockClear(); db.reads.length = 0;
     expectDenied(await document(token));
-    expect(user).toBe(sameUser); expect(external.authority).toHaveBeenCalledTimes(2); expect(external.getDb).not.toHaveBeenCalled(); expect(db.reads).toEqual([]);
+    expect(user).toBe(sameUser); expect(external.authority).toHaveBeenCalledTimes(3); expect(external.getDb).not.toHaveBeenCalled(); expect(db.reads).toEqual([]);
   });
   it.each(["revoked", "permission", "missing-membership"])("attachment denies %s staff authority before getDb or storage", async change => {
     if (change === "revoked") authority = managed({ active: false, membership: { ...authority.membership!, status: "revoked" } });
     if (change === "permission") authority.membership!.permissions.academyAccess = false;
     if (change === "missing-membership") authority.membership = null;
-    expectDenied(await attachment()); expect(external.authority).toHaveBeenCalledWith(user); expect(external.getDb).not.toHaveBeenCalled(); expect(db.reads).toEqual([]);
+    expectDenied(await attachment()); expect(external.authority).toHaveBeenCalledOnce(); expect(external.authority).toHaveBeenCalledWith(user); expect(external.getDb).not.toHaveBeenCalled(); expect(db.reads).toEqual([]);
     expect(external.requireCourse).not.toHaveBeenCalled();
   });
   it.each(["document", "attachment"])("unknown authority/schema safely denies %s without DB/storage or secret leakage", async route => {
@@ -157,6 +161,8 @@ describe("real Academy registration: current business staff authority before DB/
   });
   it("managed attachment succeeds only through the current user's active personal enrollment, never an instructor grant", async () => {
     expectPrivateSuccess(await attachment(), "resource.pdf"); expect(external.storage).toHaveBeenCalledWith(objectKey);
+    expect(external.authority).toHaveBeenCalledTimes(2); expect(external.storage).toHaveBeenCalledOnce();
+    expect(external.storage.mock.invocationCallOrder[0]).toBeLessThan(external.authority.mock.invocationCallOrder[1]);
     expect(external.requireCourse).not.toHaveBeenCalled(); expect(external.authority.mock.invocationCallOrder[0]).toBeLessThan(external.getDb.mock.invocationCallOrder[0]);
   });
   it.each(["owner-enrollment", "no-enrollment", "revoked-academy", "archived-lesson"])("managed attachment rejects %s without falling back to staff scope", async change => {

@@ -219,6 +219,21 @@ describe.each<Mode>(["admin", "staff"])("%s opt-in PDF lesson resource editor", 
     expect(saved()).toMatchObject({ moduleId: 9, embedPdf: false, attachmentKey: null, attachmentUrl: null });
     expect(mock.calls.filter(item => item.path === questionPath)).toEqual([]);
   });
+  it("binds private First Class resource uploads to the saved owning course", async () => {
+    mock.data["academy.admin.editor"].course.isFirstClassTraining = true;
+    const privateUrl = `https://portal.thejltgroup.co.uk/api/academy/course-attachment/${encodeURIComponent(replacementKey)}`;
+    mock.results[uploadPath] = { key: replacementKey, url: privateUrl, name: "replacement.pdf" };
+    await open(mode);
+    await selectFile(mode);
+    expect(mock.calls.filter(item => item.path === uploadPath)).toEqual([]);
+    await completeRead();
+    expect(mock.calls.filter(item => item.path === uploadPath)).toEqual([{ path: uploadPath, input: {
+      courseId: 7, fileName: "replacement.pdf", fileBase64: "c3ludGhldGlj", mimeType: "application/pdf",
+    } }]);
+    await click(saveControl(mode));
+    expect(saved()).toMatchObject({ attachmentKey: replacementKey, attachmentUrl: privateUrl, embedPdf: false });
+    assertNoAssessmentDrift(mode);
+  });
   it.each([true, false, undefined, null, "true", 1])("hydrates embedPdf=%s strictly and saves its boolean value", async value => {
     await open(mode, { ...pdf, embedPdf: value });
     expect(pdfSwitch()).not.toBeNull();
@@ -286,7 +301,7 @@ describe.each<Mode>(["admin", "staff"])("%s opt-in PDF lesson resource editor", 
     expect(resourceInput(mode).value).toBe(""); expect(pdfSwitch()!.getAttribute("aria-checked")).toBe("true");
     expect(mock.calls).toEqual([]);
     await completeRead();
-    expect(mock.calls).toEqual([{ path: uploadPath, input: { ...(mode === "staff" ? { courseId: 7 } : {}),
+    expect(mock.calls).toEqual([{ path: uploadPath, input: { courseId: 7,
       fileName: "replacement.pdf", fileBase64: "c3ludGhldGlj", mimeType: "application/pdf" } }]);
     expect(pdfSwitch()!.getAttribute("aria-checked")).toBe("false");
     await click(saveControl(mode));

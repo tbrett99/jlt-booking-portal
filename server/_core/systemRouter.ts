@@ -37,6 +37,8 @@ export const systemRouter = router({
       staffHandbookFirstUse: 1,
       academyQuestionPasteToggle: 1,
       academyLiveQuestionWording: 1,
+      academyFirstClassWeeklyAccess: 1,
+      crmMembershipMultiFilters: 1,
     })),
 
   notifyOwner: adminProcedure

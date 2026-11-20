@@ -36,20 +36,67 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const { isAgentView } = useViewMode();
   const isPreview = isAgentView && Number.isInteger(numericPreviewCourseId) && numericPreviewCourseId > 0;
   const utils = trpc.useUtils();
-  const agentCourse = trpc.academy.agent.course.useQuery({ enrollmentId: numericEnrollmentId }, { enabled: !isPreview && Number.isInteger(numericEnrollmentId) && numericEnrollmentId > 0 });
+  const agentCourse = trpc.academy.agent.course.useQuery({ enrollmentId: numericEnrollmentId }, {
+    enabled: !isPreview && Number.isInteger(numericEnrollmentId) && numericEnrollmentId > 0,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
   const previewCourse = trpc.academy.agent.previewCourse.useQuery({ courseId: numericPreviewCourseId }, { enabled: isPreview });
-  const data = isPreview ? previewCourse.data : agentCourse.data;
   const isLoading = isPreview ? previewCourse.isLoading : agentCourse.isLoading;
-  const error = isPreview ? previewCourse.error : agentCourse.error;
+  type AccessError = { message: string; data?: { code?: string } | null };
+  const [accessDenied, setAccessDenied] = useState<AccessError | null>(null);
+  // The ref stops timer/visibility callbacks immediately, before React commits
+  // the hidden-content render. Ordinary cached-query success cannot clear it.
+  const accessDenial = useRef<{ error: AccessError; dataUpdatedAt: number } | null>(null);
+  const accessCheckSequence = useRef(0);
+  const accessCheckPending = useRef(false);
+  const currentAccessTarget = useRef("");
+  currentAccessTarget.current = `${isPreview ? "preview" : "learner"}:${numericEnrollmentId}`;
+  const revalidateAccess = async () => {
+    const denial = accessDenial.current;
+    if (isPreview || !denial || accessCheckPending.current) return;
+    const sequence = ++accessCheckSequence.current;
+    const target = currentAccessTarget.current;
+    accessCheckPending.current = true;
+    try {
+      const fresh = await agentCourse.refetch({ cancelRefetch: true });
+      if (sequence === accessCheckSequence.current && accessDenial.current === denial
+        && currentAccessTarget.current === target
+        && fresh.isSuccess && !fresh.error && fresh.data && fresh.dataUpdatedAt > denial.dataUpdatedAt) {
+        accessDenial.current = null;
+        setAccessDenied(null);
+      }
+    } catch {
+      // Remain denied on failed revalidation. No automatic retry loop.
+    } finally {
+      accessCheckPending.current = false;
+    }
+  };
+  const handleMutationAccessError = (mutationError: AccessError) => {
+    if (isPreview || !["FORBIDDEN", "UNAUTHORIZED"].includes(mutationError.data?.code ?? "")) return false;
+    if (accessDenial.current) return true;
+    accessDenial.current = { error: mutationError, dataUpdatedAt: agentCourse.dataUpdatedAt };
+    setAccessDenied(mutationError);
+    void revalidateAccess();
+    return true;
+  };
+  const error = isPreview ? previewCourse.error : accessDenied ?? agentCourse.error;
+  // Query clients retain prior data after a failed refresh. Do not render it,
+  // derive a selected lesson from it or keep sending lesson activity after access is lost.
+  const data = error ? undefined : isPreview ? previewCourse.data : agentCourse.data;
+  const isFirstClassRecap = !!data?.course.isFirstClassTraining && ["completed", "waived"].includes(data?.enrollment?.status ?? "");
+  const writesAllowed = useRef(false);
+  writesAllowed.current = !isPreview && !!data && !isFirstClassRecap && !accessDenial.current;
   const [failedKnowledgeCheck, setFailedKnowledgeCheck] = useState<{ lessonId: number; score: number; correct: number; total: number } | null>(null);
-  const viewLesson = trpc.academy.agent.viewLesson.useMutation();
-  const recordActivity = trpc.academy.agent.recordActivity.useMutation();
+  const viewLesson = trpc.academy.agent.viewLesson.useMutation({ onError: handleMutationAccessError });
+  const recordActivity = trpc.academy.agent.recordActivity.useMutation({ onError: handleMutationAccessError });
   const acknowledgeLesson = trpc.academy.agent.acknowledgeLesson.useMutation({ onSuccess: () => {
     toast.success("Acknowledgement recorded");
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
     utils.academy.agent.home.invalidate();
-  }, onError: (error) => toast.error(error.message) });
-  const completeLesson = trpc.academy.agent.completeLesson.useMutation({ onSuccess: () => { toast.success("Lesson completed"); utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId }); utils.academy.agent.home.invalidate(); } });
+  }, onError: (error) => { handleMutationAccessError(error); toast.error(error.message); } });
+  const completeLesson = trpc.academy.agent.completeLesson.useMutation({ onSuccess: () => { toast.success("Lesson completed"); utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId }); utils.academy.agent.home.invalidate(); }, onError: handleMutationAccessError });
   const submitAssessment = trpc.academy.agent.submitAssessment.useMutation({ onSuccess: (result, variables) => {
     if (result.status === "awaiting_marking") toast.success("Written response submitted. A JLT team member will mark it and send feedback.");
     else if (result.passed) toast.success(`Passed with ${result.score}%`);
@@ -60,6 +107,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
     utils.academy.agent.home.invalidate();
   }, onError: (error) => {
+    if (handleMutationAccessError(error)) { toast.error(error.message); return; }
     if (error.message === "Please answer each outstanding question before submitting") {
       // A staff edit or a prior attempt can change targeted-resit state while
       // an agent has the form open. Refresh the source of truth, preserving
@@ -72,7 +120,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   } });
   const getDocumentAssessmentTemplate = trpc.academy.agent.getDocumentAssessmentTemplate.useMutation({
     onSuccess: result => { window.location.assign(result.url); },
-    onError: error => toast.error(error.message),
+    onError: error => { handleMutationAccessError(error); toast.error(error.message); },
   });
   const submitDocumentAssessment = trpc.academy.agent.submitDocumentAssessment.useMutation({
     onSuccess: () => {
@@ -81,13 +129,13 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
       utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
       utils.academy.agent.home.invalidate();
     },
-    onError: error => toast.error(error.message),
+    onError: error => { handleMutationAccessError(error); toast.error(error.message); },
   });
   const acknowledgeAssessmentFeedback = trpc.academy.agent.acknowledgeAssessmentFeedback.useMutation({ onSuccess: (result) => {
     toast.success(result.passed ? "Feedback acknowledged — this lesson is now complete." : "Feedback acknowledged. Please update your response and submit again when you are ready.");
     utils.academy.agent.course.invalidate({ enrollmentId: numericEnrollmentId });
     utils.academy.agent.home.invalidate();
-  }, onError: (error) => toast.error(error.message) });
+  }, onError: (error) => { handleMutationAccessError(error); toast.error(error.message); } });
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [writtenAnswers, setWrittenAnswers] = useState<Record<number, string>>({});
@@ -97,9 +145,9 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   const scrollToTopAfterNextLesson = useRef(false);
 
   const lessons = useMemo(() => data?.modules.flatMap((module) => module.lessons) ?? [], [data]);
-  const selectedLesson = lessons.find((lesson) => lesson.id === selectedLessonId) ?? lessons.find((lesson) => !lesson.locked) ?? null;
-  const feedbackBlockingLessonIndex = lessons.findIndex((lesson) => lesson.attempts.some((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: lesson.requiresAssessment, completedAt: lesson.progress?.completedAt })));
-  const pendingFeedback = selectedLesson?.attempts.find((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: selectedLesson.requiresAssessment, completedAt: selectedLesson.progress?.completedAt })) ?? null;
+  const selectedLesson = lessons.find((lesson) => lesson.id === selectedLessonId && !lesson.locked) ?? lessons.find((lesson) => !lesson.locked) ?? null;
+  const feedbackBlockingLessonIndex = isFirstClassRecap ? -1 : lessons.findIndex((lesson) => lesson.attempts.some((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: lesson.requiresAssessment, completedAt: lesson.progress?.completedAt })));
+  const pendingFeedback = isFirstClassRecap ? null : selectedLesson?.attempts.find((attempt) => isActionableAcademyFeedback(attempt, { requiresAssessment: selectedLesson.requiresAssessment, completedAt: selectedLesson.progress?.completedAt })) ?? null;
   const awaitingMarking = selectedLesson?.attempts.find((attempt) => attempt.status === "awaiting_marking") ?? null;
   const outstandingQuestions = selectedLesson?.questions.filter((question) => !question.resit.passed) ?? [];
   const passedQuestionCount = selectedLesson ? selectedLesson.questions.length - outstandingQuestions.length : 0;
@@ -125,7 +173,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
     setIsWorkingOnKnowledgeCheck(false);
     const containingModule = data?.modules.find((module) => module.lessons.some((lesson) => lesson.id === selectedLesson.id));
     if (containingModule) setExpandedModuleId((current) => current === containingModule.id ? current : containingModule.id);
-    if (isPreview) return;
+    if (!writesAllowed.current) return;
     viewLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id });
   // Only record an intentional lesson switch, not every progress refresh.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,8 +190,9 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   }, [selectedLesson?.id]);
 
   useEffect(() => {
-    if (isPreview || !selectedLesson || selectedLesson.progress?.completedAt) return;
+    if (!writesAllowed.current || !selectedLesson || selectedLesson.progress?.completedAt) return;
     const recordVisibleActivity = (includeHidden = false) => {
+      if (!writesAllowed.current || accessDenial.current) return;
       if (!includeHidden && document.hidden) return;
       recordActivity.mutate({
         enrollmentId: numericEnrollmentId,
@@ -160,7 +209,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [isPreview, isWorkingOnKnowledgeCheck, numericEnrollmentId, recordActivity, selectedLesson?.id, selectedLesson?.progress?.completedAt]);
+  }, [isPreview, isFirstClassRecap, isWorkingOnKnowledgeCheck, numericEnrollmentId, recordActivity, selectedLesson?.id, selectedLesson?.progress?.completedAt]);
 
   const chooseLesson = (lessonId: number, options?: { scrollToTop?: boolean }) => {
     const targetIndex = lessons.findIndex((lesson) => lesson.id === lessonId);
@@ -187,7 +236,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   };
 
   const chooseDocumentFile = (file?: File) => {
-    if (!file || isPreview || submitDocumentAssessment.isPending) return;
+    if (!file || !writesAllowed.current || submitDocumentAssessment.isPending) return;
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Assessment documents must be under 10 MB");
       return;
@@ -206,13 +255,14 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   };
 
   const submitSelectedDocument = async () => {
-    if (!selectedLesson || !documentFile || isPreview || submitDocumentAssessment.isPending) return;
+    if (!selectedLesson || !documentFile || !writesAllowed.current || submitDocumentAssessment.isPending) return;
     const base64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
       reader.onerror = reject;
       reader.readAsDataURL(documentFile);
     });
+    if (!writesAllowed.current || accessDenial.current) return;
     submitDocumentAssessment.mutate({
       enrollmentId: numericEnrollmentId,
       lessonId: selectedLesson.id,
@@ -223,6 +273,16 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   };
 
   if (isLoading) return <div className="mx-auto max-w-7xl space-y-4 animate-pulse"><div className="h-10 w-32 rounded bg-muted" /><div className="h-24 rounded-2xl bg-muted" /><div className="h-[480px] rounded-2xl bg-muted" /></div>;
+  if (["FORBIDDEN", "UNAUTHORIZED"].includes(error?.data?.code ?? "")) return <div className="rounded-2xl border bg-card p-6 text-card-foreground">
+    <LockKeyhole className="text-muted-foreground" size={24} aria-hidden="true" />
+    <h1 className="mt-3 font-semibold">Course access unavailable</h1>
+    <p className="mt-2 text-sm leading-6 text-muted-foreground">{/First Class/i.test(error?.message ?? "")
+      ? "First Class training is included with First Class memberships. Contact support to upgrade."
+      : "Your access to this course could not be confirmed. Contact support for help with your membership or enrolment."}</p>
+    <a href="mailto:support@thejltgroup.co.uk" className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline">Contact JLT Support</a>
+    <Link href="/academy" className="ml-4 inline-flex text-sm font-semibold text-muted-foreground hover:underline">Back to Academy</Link>
+    {accessDenied && <Button type="button" variant="outline" className="ml-4 mt-4" disabled={agentCourse.isFetching} onClick={() => { void revalidateAccess(); }}>Retry access check</Button>}
+  </div>;
   if (error || !data) return <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6"><h1 className="font-semibold">Course could not be loaded</h1><p className="mt-1 text-sm text-muted-foreground">Return to Academy and try again.</p><Link href="/academy" className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline">Back to Academy</Link></div>;
   if (!selectedLesson) return <div className="rounded-2xl border bg-card p-8 text-center"><LockKeyhole className="mx-auto text-muted-foreground" /><h1 className="mt-4 text-xl font-bold">This course is being prepared</h1><p className="mt-2 text-sm text-muted-foreground">Your JLT team will add lessons shortly.</p></div>;
 
@@ -238,6 +298,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
   return (
     <div className="mx-auto max-w-7xl">
       <Link href="/academy" className="mb-5 inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> Back to Academy</Link>
+      {isFirstClassRecap && <div className="mb-5 rounded-2xl border bg-muted/30 px-4 py-3 text-sm"><span className="font-semibold">Read-only course recap:</span> review lessons, resources and recorded assessment history. Your {data.enrollment.status === "waived" ? "waiver" : "completion"} and lesson progress stay unchanged; no new learning activity or submissions are recorded.</div>}
       {isPreview && <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span className="font-semibold">Academy preview:</span> this course is shown exactly as an agent sees it. Quiz answers, acknowledgements and completions are intentionally not recorded in preview mode.</div>}
       <header className="rounded-2xl border bg-card p-5 shadow-sm md:p-6"><div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">JLT Academy</p><h1 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">{data.course.title}</h1>{data.course.summary && <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{data.course.summary}</p>}</div><div className="min-w-44"><div className="mb-1.5 flex justify-between text-xs font-medium"><span>Course progress</span><span>{data.progress.percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#00c9b4]" style={{ width: `${data.progress.percentage}%` }} /></div><p className="mt-1.5 text-right text-xs text-muted-foreground">{data.progress.completedRequiredLessons} / {data.progress.requiredLessons} required</p></div></div></header>
 
@@ -250,7 +311,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
             const completed = module.lessons.filter((lesson) => !!lesson.progress?.completedAt).length;
             return <section key={module.id} className="overflow-hidden rounded-xl border bg-background/60">
               <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-muted/60" aria-expanded={isOpen} aria-controls={`academy-course-module-${module.id}`} onClick={() => setExpandedModuleId((current) => current === module.id ? null : module.id)}>
-                <span className="min-w-0"><span className="block text-xs font-semibold text-primary">{data.course.isAcceleratorJourney ? (module.releaseWeek ? `Week ${module.releaseWeek}` : "Introduction") : `Module ${index + 1}`}</span><span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5">{module.title}</span>{data.course.isAcceleratorJourney && <span className={`mt-1 block text-[10px] font-medium ${module.releaseLocked ? "text-amber-700" : "text-emerald-700"}`}>{module.releaseLocked ? `Available ${module.releaseLabel}` : module.releaseWeek ? "Weekly section unlocked" : "Available now"}</span>}</span>
+                <span className="min-w-0"><span className="block text-xs font-semibold text-primary">{data.course.isFirstClassTraining ? `Week ${index + 1}` : data.course.isAcceleratorJourney ? (module.releaseWeek ? `Week ${module.releaseWeek}` : "Introduction") : `Module ${index + 1}`}</span><span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5">{module.title}</span>{(data.course.isFirstClassTraining || data.course.isAcceleratorJourney) && <span className={`mt-1 block text-[10px] font-medium ${module.releaseLocked ? "text-amber-700" : "text-emerald-700"}`}>{module.releaseLocked ? (module.releaseLabel ? `Available ${module.releaseLabel}` : "Scheduled release") : data.course.isFirstClassTraining ? "Available now" : module.releaseWeek ? "Weekly section unlocked" : "Available now"}</span>}</span>
                 <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><span>{completed}/{module.lessons.length}</span><span className={`text-base transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span></span>
               </button>
               {isOpen && <div id={`academy-course-module-${module.id}`} className="space-y-1 border-t p-2">{module.lessons.map((lesson) => {
@@ -268,7 +329,7 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
         </aside>
 
         <main className="min-w-0 rounded-2xl border bg-card p-5 shadow-sm md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><BookOpenCheck size={14} /> Lesson</div><h2 className="mt-2 text-2xl font-bold tracking-tight">{selectedLesson.title}</h2>{selectedLesson.summary && <p className="mt-2 max-w-3xl text-muted-foreground">{selectedLesson.summary}</p>}</div>{selectedLesson.progress?.completedAt ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Completed</span> : <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">In progress</span>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><BookOpenCheck size={14} /> Lesson</div><h2 className="mt-2 text-2xl font-bold tracking-tight">{selectedLesson.title}</h2>{selectedLesson.summary && <p className="mt-2 max-w-3xl text-muted-foreground">{selectedLesson.summary}</p>}</div>{selectedLesson.progress?.completedAt ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Completed</span> : <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">{isFirstClassRecap ? "Review only" : "In progress"}</span>}</div>
 
           {(selectedLesson.contentHtml || selectedLesson.videoUrl || selectedLesson.attachmentUrl) && <div className="mt-7 space-y-6">
             {selectedLesson.contentHtml && <div className="academy-lesson-content max-w-none text-[15px] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: normaliseAcademyLessonContent(selectedLesson.contentHtml) }} />}
@@ -295,23 +356,46 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
             templateAvailable={selectedLesson.hasAssessmentTemplate}
             downloadPending={getDocumentAssessmentTemplate.isPending}
             downloadDisabled={isPreview}
-            onDownload={() => getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin })}
+            onDownload={() => { if (isPreview || accessDenial.current) return; getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin }); }}
             renderQuestion={prompt => <AcademyStructuredQuestion text={prompt} className="text-sm font-medium" />}
           />}
 
-          {selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.completedAt && <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/70 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">Confirm you have read and understood this lesson</p><p className="mt-1 text-sm leading-6 text-muted-foreground">This is saved to your Academy learning record and must be completed before the lesson can be marked complete.</p></div>{selectedLesson.progress?.acknowledgedAt ? <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Acknowledged</span> : <Button className="shrink-0" disabled={isPreview || acknowledgeLesson.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no acknowledgement was recorded."); return; } acknowledgeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{acknowledgeLesson.isPending ? "Recording..." : "I acknowledge this lesson"}</Button>}</div></div>}
+          {isFirstClassRecap && selectedLesson.requiresAssessment && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5" aria-label="Recap assessment review">
+            <h3 className="font-bold">{selectedLesson.assessmentMode === "document_upload" ? "Document assessment — review" : "Knowledge check — review"}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Assessment material and any recorded history are available for reference. No new answers, uploads or feedback acknowledgements are required in this course recap.</p>
+            {selectedLesson.assessmentMode === "document_upload" && selectedLesson.hasAssessmentTemplate && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-4">
+              <p className="text-sm font-semibold">{selectedLesson.assessmentTemplateName || "Assessment template"}</p>
+              <Button type="button" variant="outline" disabled={isPreview || getDocumentAssessmentTemplate.isPending} onClick={() => { if (isPreview || accessDenial.current) return; getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin }); }}><Download className="mr-2" size={16} />{getDocumentAssessmentTemplate.isPending ? "Preparing..." : "Download template"}</Button>
+            </div>}
+            {selectedLesson.questions.length > 0 && <div className="mt-4 space-y-4">{selectedLesson.questions.map((question, index) => <article key={question.id} className="rounded-xl border bg-background p-4">
+              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Question {index + 1} · Review only</p>
+              <AcademyStructuredQuestion text={question.prompt} className="text-sm font-medium" />
+              {question.questionType === "multiple_choice" && <ul className="mt-3 list-disc space-y-2 pl-5 text-sm">{question.answerOptions.map((option, optionIndex) => <li key={optionIndex}>{option}</li>)}</ul>}
+            </article>)}</div>}
+            {selectedLesson.attempts.length > 0 ? <div className="mt-5 space-y-4">{selectedLesson.attempts.map((attempt) => <article key={attempt.id} className="rounded-lg border bg-background p-4">
+              <h4 className="font-semibold">Recorded assessment history{attempt.score != null ? ` · ${attempt.score}%` : ""}</h4>
+              {attempt.graderFeedback && <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{attempt.graderFeedback}</p>}
+              {attempt.responses.map((response) => <div key={response.questionId} className="mt-3 border-t pt-3 text-sm">
+                {response.responseText && <><p className="font-semibold">Your recorded answer</p><p className="mt-1 whitespace-pre-wrap">{response.responseText}</p></>}
+                {response.score != null && <p className="mt-1">Recorded score: {response.score}%</p>}
+                {response.feedback && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">Feedback: {response.feedback}</p>}
+              </div>)}
+            </article>)}</div> : <p className="mt-4 text-sm text-muted-foreground">No assessment attempts are recorded for this lesson.</p>}
+          </section>}
 
-          {selectedLesson.requiresAssessment && selectedLesson.assessmentMode === "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
+          {!isFirstClassRecap && selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.completedAt && <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/70 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">Confirm you have read and understood this lesson</p><p className="mt-1 text-sm leading-6 text-muted-foreground">This is saved to your Academy learning record and must be completed before the lesson can be marked complete.</p></div>{selectedLesson.progress?.acknowledgedAt ? <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 size={15} /> Acknowledged</span> : <Button className="shrink-0" disabled={isPreview || acknowledgeLesson.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no acknowledgement was recorded."); return; } if (!writesAllowed.current || accessDenial.current) return; acknowledgeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{acknowledgeLesson.isPending ? "Recording..." : "I acknowledge this lesson"}</Button>}</div></div>}
+
+          {!isFirstClassRecap && selectedLesson.requiresAssessment && selectedLesson.assessmentMode === "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
             <div className="flex items-center gap-2"><ClipboardCheck className="text-primary" size={20} /><div>
               <h3 className="font-bold">{selectedLesson.hasAssessmentTemplate ? "Document assessment" : "Document assessment — upload your document"}</h3>
               <p className="text-sm text-muted-foreground">{selectedLesson.hasAssessmentTemplate
                 ? "Download the template, complete it offline and upload your finished document for a JLT team member to mark."
                 : "Upload your document for staff marking. Follow the instructions in this lesson."} The pass mark is {selectedLesson.assessmentPassMark}%.</p>
             </div></div>
-            {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can continue.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% standard` : `below the ${selectedLesson.assessmentPassMark}% standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id })}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Document submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your document and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : <div className="mt-5 rounded-xl border bg-background p-4">
+            {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can continue.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% standard` : `below the ${selectedLesson.assessmentPassMark}% standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => { if (!writesAllowed.current || accessDenial.current) return; acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id }); }}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Document submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your document and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : <div className="mt-5 rounded-xl border bg-background p-4">
               {selectedLesson.hasAssessmentTemplate && <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div><p className="font-semibold">1. Download the template</p><p className="mt-1 text-sm text-muted-foreground">{selectedLesson.assessmentTemplateName || "Assessment template"}</p></div>
-                <Button type="button" variant="outline" disabled={isPreview || getDocumentAssessmentTemplate.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no template download was recorded."); return; } getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin }); }}><Download className="mr-2" size={16} />{getDocumentAssessmentTemplate.isPending ? "Preparing..." : "Download template"}</Button>
+                <Button type="button" variant="outline" disabled={isPreview || getDocumentAssessmentTemplate.isPending} onClick={() => { if (isPreview) { toast.info("Preview only — no template download was recorded."); return; } if (accessDenial.current) return; getDocumentAssessmentTemplate.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, origin: window.location.origin }); }}><Download className="mr-2" size={16} />{getDocumentAssessmentTemplate.isPending ? "Preparing..." : "Download template"}</Button>
               </div>}
               <div className={selectedLesson.hasAssessmentTemplate ? "mt-5 border-t pt-5" : ""}>
                 <p className="font-semibold">{selectedLesson.hasAssessmentTemplate ? "2. Upload your completed document" : "Upload your document"}</p>
@@ -322,16 +406,16 @@ export default function AcademyCourse({ enrollmentId, previewCourseId }: { enrol
             </div>}
           </section>}
 
-          {selectedLesson.requiresAssessment && selectedLesson.assessmentMode !== "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
+          {!isFirstClassRecap && selectedLesson.requiresAssessment && selectedLesson.assessmentMode !== "document_upload" && !selectedLesson.progress?.completedAt && <section className="mt-8 rounded-xl border bg-muted/20 p-4 md:p-5">
             <div className="flex items-center gap-2"><ClipboardCheck className="text-primary" size={20} /><div><h3 className="font-bold">Knowledge check</h3><p className="text-sm text-muted-foreground">{selectedLesson.questions.some((question) => question.questionType === "free_text") ? `Written assessments pass at ${selectedLesson.assessmentPassMark}% overall. Multiple-choice answers remain 100% mastery checks.` : "100% is required before you can move to the next lesson. Multiple-choice answers are checked immediately."}</p></div></div>
 
-            {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can move on in this course.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% overall standard` : `below the ${selectedLesson.assessmentPassMark}% overall standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><div className="mt-4 space-y-3">{selectedLesson.questions.filter((question) => question.questionType === "free_text").map((question, index) => { const response = pendingFeedback.responses.find((item) => item.questionId === question.id); const needsResit = !pendingFeedback.passed && (response?.score ?? 0) < selectedLesson.assessmentPassMark; return <div key={question.id} className={`rounded-lg border p-3 ${needsResit ? "border-amber-300 bg-amber-50/45" : "border-emerald-200 bg-emerald-50/35"}`}><div><p className="font-semibold">Written question {index + 1}</p><AcademyStructuredQuestion text={question.prompt} className="mt-2 text-sm" /></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">Your answer: {response?.responseText || "—"}</p><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Score: {response?.score ?? 0}%</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${needsResit ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>{needsResit ? "Needs attention — resubmit this answer" : "Passed — no resubmission"}</span></div><p className="mt-1 whitespace-pre-wrap text-sm leading-6">{response?.feedback || "No question-level feedback was recorded."}</p></div>; })}</div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id })}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Written response submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your response and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : failedCurrentKnowledgeCheck ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-5 text-amber-950"><p className="font-bold">Knowledge check not passed yet</p><p className="mt-2 text-sm leading-6">You scored <strong>{failedCurrentKnowledgeCheck.score}%</strong> ({failedCurrentKnowledgeCheck.correct} of {failedCurrentKnowledgeCheck.total} correct). Every outstanding answer must be correct: <strong>100% is required</strong> before this lesson and the next section unlock.</p><p className="mt-2 text-sm leading-6">Please review the lesson material above, then retry when you are ready.</p><Button className="mt-5" onClick={() => { setFailedKnowledgeCheck(null); setAnswers({}); setWrittenAnswers({}); }}>Retry knowledge check</Button></div> : supportRequired ? <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-950"><p className="font-bold">JLT team support required</p><p className="mt-1 text-sm leading-6">You have used the three available attempts for an outstanding question. A JLT team member will review your progress and reopen the question after support.</p></div> : <>
+            {pendingFeedback ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-bold">Your feedback needs acknowledgement</p><p className="mt-1 text-sm leading-6">Read the feedback below. You must acknowledge it before you can move on in this course.</p><div className="mt-4 rounded-lg border border-amber-200 bg-background p-3"><p className="text-sm font-semibold">Assessment outcome: {pendingFeedback.score}% — {pendingFeedback.passed ? `passed the ${selectedLesson.assessmentPassMark}% overall standard` : `below the ${selectedLesson.assessmentPassMark}% overall standard`}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{pendingFeedback.graderFeedback}</p></div><div className="mt-4 space-y-3">{selectedLesson.questions.filter((question) => question.questionType === "free_text").map((question, index) => { const response = pendingFeedback.responses.find((item) => item.questionId === question.id); const needsResit = !pendingFeedback.passed && (response?.score ?? 0) < selectedLesson.assessmentPassMark; return <div key={question.id} className={`rounded-lg border p-3 ${needsResit ? "border-amber-300 bg-amber-50/45" : "border-emerald-200 bg-emerald-50/35"}`}><div><p className="font-semibold">Written question {index + 1}</p><AcademyStructuredQuestion text={question.prompt} className="mt-2 text-sm" /></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">Your answer: {response?.responseText || "—"}</p><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Score: {response?.score ?? 0}%</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${needsResit ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>{needsResit ? "Needs attention — resubmit this answer" : "Passed — no resubmission"}</span></div><p className="mt-1 whitespace-pre-wrap text-sm leading-6">{response?.feedback || "No question-level feedback was recorded."}</p></div>; })}</div><Button className="mt-5" disabled={acknowledgeAssessmentFeedback.isPending} onClick={() => { if (!writesAllowed.current || accessDenial.current) return; acknowledgeAssessmentFeedback.mutate({ attemptId: pendingFeedback.id }); }}>{acknowledgeAssessmentFeedback.isPending ? "Recording acknowledgement..." : "I have read and acknowledge this feedback"}</Button></div> : awaitingMarking ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-bold">Written response submitted for marking</p><p className="mt-1 text-sm leading-6">A JLT team member will review your response and send feedback here. You cannot continue to the next lesson until you have read and acknowledged that feedback.</p></div> : failedCurrentKnowledgeCheck ? <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-5 text-amber-950"><p className="font-bold">Knowledge check not passed yet</p><p className="mt-2 text-sm leading-6">You scored <strong>{failedCurrentKnowledgeCheck.score}%</strong> ({failedCurrentKnowledgeCheck.correct} of {failedCurrentKnowledgeCheck.total} correct). Every outstanding answer must be correct: <strong>100% is required</strong> before this lesson and the next section unlock.</p><p className="mt-2 text-sm leading-6">Please review the lesson material above, then retry when you are ready.</p><Button className="mt-5" onClick={() => { setFailedKnowledgeCheck(null); setAnswers({}); setWrittenAnswers({}); }}>Retry knowledge check</Button></div> : supportRequired ? <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-950"><p className="font-bold">JLT team support required</p><p className="mt-1 text-sm leading-6">You have used the three available attempts for an outstanding question. A JLT team member will review your progress and reopen the question after support.</p></div> : <>
               {passedQuestionCount > 0 && <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><span className="font-semibold">{passedQuestionCount} {passedQuestionCount === 1 ? "question is" : "questions are"} already complete.</span> Only the outstanding {outstandingQuestions.length === 1 ? "question is" : "questions are"} shown below.</div>}
-              <div className="mt-5 space-y-5">{outstandingQuestions.map((question, index) => <fieldset key={question.id} className="rounded-xl border bg-background p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><span className="mt-0.5 shrink-0 text-sm font-semibold text-muted-foreground">{index + 1}.</span><AcademyStructuredQuestion text={question.prompt} className="text-sm font-medium" /></div></div><span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">Attempt {question.resit.attemptCount + 1} of 3</span></div>{question.questionType === "free_text" ? <div className="mt-2"><Textarea aria-label={`Answer for question ${index + 1}`} aria-describedby={`academy-answer-${question.id}-hint`} value={writtenAnswers[question.id] ?? ""} rows={6} placeholder={question.allowPaste === true ? "Type or paste your answer here. Pasting allowed." : "Type your answer here. Pasting is disabled for written questions."} onFocus={() => setIsWorkingOnKnowledgeCheck(true)} onPaste={(event) => { if (question.allowPaste !== true) { event.preventDefault(); toast.error("Pasting is disabled for written Academy answers."); } }} onDrop={(event) => { event.preventDefault(); toast.error("Dropping text is disabled for written Academy answers."); }} onChange={(event) => { setIsWorkingOnKnowledgeCheck(true); const next = event.target.value; if (countWords(next) > question.maxWords) { toast.error(`This answer is limited to ${question.maxWords} words.`); return; } setWrittenAnswers((current) => ({ ...current, [question.id]: next })); }} /><p id={`academy-answer-${question.id}-hint`} className="mt-1 text-right text-xs text-muted-foreground">{countWords(writtenAnswers[question.id] ?? "")} / {question.maxWords} words · {question.allowPaste === true ? "Pasting allowed" : "Paste disabled"}</p></div> : <div className="mt-2 space-y-2">{question.answerOptions.map((option, optionIndex) => <label key={`${question.id}-${optionIndex}`} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition ${answers[question.id] === optionIndex ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/50"}`}><input type="radio" className="mt-0.5" name={`question-${question.id}`} checked={answers[question.id] === optionIndex} onChange={() => { setIsWorkingOnKnowledgeCheck(true); setAnswers((current) => ({ ...current, [question.id]: optionIndex })); }} /><span>{option}</span></label>)}</div>}</fieldset>)}</div>{outstandingQuestions.length ? <Button className="mt-6" disabled={!hasAnsweredAll || (!isPreview && submitAssessment.isPending)} onClick={() => { setIsWorkingOnKnowledgeCheck(true); if (isPreview) { toast.info("Preview only — no assessment answer or learning record was created."); return; } submitAssessment.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, answers: outstandingQuestions.map((question) => question.questionType === "free_text" ? ({ questionId: question.id, responseText: writtenAnswers[question.id] }) : ({ questionId: question.id, selectedIndex: answers[question.id] })) }); }}>{isPreview ? "Preview submission (not recorded)" : submitAssessment.isPending ? "Submitting..." : outstandingQuestions.some((question) => question.questionType === "free_text") ? "Submit outstanding answers for marking" : "Submit outstanding questions"}</Button> : <div className="mt-5 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">All questions in this knowledge check have been passed.</div>}</>}
+              <div className="mt-5 space-y-5">{outstandingQuestions.map((question, index) => <fieldset key={question.id} className="rounded-xl border bg-background p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><span className="mt-0.5 shrink-0 text-sm font-semibold text-muted-foreground">{index + 1}.</span><AcademyStructuredQuestion text={question.prompt} className="text-sm font-medium" /></div></div><span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">Attempt {question.resit.attemptCount + 1} of 3</span></div>{question.questionType === "free_text" ? <div className="mt-2"><Textarea aria-label={`Answer for question ${index + 1}`} aria-describedby={`academy-answer-${question.id}-hint`} value={writtenAnswers[question.id] ?? ""} rows={6} placeholder={question.allowPaste === true ? "Type or paste your answer here. Pasting allowed." : "Type your answer here. Pasting is disabled for written questions."} onFocus={() => setIsWorkingOnKnowledgeCheck(true)} onPaste={(event) => { if (question.allowPaste !== true) { event.preventDefault(); toast.error("Pasting is disabled for written Academy answers."); } }} onDrop={(event) => { event.preventDefault(); toast.error("Dropping text is disabled for written Academy answers."); }} onChange={(event) => { setIsWorkingOnKnowledgeCheck(true); const next = event.target.value; if (countWords(next) > question.maxWords) { toast.error(`This answer is limited to ${question.maxWords} words.`); return; } setWrittenAnswers((current) => ({ ...current, [question.id]: next })); }} /><p id={`academy-answer-${question.id}-hint`} className="mt-1 text-right text-xs text-muted-foreground">{countWords(writtenAnswers[question.id] ?? "")} / {question.maxWords} words · {question.allowPaste === true ? "Pasting allowed" : "Paste disabled"}</p></div> : <div className="mt-2 space-y-2">{question.answerOptions.map((option, optionIndex) => <label key={`${question.id}-${optionIndex}`} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition ${answers[question.id] === optionIndex ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/50"}`}><input type="radio" className="mt-0.5" name={`question-${question.id}`} checked={answers[question.id] === optionIndex} onChange={() => { setIsWorkingOnKnowledgeCheck(true); setAnswers((current) => ({ ...current, [question.id]: optionIndex })); }} /><span>{option}</span></label>)}</div>}</fieldset>)}</div>{outstandingQuestions.length ? <Button className="mt-6" disabled={!hasAnsweredAll || (!isPreview && submitAssessment.isPending)} onClick={() => { setIsWorkingOnKnowledgeCheck(true); if (isPreview) { toast.info("Preview only — no assessment answer or learning record was created."); return; } if (!writesAllowed.current || accessDenial.current) return; submitAssessment.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id, answers: outstandingQuestions.map((question) => question.questionType === "free_text" ? ({ questionId: question.id, responseText: writtenAnswers[question.id] }) : ({ questionId: question.id, selectedIndex: answers[question.id] })) }); }}>{isPreview ? "Preview submission (not recorded)" : submitAssessment.isPending ? "Submitting..." : outstandingQuestions.some((question) => question.questionType === "free_text") ? "Submit outstanding answers for marking" : "Submit outstanding questions"}</Button> : <div className="mt-5 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">All questions in this knowledge check have been passed.</div>}</>}
           </section>}
 
-          {!selectedLesson.progress?.completedAt && !selectedLesson.requiresAssessment && <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6"><p className="text-sm text-muted-foreground">{selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.acknowledgedAt ? "Acknowledge this lesson above before marking it complete." : "When you are ready, save this lesson as complete."}</p><Button disabled={!canComplete || (!isPreview && completeLesson.isPending)} onClick={() => { if (isPreview) { toast.info("Preview only — no lesson completion or Academy progress was recorded."); return; } completeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{isPreview ? "Preview completion (not recorded)" : completeLesson.isPending ? "Saving..." : "Complete lesson"}</Button></div>}
-          {selectedLesson.progress?.completedAt && nextUnlockedLesson && <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6"><div><p className="font-semibold">Ready to continue?</p><p className="mt-1 text-sm text-muted-foreground">Next: {nextUnlockedLesson.title}</p></div><Button onClick={() => chooseLesson(nextUnlockedLesson.id, { scrollToTop: true })}>Next lesson <ArrowRight className="ml-2" size={17} /></Button></div>}
+          {!isFirstClassRecap && !selectedLesson.progress?.completedAt && !selectedLesson.requiresAssessment && <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6"><p className="text-sm text-muted-foreground">{selectedLesson.requiresAcknowledgement && !selectedLesson.progress?.acknowledgedAt ? "Acknowledge this lesson above before marking it complete." : "When you are ready, save this lesson as complete."}</p><Button disabled={!canComplete || (!isPreview && completeLesson.isPending)} onClick={() => { if (isPreview) { toast.info("Preview only — no lesson completion or Academy progress was recorded."); return; } if (!writesAllowed.current || accessDenial.current) return; completeLesson.mutate({ enrollmentId: numericEnrollmentId, lessonId: selectedLesson.id }); }}><ShieldCheck className="mr-2" size={17} />{isPreview ? "Preview completion (not recorded)" : completeLesson.isPending ? "Saving..." : "Complete lesson"}</Button></div>}
+          {(isFirstClassRecap || selectedLesson.progress?.completedAt) && nextUnlockedLesson && <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6"><div><p className="font-semibold">Ready to continue?</p><p className="mt-1 text-sm text-muted-foreground">Next: {nextUnlockedLesson.title}</p></div><Button onClick={() => chooseLesson(nextUnlockedLesson.id, { scrollToTop: true })}>Next lesson <ArrowRight className="ml-2" size={17} /></Button></div>}
           {data.progress.isComplete && <div className="mt-8 flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-900"><Trophy size={22} className="text-emerald-600" /><div><p className="font-bold">Course complete</p><p className="text-sm text-emerald-800">Your completion has been recorded in your Academy learning history.</p></div></div>}
         </main>
       </div>

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Express } from "express";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { storageGetDecrypted } from "./storage";
@@ -8,14 +8,13 @@ import { TRPCError } from "@trpc/server";
 import { assertNotSelfReview, isFullAdmin, requireInstructorCourse } from "./staff-access";
 import { getBusinessStaffAuthority } from "./business-staff-access";
 import { isAcademyPdfResource } from "../shared/academy-pdf";
-import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { isAcceleratorWeekAvailable } from "./academy-journey";
+import { requireAcademyLearnerResourceAccess } from "./academy-first-class-access";
 import {
   academyAccess,
   academyAssessmentAttempts,
   academyCourses,
   academyEnrollments,
-  academyLessonProgress,
   academyLessons,
   academyModules,
   staffAcademyUploads,
@@ -102,9 +101,12 @@ export function isMissingAcademyPdfColumn(error: unknown): boolean {
 export function registerAcademyDocumentDownloadRoutes(app: Express) {
   app.get("/api/academy/assessment-document/:token", async (req, res) => {
     try {
+      // Authorization encloses token/session, grants, course and file binding;
+      // rerun it after storage so a previously minted token is not an entitlement.
+      const authorize = async () => {
       const payload = parseToken(String(req.params.token ?? ""));
       const user = await sdk.authenticateRequest(req).catch(() => null);
-      if (!payload || !user || ["cancelled", "paused", "suspended"].includes(String((user as any).portalStatus))) {
+      if (!payload || !user || !user.isActive || ["cancelled", "paused", "suspended"].includes(String((user as any).portalStatus))) {
         res.status(404).end();
         return;
       }
@@ -154,6 +156,7 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
           res.status(404).end();
           return;
         }
+        await requireAcademyLearnerResourceAccess(user.id, enrollmentRow.enrollment.id, enrollmentRow.lesson.id);
       }
       if (payload.scope === "staff") {
         await requireInstructorCourse(user, enrollmentRow.enrollment.courseId);
@@ -206,11 +209,18 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
         res.status(404).end();
         return;
       }
-      const body = await storageGetDecrypted(key);
+      return { key, name, mimeType, userId: user.id };
+      };
+      const resource = await authorize();
+      if (!resource) return;
+      const body = await storageGetDecrypted(resource.key);
+      const refreshed = await authorize();
+      if (!refreshed) return;
+      if (refreshed.key !== resource.key || refreshed.userId !== resource.userId) { res.status(404).end(); return; }
       res.set({
         "Cache-Control": "private, no-store, max-age=0",
-        "Content-Type": mimeType || "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${safeDownloadName(name, "academy-assessment-document")}"`,
+        "Content-Type": refreshed.mimeType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${safeDownloadName(refreshed.name, "academy-assessment-document")}"`,
         "X-Content-Type-Options": "nosniff",
       });
       res.status(200).send(body);
@@ -263,18 +273,10 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
           if (row.course.status !== "published") return null;
           const [enrollment] = await db.select({ id: academyEnrollments.id, journeyStartedAt: academyEnrollments.journeyStartedAt }).from(academyEnrollments)
             .innerJoin(academyAccess, and(eq(academyAccess.agentId, academyEnrollments.agentId), eq(academyAccess.status, "active")))
-            .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId), inArray(academyEnrollments.status, ["assigned", "in_progress", "completed"]))).limit(1);
+            .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId), inArray(academyEnrollments.status, ["assigned", "in_progress", "completed", "waived"]))).limit(1);
           if (!enrollment || (row.course.isAcceleratorJourney && !isAcceleratorWeekAvailable(enrollment.journeyStartedAt, row.module.releaseWeek))) return null;
-          const modules = await db.select({ id: academyModules.id }).from(academyModules)
-            .where(eq(academyModules.courseId, upload.courseId)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id));
-          const lessons = await db.select({ id: academyLessons.id, moduleId: academyLessons.moduleId, isRequired: academyLessons.isRequired }).from(academyLessons)
-            .where(and(inArray(academyLessons.moduleId, modules.map(item => item.id)), isNull(academyLessons.archivedAt)))
-            .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
-          const progress = await db.select({ lessonId: academyLessonProgress.lessonId, completedAt: academyLessonProgress.completedAt }).from(academyLessonProgress)
-            .where(eq(academyLessonProgress.enrollmentId, enrollment.id));
-          const completed = new Set(progress.filter(item => !!item.completedAt).map(item => item.lessonId));
-          const path = buildAcademyLearningPath(modules.flatMap(module => lessons.filter(item => item.moduleId === module.id)).map(item => ({ id: item.id, isRequired: item.isRequired, completed: completed.has(item.id) })));
-          return path.lockedLessonIds.has(lessonId) ? null : { ...row.lesson, userId: user.id };
+          await requireAcademyLearnerResourceAccess(user.id, enrollment.id, lessonId);
+          return { ...row.lesson, userId: user.id };
         };
         const lesson = await authorize();
         if (!lesson) { res.status(404).end(); return; }
@@ -293,6 +295,7 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
         res.status(200).send(body);
         return;
       }
+      const authorize = async () => {
       const user = await sdk.authenticateRequest(req).catch(() => null);
       if (!user || !user.isActive || ["cancelled", "paused", "suspended"].includes(String(user.portalStatus))) {
         res.status(404).end(); return;
@@ -317,11 +320,34 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
         .innerJoin(academyAccess, and(eq(academyAccess.agentId, academyEnrollments.agentId), eq(academyAccess.status, "active")))
         .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId))).limit(1) : [];
       if (businessAuthority.managed && !learner) { res.status(404).end(); return; }
-      if (!learner) await requireInstructorCourse(user, upload.courseId);
-      const body = await storageGetDecrypted(key);
+      if (learner && !isFullAdmin(user)) {
+        // Reused resources are visible only if at least one active owning lesson
+        // is released and unlocked. A locked first reference cannot grant access.
+        let permitted = false;
+        for (const candidate of lessons.filter(item => item.archivedAt == null)) {
+          try { await requireAcademyLearnerResourceAccess(user.id, learner.id, candidate.id); permitted = true; break; }
+          catch (error) {
+            if (!(error instanceof TRPCError) || !["FORBIDDEN", "NOT_FOUND", "UNAUTHORIZED"].includes(error.code)) throw error;
+          }
+        }
+        if (!permitted) {
+          // An assigned instructor can legitimately preview separately from
+          // their personal learner membership, but never through employee links.
+          if (businessAuthority.managed) { res.status(404).end(); return; }
+          await requireInstructorCourse(user, upload.courseId);
+        }
+      } else await requireInstructorCourse(user, upload.courseId);
+      return { key, lesson, userId: user.id };
+      };
+      const resource = await authorize();
+      if (!resource) return;
+      const body = await storageGetDecrypted(resource.key);
+      const refreshed = await authorize();
+      if (!refreshed) return;
+      if (refreshed.key !== resource.key || refreshed.userId !== resource.userId) { res.status(404).end(); return; }
       res.set({
         "Cache-Control": "private, no-store, max-age=0", "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${safeDownloadName(lesson?.attachmentName, "academy-resource")}"`,
+        "Content-Disposition": `attachment; filename="${safeDownloadName(refreshed.lesson?.attachmentName, "academy-resource")}"`,
         "X-Content-Type-Options": "nosniff",
       });
       res.status(200).send(body);

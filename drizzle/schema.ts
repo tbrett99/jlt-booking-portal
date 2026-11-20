@@ -1634,6 +1634,8 @@ export const academyCourses = mysqlTable("academy_courses", {
   // the Accelerator stage. Its introduction is immediate and later modules
   // release on the learner's own Friday calendar.
   isAcceleratorJourney: boolean("isAcceleratorJourney").default(false).notNull(),
+  // First Class modules release weekly from this learner's enrolledAt anchor.
+  isFirstClassTraining: boolean("isFirstClassTraining").default(false).notNull(),
   estimatedMinutes: int("estimatedMinutes").default(0).notNull(),
   createdById: int("createdById").notNull(),
   updatedById: int("updatedById").notNull(),

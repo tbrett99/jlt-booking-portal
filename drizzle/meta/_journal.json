@@ -1296,6 +1296,13 @@
       "when": 1795190553832,
       "tag": "0184_sparkling_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "5",
+      "when": 1795196711761,
+      "tag": "0185_famous_rictor",
+      "breakpoints": true
     }
   ]
 }

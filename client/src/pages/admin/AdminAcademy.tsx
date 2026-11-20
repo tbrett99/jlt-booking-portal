@@ -59,6 +59,7 @@ const emptyCourse = {
   estimatedMinutes: 0,
   isCoreAcademy: false,
   isAcceleratorJourney: false,
+  isFirstClassTraining: false,
 };
 type DraftQuestion = {
   id?: number;
@@ -443,6 +444,7 @@ export default function AdminAcademy() {
       estimatedMinutes: editor.course.estimatedMinutes ?? 0,
       isCoreAcademy: editor.course.isCoreAcademy,
       isAcceleratorJourney: editor.course.isAcceleratorJourney,
+      isFirstClassTraining: editor.course.isFirstClassTraining === true,
     });
     setOpenModuleId(current =>
       current && editor.modules.some(module => module.id === current)
@@ -459,9 +461,19 @@ export default function AdminAcademy() {
     courseDraft.summary !== (editor.course.summary ?? "") ||
     Number(courseDraft.estimatedMinutes) !== Number(editor.course.estimatedMinutes ?? 0) ||
     courseDraft.isCoreAcademy !== editor.course.isCoreAcademy ||
-    courseDraft.isAcceleratorJourney !== editor.course.isAcceleratorJourney
+    courseDraft.isAcceleratorJourney !== editor.course.isAcceleratorJourney ||
+    courseDraft.isFirstClassTraining !== (editor.course.isFirstClassTraining === true)
   );
   const hasOpenDraft = Boolean(lessonModuleId || editingModuleId) || (!courseId && Boolean(courseDraft.title || courseDraft.summary)) || courseHasUnsavedChanges;
+  // Never offer Accelerator scheduling while a First Class designation is saved or being drafted.
+  const isFirstClassCourse = courseDraft.isFirstClassTraining || editor?.course.isFirstClassTraining === true;
+  const isAcceleratorCourse = editor?.course.isAcceleratorJourney && !isFirstClassCourse;
+  const orderedModules = useMemo(() => {
+    const modules = editor?.modules ?? [];
+    return isFirstClassCourse
+      ? [...modules].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+      : modules;
+  }, [editor?.modules, isFirstClassCourse]);
 
   useEffect(() => {
     if (!hasOpenDraft) return;
@@ -490,6 +502,7 @@ export default function AdminAcademy() {
     setLessonModuleId(null);
   }
   function saveCourseDraft() {
+    if (saveCourse.isPending) return;
     saveCourse.mutate({
       id: courseId ?? undefined,
       title: courseDraft.title,
@@ -497,6 +510,7 @@ export default function AdminAcademy() {
       estimatedMinutes: Number(courseDraft.estimatedMinutes) || 0,
       isCoreAcademy: courseDraft.isCoreAcademy,
       isAcceleratorJourney: courseDraft.isAcceleratorJourney,
+      isFirstClassTraining: courseDraft.isFirstClassTraining,
     });
   }
   function editModule(module: {
@@ -521,7 +535,7 @@ export default function AdminAcademy() {
       courseId: editor.course.id,
       title: editingModuleDraft.title,
       summary: editingModuleDraft.summary || null,
-      releaseWeek: editingModuleDraft.releaseWeek,
+      releaseWeek: isAcceleratorCourse ? editingModuleDraft.releaseWeek : 0,
     });
   }
   function startNewLesson(moduleId: number) {
@@ -663,6 +677,11 @@ export default function AdminAcademy() {
   }
   async function handleAttachment(file: File | undefined) {
     if (!file || lessonModuleId === null || lessonOperationBusy.current || lessonEditorPending) return;
+    const owningCourseId = editor?.course.id;
+    if (typeof owningCourseId !== "number" || !Number.isSafeInteger(owningCourseId) || owningCourseId <= 0 || owningCourseId !== courseId) {
+      toast.error("Save and select the owning course before uploading a lesson resource.");
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Attachments must be under 10 MB");
       return;
@@ -694,6 +713,7 @@ export default function AdminAcademy() {
       });
       if (session !== lessonDraftSession.current) return;
       const stored = await uploadAttachment.mutateAsync({
+        courseId: owningCourseId,
         fileName: file.name,
         fileBase64: base64,
         mimeType: mimeType as (typeof extensionMimes)[keyof typeof extensionMimes],
@@ -783,7 +803,7 @@ export default function AdminAcademy() {
   }
   function moveModule(moduleId: number, direction: -1 | 1) {
     if (!editor) return;
-    const ids = editor.modules.map(module => module.id);
+    const ids = orderedModules.map(module => module.id);
     const index = ids.indexOf(moduleId);
     const next = index + direction;
     if (next < 0 || next >= ids.length) return;
@@ -1066,6 +1086,9 @@ export default function AdminAcademy() {
                     Use the arrows to set the learning order. Nothing appears to
                     agents until the course is published.
                   </p>
+                  {isFirstClassCourse && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-950">
+                    Reordering modules changes their weekly release order for enrolled learners. Week 1 is available at enrolment, then one module every seven days.
+                  </p>}
                 </div>
                 <label className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground">
                   <Checkbox checked={showArchivedLessons} onCheckedChange={checked => setShowArchivedLessons(checked === true)} />
@@ -1084,7 +1107,7 @@ export default function AdminAcademy() {
                       value={moduleSummary}
                       onChange={e => setModuleSummary(e.target.value)}
                     />
-                    {editor.course.isAcceleratorJourney && (
+                    {isAcceleratorCourse && (
                       <select
                         aria-label="Accelerator release week"
                         className="h-10 rounded-md border bg-background px-3 text-sm"
@@ -1102,7 +1125,7 @@ export default function AdminAcademy() {
                           courseId: editor.course.id,
                           title: moduleTitle,
                           summary: moduleSummary || null,
-                          releaseWeek: editor.course.isAcceleratorJourney ? moduleReleaseWeek : 0,
+                          releaseWeek: isAcceleratorCourse ? moduleReleaseWeek : 0,
                         })
                       }
                     >
@@ -1112,7 +1135,7 @@ export default function AdminAcademy() {
                   </div>
                 </div>
                 <div className="mt-5 space-y-4">
-                  {editor.modules.map((module, index) => {
+                  {orderedModules.map((module, index) => {
                     // Keep the current draft visible while browsing another module.
                     const isOpen = openModuleId === module.id || lessonModuleId === module.id;
                     const activeLessons = module.lessons.filter(lesson => !isLessonArchived(lesson));
@@ -1150,7 +1173,8 @@ export default function AdminAcademy() {
                                 {index + 1}. {module.title}
                               </p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                {editor.course.isAcceleratorJourney && <span className="font-semibold text-violet-700">{module.releaseWeek ? `Week ${module.releaseWeek} · Friday release` : "Introduction · immediate"}</span>}
+                                {isFirstClassCourse && <span className="font-semibold text-primary">Week {index + 1}{index === 0 ? " · available at enrolment" : " · weekly release"}</span>}
+                                {isAcceleratorCourse && <span className="font-semibold text-violet-700">{module.releaseWeek ? `Week ${module.releaseWeek} · Friday release` : "Introduction · immediate"}</span>}
                                 <span>
                                   {module.summary || lessonCountLabel}
                                   {module.summary
@@ -1189,7 +1213,7 @@ export default function AdminAcademy() {
                               variant="ghost"
                               size="icon"
                               title="Move module down"
-                              disabled={index === editor.modules.length - 1}
+                              disabled={index === orderedModules.length - 1}
                               onClick={() => moveModule(module.id, 1)}
                             >
                               <ArrowDown size={16} />
@@ -1240,7 +1264,7 @@ export default function AdminAcademy() {
                                       })
                                     }
                                   />
-                                  {editor.course.isAcceleratorJourney && <select
+                                  {isAcceleratorCourse && <select
                                     aria-label="Module release week"
                                     className="h-10 rounded-md border bg-background px-3 text-sm"
                                     value={editingModuleDraft.releaseWeek}
@@ -1554,9 +1578,12 @@ function CourseSetup({
           <label className="mt-6 flex cursor-pointer items-start gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
             <Checkbox
               checked={draft.isCoreAcademy}
-              onCheckedChange={checked =>
-                setDraft({ ...draft, isCoreAcademy: checked === true })
-              }
+              aria-label="Core JLT Academy pathway"
+              disabled={isSaving}
+              onCheckedChange={checked => {
+                if (isSaving) return;
+                setDraft({ ...draft, isCoreAcademy: checked === true, ...(checked === true ? { isAcceleratorJourney: false, isFirstClassTraining: false } : {}) });
+              }}
             />
             <span>
               <span className="font-semibold">
@@ -1571,9 +1598,12 @@ function CourseSetup({
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3 text-sm">
             <Checkbox
               checked={draft.isAcceleratorJourney}
-              onCheckedChange={checked =>
-                setDraft({ ...draft, isAcceleratorJourney: checked === true })
-              }
+              aria-label="Agent Accelerator journey"
+              disabled={isSaving}
+              onCheckedChange={checked => {
+                if (isSaving) return;
+                setDraft({ ...draft, isAcceleratorJourney: checked === true, ...(checked === true ? { isCoreAcademy: false, isFirstClassTraining: false } : {}) });
+              }}
             />
             <span>
               <span className="font-semibold">Agent Accelerator: eight-week Friday journey</span>
@@ -1582,6 +1612,25 @@ function CourseSetup({
               </span>
             </span>
           </label>
+          <div className="flex items-start justify-between gap-4 rounded-lg border bg-muted/20 p-3 text-sm">
+            <div>
+              <Label htmlFor="academy-first-class-training" className="font-semibold">First Class training</Label>
+              <p id="academy-first-class-training-description" className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                First Class members only. First module available at enrolment, then one module every seven days.
+              </p>
+            </div>
+            <Switch
+              id="academy-first-class-training"
+              aria-label="First Class training"
+              aria-describedby="academy-first-class-training-description"
+              checked={draft.isFirstClassTraining}
+              disabled={isSaving}
+              onCheckedChange={checked => {
+                if (isSaving) return;
+                setDraft({ ...draft, isFirstClassTraining: checked, ...(checked ? { isCoreAcademy: false, isAcceleratorJourney: false } : {}) });
+              }}
+            />
+          </div>
         </div>
       </div>
       <div className="mt-5 flex justify-end">

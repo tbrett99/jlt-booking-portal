@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   db: null as any, grants: [] as number[], raw: vi.fn(), encrypted: vi.fn(), publicPut: vi.fn(),
   directEmail: vi.fn(), supportEmail: vi.fn(), alerts: vi.fn(), supportConfigured: vi.fn(),
   notify: vi.fn(), external: vi.fn(), operation: vi.fn(),
+  authenticate: vi.fn(),
 }));
 vi.mock("./db", () => ({ getDb: async () => state.db, getRawDbPool: async () => ({ execute: state.raw }), createInAppNotification: state.notify, getUpcomingAgentEvents: vi.fn() }));
 vi.mock("./storage", () => ({ storagePut: state.publicPut, storagePutEncrypted: state.encrypted, storageGetDecrypted: vi.fn() }));
@@ -13,6 +14,7 @@ vi.mock("./email", () => ({ sendDirectEmail: state.directEmail, sendSupportEmail
 vi.mock("./agent-development-router", () => ({ assignAcceleratorEntryActions: vi.fn(), releaseAvailableJourneyActions: vi.fn() }));
 vi.mock("./academy-email-alerts", () => ({ ACADEMY_ALERT_EVENTS: ["written_assessment_ready"], academyAlertAllowsModuleScope: vi.fn(), academyAlertTemplateHint: vi.fn(), dispatchAcademyEmailAlerts: state.alerts, hasActiveAcademySupportAlert: state.supportConfigured }));
 vi.mock("./business-staff-access", () => ({ getBusinessStaffAuthority: async () => ({ managed: false }), assertBusinessStaffRouteAllowed: vi.fn() }));
+vi.mock("./_core/sdk", () => ({ sdk: { authenticateRequest: state.authenticate } }));
 vi.mock("./staff-access", () => ({
   isFullAdmin: (user: any) => ["admin", "super_admin"].includes(user.role),
   getInstructorCourseIds: async (user: any) => ["admin", "super_admin"].includes(user.role) ? null : state.grants,
@@ -60,6 +62,7 @@ function evidence(kind: "progress" | "attempt" | "both" = "both") {
 beforeEach(() => {
   vi.clearAllMocks(); state.grants = [];
   vi.stubEnv("JWT_SECRET", "offline-upload-only-test-secret");
+  state.authenticate.mockReset().mockResolvedValue(learner);
   state.external.mockImplementation(() => { throw new Error("Network prohibited in upload-only tests"); }); vi.stubGlobal("fetch", state.external);
   state.encrypted.mockReset().mockImplementation(async (key: string) => ({ key }));
   state.publicPut.mockReset().mockImplementation(() => { throw new Error("Public assessment storage prohibited"); });

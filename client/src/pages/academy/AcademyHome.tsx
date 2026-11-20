@@ -3,6 +3,36 @@ import { BookOpenCheck, CalendarDays, CheckCircle2, Clock3, GraduationCap, LockK
 import { trpc } from "@/lib/trpc";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
+type FirstClassCatalogueCourse = {
+  id: number;
+  title: string;
+  summary: string | null;
+  coverImageUrl: string | null;
+  accessState: "upgrade_required" | "not_enrolled";
+};
+
+function FirstClassCatalogue({ courses }: { courses: FirstClassCatalogueCourse[] }) {
+  if (!courses.length) return null;
+  return <section aria-label="First Class training catalogue">
+    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Explore learning</p>
+    <h2 className="mt-1 text-xl font-bold">First Class training</h2>
+    <div className="mt-3 grid gap-4 lg:grid-cols-2">
+      {courses.map(course => <article key={course.id} className="overflow-hidden rounded-2xl border bg-card text-card-foreground">
+        {course.coverImageUrl && <img src={course.coverImageUrl} alt="" loading="lazy" className="h-36 w-full object-cover" />}
+        <div className="p-5">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground"><LockKeyhole size={13} aria-hidden="true" /> First Class members only</span>
+          <h3 className="mt-3 font-semibold leading-5">{course.title}</h3>
+          {course.summary && <p className="mt-2 text-sm text-muted-foreground">{course.summary}</p>}
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{course.accessState === "upgrade_required"
+            ? "First Class training is included with First Class memberships. Contact support to upgrade."
+            : "Your First Class membership includes this training. Contact support for enrolment."}</p>
+          <a href="mailto:support@thejltgroup.co.uk" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">{course.accessState === "upgrade_required" ? "Contact support to upgrade" : "Contact support for enrolment"} <ArrowRight size={15} aria-hidden="true" /></a>
+        </div>
+      </article>)}
+    </div>
+  </section>;
+}
+
 function formatDate(value: Date | string | null | undefined) {
   if (!value) return null;
   return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -10,11 +40,18 @@ function formatDate(value: Date | string | null | undefined) {
 
 export default function AcademyHome() {
   const { isAgentView } = useViewMode();
-  const agentHome = trpc.academy.agent.home.useQuery(undefined, { enabled: !isAgentView });
+  const agentHome = trpc.academy.agent.home.useQuery(undefined, {
+    enabled: !isAgentView,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
   const previewHome = trpc.academy.agent.previewHome.useQuery(undefined, { enabled: isAgentView });
-  const data = isAgentView ? previewHome.data : agentHome.data;
   const isLoading = isAgentView ? previewHome.isLoading : agentHome.isLoading;
   const error = isAgentView ? previewHome.error : agentHome.error;
+  // Failed access refreshes must not leave cached enrolments in the learner view.
+  const data = error ? undefined : isAgentView ? previewHome.data : agentHome.data;
+  const firstClassCourses = (data as { firstClassCourses?: FirstClassCatalogueCourse[] } | undefined)?.firstClassCourses ?? [];
   const myActions = trpc.agentDevelopment.actions.mine.useQuery(undefined, { enabled: !isAgentView && !!data?.hasAccess });
   const courseHref = (courseId: number, enrollmentId: number) => isAgentView ? `/academy/preview/course/${courseId}` : `/academy/course/${enrollmentId}`;
 
@@ -27,7 +64,7 @@ export default function AcademyHome() {
 
   if (!data?.hasAccess) {
     return (
-      <div className="mx-auto max-w-3xl py-8">
+      <div className="mx-auto max-w-3xl space-y-6 py-8">
         <div className="rounded-3xl border border-border bg-card p-8 shadow-sm text-center">
           <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#70FFE8]/30 text-[#414141]"><LockKeyhole size={26} /></div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">JLT Academy</p>
@@ -35,6 +72,7 @@ export default function AcademyHome() {
           <p className="mx-auto mt-3 max-w-xl text-muted-foreground">Your Academy access is approved by the JLT team once your onboarding is complete. Once approved, your assigned pathway and learning progress will appear here.</p>
           <a href="mailto:support@thejltgroup.co.uk" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">Contact JLT Support <ArrowRight size={16} /></a>
         </div>
+        <FirstClassCatalogue courses={firstClassCourses} />
       </div>
     );
   }
@@ -82,12 +120,15 @@ export default function AcademyHome() {
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold leading-5">{item.course.title}</h3><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isAgentView && item.course.status === "draft" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{isAgentView && item.course.status === "draft" ? "Draft preview" : "Published"}</span>{item.isOverdue && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700"><AlertTriangle size={12} /> Due</span>}</div><p className="mt-1 text-sm text-muted-foreground line-clamp-2">{item.course.summary || "Your JLT learning pathway."}</p></div>
                 </div>
                 <div className="mt-5"><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium">{item.progress.completedRequiredLessons} of {item.progress.requiredLessons} required lessons</span><span className="font-bold">{item.progress.percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#00c9b4] transition-all" style={{ width: `${item.progress.percentage}%` }} /></div></div>
+                {"nextReleaseLabel" in item && typeof item.nextReleaseLabel === "string" && item.nextReleaseLabel && <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays size={13} aria-hidden="true" /> Next module available {item.nextReleaseLabel}</p>}
                 <div className="mt-4 flex items-center justify-between gap-3"><span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 size={13} /> {item.dueDate ? `Due ${formatDate(item.dueDate)}` : "No set deadline"}</span><Link href={courseHref(item.course.id, item.id)} className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Open course <ArrowRight size={15} /></Link></div>
               </article>
             ))}
           </div>
         </section>
       )}
+
+      <FirstClassCatalogue courses={firstClassCourses} />
 
       <div className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
         <section className="rounded-2xl border bg-card p-5 shadow-sm">

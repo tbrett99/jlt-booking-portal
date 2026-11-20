@@ -1,0 +1,1 @@
+ALTER TABLE `academy_courses` ADD `isFirstClassTraining` boolean DEFAULT false NOT NULL;

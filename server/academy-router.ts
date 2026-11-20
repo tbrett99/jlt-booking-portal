@@ -4,6 +4,8 @@ import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { getDb, getRawDbPool, createInAppNotification, getUpcomingAgentEvents } from "./db";
 import { sendDirectEmail, sendSupportEmail } from "./email";
+import { sdk } from "./_core/sdk";
+import { assertBusinessStaffRouteAllowed, getBusinessStaffAuthority } from "./business-staff-access";
 import { storagePut, storagePutEncrypted } from "./storage";
 import { randomUUID } from "node:crypto";
 import { assertNotSelfReview, getInstructorCourseIds, isFullAdmin, recordStaffOperation, requireInstructorCourse } from "./staff-access";
@@ -43,6 +45,8 @@ import { buildAcademyLearningPath } from "../shared/academy-learning-path";
 import { getActionableAcademyFeedbackAttempts } from "../shared/academy-feedback-state";
 import { assignAcceleratorEntryActions, releaseAvailableJourneyActions } from "./agent-development-router";
 import { ACCELERATOR_JOURNEY_WEEKS, acceleratorWeekReleaseLabel, isAcceleratorWeekAvailable } from "./academy-journey";
+import { assertExclusiveAcademyCourseDesignation, firstClassModuleRelease, isFirstClassRecap } from "../shared/academy-first-class";
+import { hasCurrentFirstClassMembership, requireFirstClassCourseMembership } from "./academy-first-class-access";
 import {
   getAcademyMigrationStageReviewCategory,
   getBulkAcademyMigrationDisposition,
@@ -93,6 +97,8 @@ const courseInput = z.object({
   coverImageUrl: z.string().trim().url().max(10_000).nullable().optional(),
   isCoreAcademy: z.boolean().default(false),
   isAcceleratorJourney: z.boolean().default(false),
+  // Older editors omit this field: preserve existing designation on updates.
+  isFirstClassTraining: z.boolean().optional(),
   estimatedMinutes: z.number().int().min(0).max(10_000).default(0),
 });
 
@@ -128,6 +134,30 @@ const lessonInput = z.object({
 function normaliseOptionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/** Validate configured teaching files without fetching, rewriting or deleting
+ * storage objects. A course flag cannot make a historical public URL private.
+ * External video embeds and public catalog/content images are not attachments. */
+async function assertFirstClassTeachingAttachment(courseId: number, resource: {
+  attachmentUrl?: string | null; attachmentKey?: string | null;
+}) {
+  const key = normaliseOptionalText(resource.attachmentKey);
+  const url = normaliseOptionalText(resource.attachmentUrl);
+  if (!key && !url) return; // Removing old resources permits designation first.
+  const invalid = () => new TRPCError({
+    code: "BAD_REQUEST",
+    message: "First Class teaching resources must use a private Academy upload for this course. Remove the old teaching resource and save the lesson, save the First Class designation, then re-upload and attach it through the private First Class upload path. Historical public URLs are not revoked or deleted by removing their lesson references.",
+  });
+  if (!key || url !== academyPrivateAttachmentUrl(key)
+    || !/^academy\/[1-9]\d*\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-[a-z0-9._-]+$/i.test(key)) throw invalid();
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [upload] = await db.select({ objectKey: staffAcademyUploads.objectKey, courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind })
+    .from(staffAcademyUploads).where(and(
+      eq(staffAcademyUploads.objectKey, key), eq(staffAcademyUploads.courseId, courseId), eq(staffAcademyUploads.kind, "attachment"),
+    )).limit(1);
+  if (!upload || upload.objectKey !== key || upload.courseId !== courseId || upload.kind !== "attachment") throw invalid();
 }
 
 /** No template is a valid upload-only assessment, not an incomplete template.
@@ -1253,6 +1283,10 @@ async function resolveEnrollmentForAgent(enrollmentId: number, agentId: number) 
   const [enrollment] = await db.select().from(academyEnrollments)
     .where(and(eq(academyEnrollments.id, enrollmentId), eq(academyEnrollments.agentId, agentId))).limit(1);
   if (!enrollment) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
+  const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+  if (!course || course.status !== "published") throw new TRPCError({ code: "NOT_FOUND", message: "Course not available" });
+  await requireFirstClassCourseMembership(course, agentId);
+  if (!["assigned", "in_progress", "completed", "waived"].includes(enrollment.status)) throw new TRPCError({ code: "NOT_FOUND", message: "Academy enrolment not found" });
   return enrollment;
 }
 
@@ -1289,8 +1323,8 @@ async function ensureFeedbackAcknowledgedBeforeLesson(enrollment: { id: number; 
 async function ensureSequentialAcademyLessonAccess(enrollment: { id: number; courseId: number }, lessonId: number) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-  const [course] = await db.select({ isAcceleratorJourney: academyCourses.isAcceleratorJourney }).from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
-  const [fullEnrollment] = await db.select({ journeyStartedAt: academyEnrollments.journeyStartedAt }).from(academyEnrollments).where(eq(academyEnrollments.id, enrollment.id)).limit(1);
+  const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
+  const [fullEnrollment] = await db.select().from(academyEnrollments).where(eq(academyEnrollments.id, enrollment.id)).limit(1);
   const { lessons, modules } = await courseStructure(enrollment.courseId);
   const target = lessons.find((lesson) => lesson.id === lessonId);
   if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
@@ -1301,6 +1335,12 @@ async function ensureSequentialAcademyLessonAccess(enrollment: { id: number; cou
       message: `This section is scheduled for ${acceleratorWeekReleaseLabel(fullEnrollment?.journeyStartedAt, targetModule.releaseWeek)}.`,
     });
   }
+  if (course?.isFirstClassTraining) {
+    if (!fullEnrollment || !targetModule) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+    await requireFirstClassCourseMembership(course, fullEnrollment.agentId);
+    const release = firstClassModuleRelease(fullEnrollment, modules, targetModule.id);
+    if (release.releaseLocked) throw new TRPCError({ code: "FORBIDDEN", message: `This section is scheduled for ${release.releaseLabel}.` });
+  }
 
   const progress = await db.select({ lessonId: academyLessonProgress.lessonId, completedAt: academyLessonProgress.completedAt })
     .from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
@@ -1310,14 +1350,14 @@ async function ensureSequentialAcademyLessonAccess(enrollment: { id: number; cou
     isRequired: lesson.isRequired,
     completed: completedLessonIds.has(lesson.id),
   })));
-  if (path.lockedLessonIds.has(lessonId)) {
+  if (!isFirstClassRecap(course ?? {}, fullEnrollment ?? {}) && path.lockedLessonIds.has(lessonId)) {
     const blockingLesson = lessons.find((lesson) => lesson.id === path.currentRequiredLessonId);
     throw new TRPCError({
       code: "FORBIDDEN",
       message: `Complete ${blockingLesson?.title ?? "the current lesson"} before continuing.`,
     });
   }
-  return { lessons, target, progress, path };
+  return { lessons, target, progress, path, recap: isFirstClassRecap(course ?? {}, fullEnrollment ?? {}) };
 }
 
 async function recalculateCompletion(enrollmentId: number, actorId: number) {
@@ -1388,14 +1428,21 @@ export const academyRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [access] = await db.select().from(academyAccess).where(eq(academyAccess.agentId, ctx.user.id)).limit(1);
       const hasAccess = access?.status === "active";
-      if (!hasAccess) return { hasAccess: false, access, enrolments: [], upcomingSessions: [] };
+      if (!hasAccess) return { hasAccess: false, access, enrolments: [], upcomingSessions: [], firstClassCourses: [] };
 
-      const enrollments = await db.select({ enrollment: academyEnrollments, course: academyCourses })
+      const allEnrollments = await db.select({ enrollment: academyEnrollments, course: academyCourses })
         .from(academyEnrollments).innerJoin(academyCourses, eq(academyCourses.id, academyEnrollments.courseId))
         .where(and(eq(academyEnrollments.agentId, ctx.user.id), eq(academyCourses.status, "published"))).orderBy(asc(academyEnrollments.dueDate), desc(academyEnrollments.enrolledAt));
+      const publishedFirstClassCourses = await db.select({ id: academyCourses.id, title: academyCourses.title, summary: academyCourses.summary, coverImageUrl: academyCourses.coverImageUrl }).from(academyCourses)
+        .where(and(eq(academyCourses.status, "published"), eq(academyCourses.isFirstClassTraining, true))).orderBy(asc(academyCourses.title), asc(academyCourses.id));
+      const firstClassMember = publishedFirstClassCourses.length || allEnrollments.some(row => row.course.isFirstClassTraining) ? await hasCurrentFirstClassMembership(ctx.user.id) : false;
+      const enrollments = allEnrollments.filter(row => !row.course.isFirstClassTraining || firstClassMember);
+      const firstClassCourses = publishedFirstClassCourses.filter(course => !firstClassMember || !allEnrollments.some(row => row.course.id === course.id)).map(course => ({
+        ...course, accessState: firstClassMember ? "not_enrolled" as const : "upgrade_required" as const,
+      }));
       const enrollmentIds = enrollments.map((row) => row.enrollment.id);
       const courseIds = enrollments.map((row) => row.course.id);
-      const modules = courseIds.length ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)).orderBy(asc(academyModules.sortOrder)) : [];
+      const modules = courseIds.length ? await db.select().from(academyModules).where(inArray(academyModules.courseId, courseIds)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id)) : [];
       const moduleIds = modules.map((module) => module.id);
       const lessons = await getAcademyLessonsForModules(moduleIds);
       const progress = enrollmentIds.length ? await db.select().from(academyLessonProgress).where(inArray(academyLessonProgress.enrollmentId, enrollmentIds)) : [];
@@ -1406,17 +1453,20 @@ export const academyRouter = router({
         hasAccess: true,
         access,
         upcomingSessions,
+        firstClassCourses,
         enrolments: enrollments.map(({ enrollment, course }) => {
           const courseModules = modules.filter((module) => module.courseId === course.id);
-          const courseLessons = lessons.filter((lesson) => courseModules.some((module) => module.id === lesson.moduleId));
+          const courseLessons = courseModules.flatMap(module => lessons.filter(lesson => lesson.moduleId === module.id));
           const courseProgress = progress.filter((item) => item.enrollmentId === enrollment.id);
           const progressSummary = summariseAcademyProgress(courseLessons.filter((lesson) => lesson.isRequired).map((lesson) => lesson.id), courseProgress.filter((item) => item.completedAt).map((item) => item.lessonId));
           const nextLesson = courseLessons.find((lesson) => lesson.isRequired && !courseProgress.some((item) => item.lessonId === lesson.id && item.completedAt)) ?? null;
+          const nextRelease = course.isFirstClassTraining && nextLesson ? firstClassModuleRelease(enrollment, courseModules, nextLesson.moduleId, now) : null;
           return {
             ...enrollment,
             course,
             progress: progressSummary,
-            nextLesson: nextLesson ? { id: nextLesson.id, title: nextLesson.title } : null,
+            nextLesson: nextLesson && !nextRelease?.releaseLocked ? { id: nextLesson.id, title: nextLesson.title } : null,
+            nextReleaseLabel: nextRelease?.releaseLocked ? nextRelease.releaseLabel : null,
             isOverdue: !!enrollment.dueDate && enrollment.status !== "completed" && enrollment.status !== "waived" && enrollment.dueDate < now,
           };
         }),
@@ -1449,6 +1499,7 @@ export const academyRouter = router({
         isPreview: true,
         access: null,
         upcomingSessions,
+        firstClassCourses: [],
         enrolments: courses.map((course) => {
           const courseModules = modules.filter((module) => module.courseId === course.id);
           const courseLessons = lessons.filter((lesson) => courseModules.some((module) => module.id === lesson.moduleId));
@@ -1477,6 +1528,7 @@ export const academyRouter = router({
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, enrollment.courseId)).limit(1);
       if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
       if (course.status !== "published") throw new TRPCError({ code: "NOT_FOUND", message: "Course not available" });
+      await requireFirstClassCourseMembership(course, ctx.user.id);
       if (course.isAcceleratorJourney) await releaseAvailableJourneyActions();
       const structure = await courseStructure(course.id);
       const progress = await db.select().from(academyLessonProgress).where(eq(academyLessonProgress.enrollmentId, enrollment.id));
@@ -1502,12 +1554,14 @@ export const academyRouter = router({
         course,
         progress: summary,
         modules: structure.modules.map((module) => {
-          const releaseLocked = course.isAcceleratorJourney && !isAcceleratorWeekAvailable(enrollment.journeyStartedAt, module.releaseWeek);
-          const releaseLabel = course.isAcceleratorJourney ? acceleratorWeekReleaseLabel(enrollment.journeyStartedAt, module.releaseWeek) : null;
+          const firstClassRelease = course.isFirstClassTraining ? firstClassModuleRelease(enrollment, structure.modules, module.id) : null;
+          const releaseLocked = firstClassRelease ? firstClassRelease.releaseLocked : course.isAcceleratorJourney && !isAcceleratorWeekAvailable(enrollment.journeyStartedAt, module.releaseWeek);
+          const releaseLabel = firstClassRelease ? firstClassRelease.releaseLabel : course.isAcceleratorJourney ? acceleratorWeekReleaseLabel(enrollment.journeyStartedAt, module.releaseWeek) : null;
           return {
           ...module,
           releaseLocked,
           releaseLabel,
+          releaseAt: firstClassRelease?.releaseAt ?? null,
           lessons: module.lessons.map((lesson) => {
             // The transcript is private staff source material. Do not leak it
             // to agent browsers before chatbot knowledge controls are added.
@@ -1516,7 +1570,7 @@ export const academyRouter = router({
               assessmentTemplateKey: _assessmentTemplateKey,
               ...agentLesson
             } = lesson;
-            const locked = releaseLocked || learningPath.lockedLessonIds.has(lesson.id);
+            const locked = releaseLocked || (!isFirstClassRecap(course, enrollment) && learningPath.lockedLessonIds.has(lesson.id));
             return {
               ...agentLesson,
               summary: locked ? (releaseLocked ? `Available ${releaseLabel}.` : "Complete the current lesson to unlock this section.") : agentLesson.summary,
@@ -1579,6 +1633,7 @@ export const academyRouter = router({
           ...module,
           releaseLocked: false,
           releaseLabel: null,
+          releaseAt: null,
           lessons: module.lessons.map((lesson) => {
             const {
               videoTranscript: _videoTranscript,
@@ -1615,7 +1670,8 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        if (recap) return { success: true };
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, input.lessonId);
         const [existing] = await db.select().from(academyLessonProgress)
           .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
@@ -1637,7 +1693,8 @@ export const academyRouter = router({
       const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      const { recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      if (recap) return { creditedSeconds: 0 };
       await ensureFeedbackAcknowledgedBeforeLesson(enrollment, input.lessonId);
       const [existing] = await db.select().from(academyLessonProgress)
         .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, input.lessonId))).limit(1);
@@ -1676,7 +1733,8 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        if (recap) throw new TRPCError({ code: "BAD_REQUEST", message: "Your completed course is available as a read-only recap" });
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         if (!lesson.requiresAcknowledgement) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not require acknowledgement" });
         const [existing] = await db.select().from(academyLessonProgress)
@@ -1695,7 +1753,8 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        if (recap) return { success: true };
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
         if (lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "Pass the knowledge check before completing this lesson" });
         const [existing] = await db.select().from(academyLessonProgress)
@@ -1724,8 +1783,8 @@ export const academyRouter = router({
       origin: z.string().url().max(2_000),
     })).mutation(async ({ ctx, input }) => {
       const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
-      const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
-      await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
+      const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      if (!recap) await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
       if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload" || !lesson.assessmentTemplateKey) {
         throw new TRPCError({ code: "NOT_FOUND", message: "This lesson does not have a document assessment template" });
       }
@@ -1752,7 +1811,8 @@ export const academyRouter = router({
       const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+      if (recap) throw new TRPCError({ code: "BAD_REQUEST", message: "Your completed course is available as a read-only recap" });
       await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
       if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson is not ready for a document assessment submission" });
@@ -1781,6 +1841,19 @@ export const academyRouter = router({
         academyDocumentObjectKey("submissions", [enrollment.id, lesson.id], document.name),
         bytes,
       );
+      // Storage is an await boundary: reauthenticate the same author/session
+      // and current employee grant before any attempt, audit or alert writes.
+      const freshUser = await sdk.authenticateRequest(ctx.req).catch(() => null);
+      if (!freshUser || freshUser.id !== ctx.user.id || freshUser.role !== ctx.user.role
+        || freshUser.isActive !== true || ["cancelled", "paused", "suspended"].includes(String(freshUser.portalStatus))) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Your account or session is no longer authorized. Sign in again before submitting the assessment." });
+      }
+      const freshAuthority = await getBusinessStaffAuthority(freshUser);
+      await assertBusinessStaffRouteAllowed(freshUser, "academy.agent.submitDocumentAssessment", freshAuthority);
+      // A downgrade or unpublish during upload must not create a new attempt.
+      await resolveEnrollmentForAgent(enrollment.id, ctx.user.id);
+      const refreshedAccess = await ensureSequentialAcademyLessonAccess(enrollment, lesson.id);
+      if (refreshedAccess.recap) throw new TRPCError({ code: "BAD_REQUEST", message: "Your completed course is available as a read-only recap" });
       const now = new Date();
       const pool = await getRawDbPool();
       if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -1849,7 +1922,8 @@ export const academyRouter = router({
         const enrollment = await resolveEnrollmentForAgent(input.enrollmentId, ctx.user.id);
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-        const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        const { target: lesson, recap } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
+        if (recap) throw new TRPCError({ code: "BAD_REQUEST", message: "Your completed course is available as a read-only recap" });
         if (!lesson.requiresAssessment) throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson does not have an assessment" });
         if (lesson.assessmentMode === "document_upload") throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the completed document for this assessment instead" });
         await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
@@ -2034,6 +2108,9 @@ export const academyRouter = router({
         .innerJoin(academyModules, and(eq(academyModules.id, academyLessons.moduleId), eq(academyModules.courseId, academyEnrollments.courseId)))
         .where(and(eq(academyAssessmentAttempts.id, input.attemptId), eq(academyEnrollments.agentId, ctx.user.id), isNull(academyLessons.archivedAt))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Assessment feedback not found" });
+      await resolveEnrollmentForAgent(row.enrollment.id, ctx.user.id);
+      const { recap } = await ensureSequentialAcademyLessonAccess(row.enrollment, row.lesson.id);
+      if (recap) throw new TRPCError({ code: "BAD_REQUEST", message: "Your completed course is available as a read-only recap" });
       if (row.attempt.status !== "feedback_pending") throw new TRPCError({ code: "BAD_REQUEST", message: "This feedback has already been acknowledged or is not ready yet" });
       if (row.attempt.passed) await ensureSequentialAcademyLessonAccess(row.enrollment, row.lesson.id);
       const now = new Date();
@@ -2804,6 +2881,13 @@ export const academyRouter = router({
       if (input.id) await requireInstructorCourse(ctx.user, input.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [existingDesignation] = input.id ? await db.select().from(academyCourses).where(eq(academyCourses.id, input.id)).limit(1) : [];
+      if (input.id && !existingDesignation) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
+      const isFirstClassTraining = input.isFirstClassTraining ?? existingDesignation?.isFirstClassTraining ?? false;
+      if (!isFullAdmin(ctx.user) && isFirstClassTraining !== (existingDesignation?.isFirstClassTraining ?? false)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "First Class course designation is administrator-only" });
+      }
+      if (!assertExclusiveAcademyCourseDesignation({ ...input, isFirstClassTraining })) throw new TRPCError({ code: "BAD_REQUEST", message: "Core Academy, Accelerator and First Class designations are mutually exclusive" });
       if (!isFullAdmin(ctx.user)) {
         const [existingCourse] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.id!)).limit(1);
         if (!existingCourse) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
@@ -2814,11 +2898,15 @@ export const academyRouter = router({
       }
       const coverImageUrl = normaliseOptionalText(input.coverImageUrl);
       if (coverImageUrl && !safeHttpsUrl(coverImageUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Course cover image must use HTTPS" });
-      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), coverImageUrl, isCoreAcademy: input.isCoreAcademy, isAcceleratorJourney: input.isAcceleratorJourney, estimatedMinutes: input.estimatedMinutes, updatedById: ctx.user.id };
+      const payload = { title: input.title, summary: normaliseOptionalText(input.summary), coverImageUrl, isCoreAcademy: input.isCoreAcademy, isAcceleratorJourney: input.isAcceleratorJourney, isFirstClassTraining, estimatedMinutes: input.estimatedMinutes, updatedById: ctx.user.id };
+      if (input.id && isFirstClassTraining) {
+        const { lessons } = await courseStructure(input.id, { includeArchived: true });
+        for (const lesson of lessons) await assertFirstClassTeachingAttachment(input.id, lesson);
+      }
       if (input.id) {
         await recordStaffOperation(ctx.user, "academy.course_update", { courseId: input.id, phase: "authorized_write", title: input.title });
         if (isFullAdmin(ctx.user) && input.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published")));
-        const { isCoreAcademy, isAcceleratorJourney, ...teachingPayload } = payload;
+        const { isCoreAcademy, isAcceleratorJourney, isFirstClassTraining: _firstClassDesignation, ...teachingPayload } = payload;
         await db.update(academyCourses).set((isFullAdmin(ctx.user) ? payload : teachingPayload) as any).where(eq(academyCourses.id, input.id));
         await addAudit({ courseId: input.id, actorId: ctx.user.id, action: "course_updated", summary: `Updated Academy course: ${input.title}` });
         return { id: input.id };
@@ -2829,9 +2917,9 @@ export const academyRouter = router({
       if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [result] = await pool.execute(
         `INSERT INTO academy_courses
-          (title, summary, coverImageUrl, isCoreAcademy, isAcceleratorJourney, estimatedMinutes, createdById, updatedById)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [payload.title, payload.summary, payload.coverImageUrl, payload.isCoreAcademy, payload.isAcceleratorJourney, payload.estimatedMinutes, ctx.user.id, ctx.user.id],
+          (title, summary, coverImageUrl, isCoreAcademy, isAcceleratorJourney, isFirstClassTraining, estimatedMinutes, createdById, updatedById)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [payload.title, payload.summary, payload.coverImageUrl, payload.isCoreAcademy, payload.isAcceleratorJourney, payload.isFirstClassTraining, payload.estimatedMinutes, ctx.user.id, ctx.user.id],
       );
       const id = Number((result as any).insertId);
       if (!Number.isSafeInteger(id) || id < 1) {
@@ -2847,8 +2935,13 @@ export const academyRouter = router({
       const [course] = await db.select().from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
       if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
       if (input.status === "published") {
+        if (!assertExclusiveAcademyCourseDesignation(course)) throw new TRPCError({ code: "BAD_REQUEST", message: "Core Academy, Accelerator and First Class designations are mutually exclusive" });
         const structure = await courseStructure(course.id);
         if (!structure.lessons.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one lesson before publishing a course" });
+        if (course.isFirstClassTraining) {
+          const lessons = await getAcademyLessonsForModules(structure.modules.map((module) => module.id), { includeArchived: true });
+          for (const lesson of lessons) await assertFirstClassTeachingAttachment(course.id, lesson);
+        }
         const incompleteKnowledgeChecks = structure.modules.flatMap((module) => module.lessons)
           .filter((lesson) => lesson.requiresAssessment && lesson.assessmentMode !== "document_upload" && lesson.questions.length === 0);
         if (incompleteKnowledgeChecks.length) {
@@ -2969,6 +3062,9 @@ export const academyRouter = router({
         ...template,
         assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
       };
+      const [course] = await db.select({ isFirstClassTraining: academyCourses.isFirstClassTraining })
+        .from(academyCourses).where(eq(academyCourses.id, module.courseId)).limit(1);
+      if (course?.isFirstClassTraining) await assertFirstClassTeachingAttachment(module.courseId, payload);
       if (payload.embedPdf) {
         if (!isCanonicalAcademyPdfAttachment(payload)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Inline PDF display requires a PDF teaching attachment uploaded to Academy with its matching file URL." });
@@ -3279,7 +3375,16 @@ export const academyRouter = router({
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "academy-resource";
       const objectKey = `academy/${ctx.user.id}/${randomUUID()}-${safeName}`;
       await recordStaffOperation(ctx.user, "academy.attachment_upload", { courseId: input.courseId, objectKey, kind: "attachment", phase: "authorized_write" });
-      if (!isFullAdmin(ctx.user)) {
+      let privateCourse = false;
+      if (input.courseId !== undefined) {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const [uploadCourse] = await db.select({ isFirstClassTraining: academyCourses.isFirstClassTraining })
+          .from(academyCourses).where(eq(academyCourses.id, input.courseId)).limit(1);
+        if (!uploadCourse) throw new TRPCError({ code: "NOT_FOUND", message: "Course not found" });
+        privateCourse = uploadCourse.isFirstClassTraining === true;
+      }
+      if (!isFullAdmin(ctx.user) || privateCourse) {
         const stored = await storagePutEncrypted(objectKey, bytes);
         await rememberAcademyUpload(ctx.user, input.courseId, stored.key, "attachment");
         await addAudit({ courseId: input.courseId, actorId: ctx.user.id, action: "attachment_uploaded", summary: "Uploaded a private teaching attachment", metadata: { objectKey: stored.key, name: input.fileName, mimeType: input.mimeType } });

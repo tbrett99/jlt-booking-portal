@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { resolveDocUrl } from "@/lib/docUrl";
@@ -35,6 +35,11 @@ import { getOffboardingChecklist } from "@shared/offboarding-checklist";
 import { AgentMergeDialog } from "@/components/AgentMergeDialog";
 import { AgentMergeHistory } from "@/components/AgentMergeHistory";
 import { CrmSupplierAccess } from "@/components/CrmSupplierAccess";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  CRM_MEMBERSHIP_OPTIONS, CRM_STATUS_OPTIONS, currentCrmMembership, currentCrmStatus,
+  matchesCrmListFilters, type CrmMembershipFilter, type CrmStatusFilter,
+} from "@shared/crm-list-filters";
 
 const UK_REGIONS = [
   "North West", "North East", "Yorkshire and the Humber", "East Midlands",
@@ -104,7 +109,7 @@ type AgentRow = {
   email: string | null;
   phone: string | null;
   isActive: boolean;
-  portalStatus: "onboarding" | "active";
+  portalStatus: "onboarding" | "active" | "paused" | "suspended" | "in_notice" | "cancelled";
   createdAt: Date;
   tags: string[];
   crmProfile: CrmProfile | null;
@@ -174,8 +179,8 @@ function NoteContent({ content }: { content: string }) {
 }
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
-  const opt = AGENT_STATUS_OPTIONS.find(o => o.value === (status ?? "active")) ?? AGENT_STATUS_OPTIONS[0];
-  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${opt.color}`}>{opt.label}</span>;
+  const opt = AGENT_STATUS_OPTIONS.find(o => o.value === (status ?? "active"));
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${opt?.color ?? "bg-muted text-muted-foreground"}`}>{opt?.label ?? "Other / unknown"}</span>;
 }
 
 function SyncGcButton({ onSynced }: { onSynced: () => void }) {
@@ -207,6 +212,48 @@ function SyncGcButton({ onSynced }: { onSynced: () => void }) {
   );
 }
 
+function CrmMultiSelect<T extends string>({ label, options, selected, onChange }: {
+  label: string;
+  options: readonly { value: T; label: string }[];
+  selected: readonly T[];
+  onChange: (values: T[]) => void;
+}) {
+  const id = useId();
+  const summary = selected.length ? options.filter(option => selected.includes(option.value)).map(option => option.label).join(" OR ") : "All";
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="min-w-40 justify-between gap-3" aria-label={`${label}: ${summary}`} title={summary}>
+          <span>{label} <span className="text-muted-foreground">{selected.length ? `(${selected.length})` : "· All"}</span></span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-3" aria-label={`${label} filters`}>
+        <fieldset aria-describedby={`${id}-help`}>
+          <legend className="text-sm font-semibold">{label}</legend>
+          <p id={`${id}-help`} className="mb-2 mt-1 text-xs text-muted-foreground">Match any selected option. None selected means all.</p>
+          <div className="max-h-72 space-y-0.5 overflow-y-auto">
+            {options.map(option => (
+              <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  checked={selected.includes(option.value)}
+                  onChange={(event) => onChange(event.target.checked ? [...selected, option.value] : selected.filter(value => value !== option.value))}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <Button type="button" size="sm" variant="ghost" className="mt-2 w-full" disabled={!selected.length} onClick={() => onChange([])}>Clear {label.toLowerCase()}</Button>
+        </fieldset>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const CRM_PAGE_SIZE = 50;
+
 export default function AgentCrm() {
   const routeSearch = useSearch();
   const [, setLocation] = useLocation();
@@ -214,12 +261,14 @@ export default function AgentCrm() {
   const requestedAgentId = Number(routeParams.get("agent"));
   const requestedSection = resolveCrmAgentRecordSection(routeParams.get("tab"));
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [tierFilter, setTierFilter] = useState("all");
+  const [statusFilters, setStatusFilters] = useState<CrmStatusFilter[]>([]);
+  const [membershipFilters, setMembershipFilters] = useState<CrmMembershipFilter[]>([]);
+  const [page, setPage] = useState(1);
   const [selectedAgent, setSelectedAgent] = useState<AgentRow | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const { data: agents = [], refetch, isLoading: agentsLoading, isError: agentsError, isFetching: agentsFetching } = trpc.crm.agentCrm.list.useQuery();
+  const { data: teams = [], isLoading: teamsLoading, isError: teamsError, refetch: refetchTeams } = trpc.crm.agentCrm.listTeams.useQuery();
   const { data: currentPaymentIssues = [] } = trpc.gocardless.adminGetCurrentPaymentIssues.useQuery();
   const failedPaymentUserIds = new Set(currentPaymentIssues.map((e) => e.userId));
 
@@ -229,19 +278,17 @@ export default function AgentCrm() {
     if (requested) { setSelectedAgent(requested); setSheetOpen(true); }
   }, [requestedAgentId, agents]);
 
-  const filtered = (agents as AgentRow[]).filter((a) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      !q ||
-      (a.name ?? "").toLowerCase().includes(q) ||
-      (a.email ?? "").toLowerCase().includes(q) ||
-      (a.crmProfile?.uniqueAgentId ?? "").toLowerCase().includes(q) ||
-      (a.crmProfile?.jltEmail ?? "").toLowerCase().includes(q) ||
-      (a.crmProfile?.businessName ?? "").toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "all" || (a.crmProfile?.agentStatus ?? "active") === statusFilter;
-    const matchesTier = tierFilter === "all" || a.crmProfile?.membershipTier === tierFilter;
-    return matchesSearch && matchesStatus && matchesTier;
-  });
+  const filtered = (agents as AgentRow[]).filter(agent => matchesCrmListFilters(agent, { search, memberships: membershipFilters, statuses: statusFilters }, teams));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / CRM_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * CRM_PAGE_SIZE;
+  const pagedAgents = filtered.slice(pageStart, pageStart + CRM_PAGE_SIZE);
+  const hasFilters = !!search || !!membershipFilters.length || !!statusFilters.length;
+  const membershipSummary = CRM_MEMBERSHIP_OPTIONS.filter(option => membershipFilters.includes(option.value)).map(option => option.label).join(" OR ");
+  const statusSummary = CRM_STATUS_OPTIONS.filter(option => statusFilters.includes(option.value)).map(option => option.label).join(" OR ");
+  const clearFilters = () => { setSearch(""); setMembershipFilters([]); setStatusFilters([]); setPage(1); };
+
+  useEffect(() => { setPage(current => Math.min(current, pageCount)); }, [pageCount]);
 
   const exportCsv = () => {
     const headers = [
@@ -260,8 +307,8 @@ export default function AgentCrm() {
       a.crmProfile?.businessEmail ?? "",
       a.phone ?? "",
       a.crmProfile?.businessName ?? "",
-      a.crmProfile?.membershipTier ?? "",
-      a.crmProfile?.agentStatus ?? "active",
+      currentCrmMembership(a, teams).label,
+      currentCrmStatus(a),
       a.crmProfile?.ukRegion ?? "",
       a.crmProfile?.retailerCode ?? "",
       a.crmProfile?.topdogRetailerName ?? "",
@@ -285,7 +332,7 @@ export default function AgentCrm() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    const suffix = statusFilter !== "all" ? `-${statusFilter}` : tierFilter !== "all" ? `-${tierFilter.replace(/\s+/g, "-").toLowerCase()}` : "";
+    const suffix = [...membershipFilters, ...statusFilters].map(value => `-${value.replaceAll("_", "-")}`).join("");
     link.download = `agents${suffix}-${format(new Date(), "yyyy-MM-dd")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
@@ -306,34 +353,27 @@ export default function AgentCrm() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap" role="search" aria-label="Filter agents">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search name, email, agent ID, business name..."
+            aria-label="Search agents"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-9"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {AGENT_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={tierFilter} onValueChange={setTierFilter}>
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Membership tier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All tiers</SelectItem>
-            {MEMBERSHIP_TIERS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <CrmMultiSelect label="Membership" options={CRM_MEMBERSHIP_OPTIONS} selected={membershipFilters} onChange={values => { setMembershipFilters(values); setPage(1); }} />
+        <CrmMultiSelect label="Status" options={CRM_STATUS_OPTIONS} selected={statusFilters} onChange={values => { setStatusFilters(values); setPage(1); }} />
+        <Button variant="ghost" disabled={!hasFilters} onClick={clearFilters}>Clear filters</Button>
+      </div>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p role="status" aria-live="polite">{agentsLoading ? "Loading registered agents…" : agentsError ? "Agent count unavailable" : `${filtered.length} of ${agents.length} agents match · Showing ${filtered.length ? pageStart + 1 : 0}–${Math.min(pageStart + CRM_PAGE_SIZE, filtered.length)}`}</p>
+        {(membershipSummary || statusSummary) && <p className="text-foreground">{[membershipSummary && `Membership: (${membershipSummary})`, statusSummary && `Status: (${statusSummary})`].filter(Boolean).join(" AND ")}</p>}
+        <p>OR within each filter; AND between filters and search. Active excludes paused, in-notice, suspended and cancelled agents.</p>
+        {teamsLoading && <p>Loading current team memberships…</p>}
+        {teamsError && <p>Team memberships unavailable; using saved CRM memberships. <button type="button" className="underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring" onClick={() => void refetchTeams()}>Retry team memberships</button></p>}
       </div>
 
       {/* Table */}
@@ -381,7 +421,7 @@ export default function AgentCrm() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((agent) => (
+                pagedAgents.map((agent) => (
                   <TableRow
                     key={agent.id}
                     className="cursor-pointer hover:bg-muted/50"
@@ -408,12 +448,10 @@ export default function AgentCrm() {
                     </TableCell>
                     <TableCell className="text-sm">{agent.crmProfile?.jltEmail ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell>
-                      {agent.crmProfile?.membershipTier
-                        ? <Badge variant="secondary" className="text-xs">{agent.crmProfile.membershipTier}</Badge>
-                        : <span className="text-muted-foreground text-xs">—</span>}
+                      <Badge variant="secondary" className="text-xs" title={currentCrmMembership(agent, teams).source === "team" ? "Current linked team membership" : "Saved CRM membership"}>{currentCrmMembership(agent, teams).label}</Badge>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={agent.crmProfile?.agentStatus} />
+                      <StatusBadge status={currentCrmStatus(agent)} />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{agent.crmProfile?.ukRegion ?? "—"}</TableCell>
                     <TableCell>
@@ -435,13 +473,21 @@ export default function AgentCrm() {
         </CardContent>
       </Card>
 
+      {!agentsLoading && !agentsError && pageCount > 1 && (
+        <nav aria-label="Agent list pagination" className="flex items-center justify-end gap-3">
+          <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous page</Button>
+          <span className="text-sm text-muted-foreground">Page {currentPage} of {pageCount}</span>
+          <Button variant="outline" size="sm" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next page</Button>
+        </nav>
+      )}
+
       {selectedAgent && (
         <AgentCrmSheet
           agent={selectedAgent}
           open={sheetOpen}
           initialSection={selectedAgent.id === requestedAgentId ? requestedSection : "overview"}
           onClose={() => setSheetOpen(false)}
-          onRefresh={() => refetch()}
+          onRefresh={() => { void refetch(); void refetchTeams(); }}
           onMerged={(primaryId) => {
             setSheetOpen(false);
             setSelectedAgent(null);

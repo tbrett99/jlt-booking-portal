@@ -58,7 +58,7 @@ beforeEach(() => {
     academy_courses: [{ id: 1, title: "Assigned", status: "published", isCoreAcademy: true, isAcceleratorJourney: false, coverImageUrl: null }, { id: 2, title: "Other", status: "published", isCoreAcademy: true, isAcceleratorJourney: false }],
     academy_modules: [{ id: 1, courseId: 1 }, { id: 2, courseId: 2 }, { id: 3, courseId: 1 }],
     academy_lessons: [{ id: 1, moduleId: 1, title: "Written", assessmentMode: "quiz", assessmentPassMark: 90, attachmentKey: "existing/resource", attachmentUrl: "https://existing.example/resource", contentHtml: "", assessmentTemplateKey: null }, { id: 2, moduleId: 2, title: "Other", assessmentMode: "document_upload" }, { id: 3, moduleId: 1, title: "Document", assessmentMode: "document_upload", assessmentPassMark: 90, assessmentTemplateKey: "template/3" }],
-    academy_enrollments: [{ id: 1, courseId: 1, agentId: 20 }, { id: 2, courseId: 2, agentId: 20 }, { id: 3, courseId: 1, agentId: 10 }, { id: 4, courseId: 1, agentId: 20 }],
+    academy_enrollments: [{ id: 1, courseId: 1, agentId: 20 }, { id: 2, courseId: 2, agentId: 20 }, { id: 3, courseId: 1, agentId: 10, status: "assigned", enrolledById: 99 }, { id: 4, courseId: 1, agentId: 20 }],
     academy_assessment_attempts: [attempt(1, 1, 1), attempt(2, 2, 2), attempt(3, 3, 1), attempt(4, 2, 1), attempt(5, 4, 3), attempt(6, 3, 3)],
     academy_questions: [{ id: 1, lessonId: 1, questionType: "free_text", prompt: "Explain the topic", explanation: "Teaching guide", maxWords: 250, answerOptions: [], correctAnswerIndex: 0, sortOrder: 0 }, { id: 2, lessonId: 2, questionType: "free_text" }],
     academy_assessment_responses: [{ id: 1, attemptId: 1, questionId: 1, responseText: "Learner response", score: null }],
@@ -194,42 +194,60 @@ describe("restricted instructor real Academy API handlers", () => {
 });
 
 describe("private Academy Express downloads reauthorize at request time", () => {
-  async function download(payload: any) {
+  async function download(payload: any, authorizationPasses: 1 | 2) {
     const routes: Record<string, any> = {}; registerAcademyDocumentDownloadRoutes({ get: (path: string, handler: any) => { routes[path] = handler; } } as any);
     const url = createAcademyDocumentDownloadUrl({ scope: "staff", userId: 10, enrollmentId: 1, lessonId: 1, kind: "submission", attemptId: 1, ...payload }, "https://portal.example.test");
     const res: any = { headersSent: false, statusCode: 0, status(code: number) { this.statusCode = code; return this; }, end: vi.fn(), send: vi.fn(), set: vi.fn() };
     const previousRegistryReads = registryReads().length;
+    const previousStorageCalls = state.decrypted.mock.calls.length;
+    if (authorizationPasses === 2) state.decrypted.mockImplementationOnce(async () => {
+      // The first registry check must precede fetching any private bytes.
+      expectRegistryReads(previousRegistryReads + 1);
+      return Buffer.from("private plaintext");
+    });
     await routes["/api/academy/assessment-document/:token"]({ params: { token: url.split("/").pop() } }, res);
-    expectRegistryReads(previousRegistryReads + 1); return res;
+    // Success requires fresh authorization after storage; early denials stop
+    // after the first check and never reach storage. Expectations are explicit,
+    // not inferred from the returned status that each case verifies separately.
+    expectRegistryReads(previousRegistryReads + authorizationPasses);
+    expect(state.decrypted).toHaveBeenCalledTimes(previousStorageCalls + (authorizationPasses === 2 ? 1 : 0));
+    return res;
   }
   it("current instructor grant authorizes other learner document; revoked grant blocks a still-valid token", async () => {
-    expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 5 })).statusCode).toBe(200); expect(state.decrypted).toHaveBeenCalledWith("private/5");
-    state.courseIds = []; state.decrypted.mockClear(); expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 5 })).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
+    expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 5 }, 2)).statusCode).toBe(200); expect(state.decrypted).toHaveBeenCalledWith("private/5");
+    state.courseIds = []; state.decrypted.mockClear(); expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 5 }, 1)).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
   });
   it("staff-token self-download and mixed-course parents cannot fetch plaintext", async () => {
-    expect((await download({ lessonId: 3, enrollmentId: 3, attemptId: 6 })).statusCode).toBe(404);
-    expect((await download({ lessonId: 3, enrollmentId: 2, attemptId: 5 })).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
+    expect((await download({ lessonId: 3, enrollmentId: 3, attemptId: 6 }, 1)).statusCode).toBe(404);
+    expect((await download({ lessonId: 3, enrollmentId: 2, attemptId: 5 }, 1)).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
   });
   it("an instructor's own learner download continues without a current staff grant", async () => {
-    state.courseIds = []; expect((await download({ scope: "agent", lessonId: 3, enrollmentId: 3, attemptId: 6 })).statusCode).toBe(200); expect(state.decrypted).toHaveBeenCalledWith("private/6");
+    state.courseIds = []; expect((await download({ scope: "agent", lessonId: 3, enrollmentId: 3, attemptId: 6 }, 2)).statusCode).toBe(200); expect(state.decrypted).toHaveBeenCalledWith("private/6");
   });
   it("token user binding and attempt enrollment/lesson associations are enforced", async () => {
-    expect((await download({ userId: 11, lessonId: 3, enrollmentId: 4, attemptId: 5 })).statusCode).toBe(404);
-    expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 6 })).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
+    expect((await download({ userId: 11, lessonId: 3, enrollmentId: 4, attemptId: 5 }, 1)).statusCode).toBe(404);
+    expect((await download({ lessonId: 3, enrollmentId: 4, attemptId: 6 }, 1)).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
   });
   it("private attachment URL never bypasses revoked grants or scope; personal learner access remains independent", async () => {
     const routes: Record<string, any> = {}; registerAcademyDocumentDownloadRoutes({ get: (path: string, handler: any) => { routes[path] = handler; } } as any);
     mock.tables.staff_academy_uploads.push({ userId: 10, courseId: 1, kind: "attachment", objectKey: "private/attachment" }, { userId: 20, courseId: 2, kind: "attachment", objectKey: "other/attachment" });
-    async function getAttachment(key: string) {
+    async function getAttachment(key: string, authorizationPasses: 1 | 2) {
       const res: any = { headersSent: false, statusCode: 0, status(code: number) { this.statusCode = code; return this; }, end: vi.fn(), send: vi.fn(), set: vi.fn() };
       const previousRegistryReads = registryReads().length;
+      const previousStorageCalls = state.decrypted.mock.calls.length;
+      if (authorizationPasses === 2) state.decrypted.mockImplementationOnce(async () => {
+        expectRegistryReads(previousRegistryReads + 1);
+        return Buffer.from("private plaintext");
+      });
       await routes["/api/academy/course-attachment/:objectKey"]({ params: { objectKey: key } }, res);
-      expectRegistryReads(previousRegistryReads + 1); return res;
+      expectRegistryReads(previousRegistryReads + authorizationPasses);
+      expect(state.decrypted).toHaveBeenCalledTimes(previousStorageCalls + (authorizationPasses === 2 ? 1 : 0));
+      return res;
     }
-    expect((await getAttachment("private/attachment")).statusCode).toBe(200);
-    expect((await getAttachment("other/attachment")).statusCode).toBe(404);
-    state.courseIds = []; state.decrypted.mockClear(); expect((await getAttachment("private/attachment")).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
-    mock.tables.academy_lessons[0].attachmentKey = "private/attachment"; expect((await getAttachment("private/attachment")).statusCode).toBe(200);
+    expect((await getAttachment("private/attachment", 2)).statusCode).toBe(200);
+    expect((await getAttachment("other/attachment", 1)).statusCode).toBe(404);
+    state.courseIds = []; state.decrypted.mockClear(); expect((await getAttachment("private/attachment", 1)).statusCode).toBe(404); expect(state.decrypted).not.toHaveBeenCalled();
+    mock.tables.academy_lessons[0].attachmentKey = "private/attachment"; expect((await getAttachment("private/attachment", 2)).statusCode).toBe(200);
   });
 });
 
