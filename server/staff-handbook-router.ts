@@ -29,6 +29,8 @@ import {
   createGuideFromKnowledgeRequest,
   createKnowledgeRequest,
   knowledgeRequest,
+  recoverKnowledgeRequest,
+  updateRecoveredKnowledgeRequest,
   updateKnowledgeRequest,
 } from "./staff-handbook-requests";
 import {
@@ -36,6 +38,7 @@ import {
   removeHandbookResource,
   HANDBOOK_MAX_FILE_BYTES,
 } from "./staff-handbook-resources";
+import { handbookLinkOptions } from "./staff-handbook-links";
 
 const handbookProcedure = adminProcedure.use(async ({ ctx, next }) => {
   assertStaffHandbookAccount(ctx.user);
@@ -69,8 +72,33 @@ const saveInput = z.object({
   content: contentSchema,
   changeSummary: z.string().trim().max(500).optional().default(""),
 });
+const createRequestInput = z.object({
+  createToken: tokenSchema,
+  title: z.string().trim().min(1).max(255),
+  description: z.string().trim().min(1).max(20000),
+  category: categorySchema,
+  kind: z.enum(KNOWLEDGE_REQUEST_KINDS),
+  checkedGuidance: z.string().max(10000),
+  impact: z.string().max(10000),
+  priority,
+  articleId: idSchema.nullable().optional(),
+});
 export const staffHandbookRouter = router({
   overview: handbookProcedure.query(({ ctx }) => handbookOverview(ctx.user)),
+  linkOptions: handbookProcedure
+    .input(
+      input(
+        z.object({
+          type: z.enum(["guides", "reports"]),
+          scope: z.enum(["active", "published"]).default("active"),
+          search,
+          page: pageSchema,
+          selectedId: idSchema.nullable().optional(),
+          excludeId: idSchema.optional(),
+        })
+      )
+    )
+    .query(({ ctx, input }) => handbookLinkOptions(ctx.user, input)),
   browse: handbookProcedure
     .input(
       input(
@@ -162,23 +190,23 @@ export const staffHandbookRouter = router({
   request: handbookProcedure
     .input(input(record))
     .query(({ ctx, input }) => knowledgeRequest(ctx.user, input.id)),
+  recoverRequest: handbookProcedure
+    .input(input(z.object({ createToken: tokenSchema }).strict()))
+    .query(({ ctx, input }) => recoverKnowledgeRequest(ctx.user, input)),
   createRequest: handbookProcedure
+    .input(input(createRequestInput))
+    .mutation(({ ctx, input }) => createKnowledgeRequest(ctx.user, input)),
+  updateRecoveredRequest: handbookProcedure
     .input(
       input(
-        z.object({
-          createToken: tokenSchema,
-          title: z.string().trim().min(1).max(255),
-          description: z.string().trim().min(1).max(20000),
-          category: categorySchema,
-          kind: z.enum(KNOWLEDGE_REQUEST_KINDS),
-          checkedGuidance: z.string().max(10000),
-          impact: z.string().max(10000),
-          priority,
-          articleId: idSchema.nullable().optional(),
-        })
+        createRequestInput
+          .extend({ id: idSchema, expectedVersion: versionSchema })
+          .strict()
       )
     )
-    .mutation(({ ctx, input }) => createKnowledgeRequest(ctx.user, input)),
+    .mutation(({ ctx, input }) =>
+      updateRecoveredKnowledgeRequest(ctx.user, input)
+    ),
   updateRequest: handbookProcedure
     .input(
       input(

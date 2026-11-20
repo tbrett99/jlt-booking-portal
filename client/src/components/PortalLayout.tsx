@@ -572,7 +572,7 @@ function RegularPortalLayout({ children }: { children: React.ReactNode }) {
       icon: <BookOpen size={16} />,
       defaultOpen: false,
       items: [
-        { label: "Handbook & Knowledge Requests", href: "/admin/staff-handbook", icon: <BookOpen size={16} /> },
+        { label: "Staff Handbook", href: "/admin/staff-handbook", icon: <BookOpen size={16} /> },
       ],
     },
     {

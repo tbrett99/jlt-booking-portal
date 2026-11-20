@@ -144,25 +144,113 @@ async function assertArticleLink(db: HandbookDb, articleId: number | null) {
   if (articleId === null) return null;
   const article = await getArticle(db, articleId, true);
   if (article.archivedAt)
-    fail("BAD_REQUEST", "Linked guidance must not be archived.");
+    fail("BAD_REQUEST", "Choose a guide that has not been archived.");
   return article;
 }
-export async function createKnowledgeRequest(
+type CreateKnowledgeRequestInput = {
+  createToken: string;
+  title: string;
+  description: string;
+  category: string;
+  kind: (typeof requests.$inferSelect)["kind"];
+  checkedGuidance: string;
+  impact: string;
+  priority: (typeof requests.$inferSelect)["priority"];
+  articleId?: number | null;
+};
+function requestPayload(input: CreateKnowledgeRequestInput) {
+  return {
+    title: text(input.title, "request title", 255),
+    description: text(input.description, "request description", 20000),
+    category: text(input.category, "request category", 120),
+    kind: input.kind,
+    checkedGuidance: text(
+      input.checkedGuidance,
+      "checked guidance",
+      10000,
+      false
+    ),
+    impact: text(input.impact, "impact", 10000, false),
+    priority: input.priority,
+    articleId: input.articleId ?? null,
+  };
+}
+/** Recover only the reporting actor's exact creation attempt, never by report ID. */
+export async function recoverKnowledgeRequest(
   actor: HandbookAccount,
-  input: {
-    createToken: string;
-    title: string;
-    description: string;
-    category: string;
-    kind: (typeof requests.$inferSelect)["kind"];
-    checkedGuidance: string;
-    impact: string;
-    priority: (typeof requests.$inferSelect)["priority"];
-    articleId?: number | null;
-  }
+  input: { createToken: string }
+) {
+  return withHandbookRead(actor, async (db, actorId) => {
+    const createToken = actorToken(actorId, input.createToken, "request");
+    const [request] = await db
+      .select()
+      .from(requests)
+      .where(
+        and(
+          eq(requests.createToken, createToken),
+          eq(requests.reporterId, actorId)
+        )
+      )
+      .limit(1);
+    return { request: request ? requestDto(request) : null };
+  });
+}
+/** The reporter explicitly chooses to save edits after a lost creation response. */
+export async function updateRecoveredKnowledgeRequest(
+  actor: HandbookAccount,
+  input: CreateKnowledgeRequestInput & { id: number; expectedVersion: number }
 ) {
   return withHandbookWrite(actor, async (db, actorId) => {
     const createToken = actorToken(actorId, input.createToken, "request");
+    // Scope the locked read itself: an unrelated ID must not reveal existence,
+    // current version or staff workflow state through differing error responses.
+    const [request] = await db
+      .select()
+      .from(requests)
+      .where(
+        and(
+          eq(requests.id, input.id),
+          eq(requests.createToken, createToken),
+          eq(requests.reporterId, actorId)
+        )
+      )
+      .limit(1)
+      .for("update");
+    if (
+      !request ||
+      request.createToken !== createToken ||
+      request.reporterId !== actorId
+    )
+      fail("NOT_FOUND", "Saved report not found.");
+    if (request.status !== "new" || request.version !== input.expectedVersion)
+      fail(
+        "CONFLICT",
+        "This report has been updated by staff. Open the saved report to add your changes."
+      );
+    const payload = requestPayload(input);
+    await assertArticleLink(db, payload.articleId);
+    // Only the eight original report fields change; ownership, workflow,
+    // assignment and the creation token remain exactly as locked above.
+    const result = await bumpRequest(db, request, payload);
+    await recordAudit(
+      db,
+      "request",
+      request.id,
+      actorId,
+      "updated",
+      "Latest report edits saved by the reporting administrator.",
+      { articleId: payload.articleId }
+    );
+    return result;
+  });
+}
+export async function createKnowledgeRequest(
+  actor: HandbookAccount,
+  input: CreateKnowledgeRequestInput
+) {
+  return withHandbookWrite(actor, async (db, actorId) => {
+    const createToken = actorToken(actorId, input.createToken, "request");
+    const payload = requestPayload(input);
     const [existing] = await db
       .select()
       .from(requests)
@@ -172,25 +260,27 @@ export async function createKnowledgeRequest(
     if (existing) {
       if (existing.reporterId !== actorId)
         fail("CONFLICT", "The creation token is not available.");
+      if (
+        existing.title !== payload.title ||
+        existing.description !== payload.description ||
+        existing.category !== payload.category ||
+        existing.kind !== payload.kind ||
+        existing.checkedGuidance !== payload.checkedGuidance ||
+        existing.impact !== payload.impact ||
+        existing.priority !== payload.priority ||
+        existing.articleId !== payload.articleId
+      )
+        fail(
+          "CONFLICT",
+          "This report was already submitted with different details. Your changes have not been saved. Check whether your report was saved before trying again."
+        );
       return { id: existing.id, version: existing.version };
     }
-    await assertArticleLink(db, input.articleId ?? null);
+    await assertArticleLink(db, payload.articleId);
     const id = await insertId(db, requests, {
       createToken,
       reporterId: actorId,
-      title: text(input.title, "request title", 255),
-      description: text(input.description, "request description", 20000),
-      category: text(input.category, "request category", 120),
-      kind: input.kind,
-      checkedGuidance: text(
-        input.checkedGuidance,
-        "checked guidance",
-        10000,
-        false
-      ),
-      impact: text(input.impact, "impact", 10000, false),
-      priority: input.priority,
-      articleId: input.articleId ?? null,
+      ...payload,
       status: "new",
       version: 1,
     });
@@ -217,10 +307,13 @@ export async function assertRequestDuplicate(
     if (visited.has(id))
       fail(
         "BAD_REQUEST",
-        "Duplicate references must not form a cycle or refer to themselves."
+        "Choose a different report. Duplicate reports cannot link back to this report."
       );
     if (depth >= 50)
-      fail("BAD_REQUEST", "Duplicate reference chain is too deep.");
+      fail(
+        "BAD_REQUEST",
+        "Too many duplicate reports are linked together. Choose a different report."
+      );
     visited.add(id);
     const target = await getRequest(db, id, true);
     id = target.duplicateOfId;
@@ -258,13 +351,13 @@ export async function updateKnowledgeRequest(
     )
       fail(
         "BAD_REQUEST",
-        "Assign an active JLT administrator for this request status."
+        "Choose an active JLT administrator to work on this report."
       );
     if (
       input.duplicateOfId !== null &&
       (input.status !== "closed" || !closureReason)
     )
-      fail("BAD_REQUEST", "Close duplicate requests with a reason.");
+      fail("BAD_REQUEST", "Close this duplicate report and add a reason.");
     let resolvedRevisionId: number | null = null;
     if (input.status === "resolved") {
       resolvedRevisionId = article?.publishedRevisionId ?? null;
@@ -273,11 +366,11 @@ export async function updateKnowledgeRequest(
       if (!resolvedRevisionId)
         fail(
           "BAD_REQUEST",
-          "Resolution requires active published guidance. Use closed for a reason-only closure."
+          "Choose a published guide to answer this report. A draft cannot answer it yet."
         );
     }
     if (input.status === "closed" && !closureReason)
-      fail("BAD_REQUEST", "A closure reason is required.");
+      fail("BAD_REQUEST", "Add a reason for closing this report.");
     const patch: Partial<typeof requests.$inferInsert> = {
       status: input.status,
       priority: input.priority,
@@ -341,14 +434,12 @@ export async function createGuideFromKnowledgeRequest(
       return { articleId: existing.id };
     assertVersion(request.version, input.expectedVersion);
     if (!isOpenRequest(request.status))
-      fail(
-        "BAD_REQUEST",
-        "Reopen the knowledge request before creating a guide."
-      );
+      fail("BAD_REQUEST", "Reopen this report before creating a guide.");
     if (request.articleId)
-      fail("BAD_REQUEST", "This request already has linked guidance.");
+      fail("BAD_REQUEST", "This report already has a linked guide.");
     const content = {
       ...emptyHandbookContent(actorId),
+      format: "article" as const,
       title: request.title,
       summary: request.description.slice(0, 4000),
       category: request.category,

@@ -61,6 +61,11 @@ vi.mock("@/components/RichEmailEditor", async () => {
   };
 });
 import { ArticlePanel } from "../client/src/pages/admin/StaffHandbookArticle";
+import {
+  GuideReading,
+  History,
+  sectionLabels,
+} from "../client/src/pages/admin/StaffHandbookComponents";
 
 function guide(extra: any = {}) {
   const content = {
@@ -132,25 +137,33 @@ let container: HTMLDivElement;
 let cache: QueryClient;
 let onSaved: ReturnType<typeof vi.fn>;
 let onClose: ReturnType<typeof vi.fn>;
-function element(id: number | "new" = "new", key = String(id)) {
+function element(
+  id: number | "new" = "new",
+  key = String(id),
+  startEditing = true
+) {
   return React.createElement(ArticlePanel, {
     key,
     id,
     userId: 99,
     categories: ["General", "Academy"],
     staff: [{ id: 99, name: "Synthetic staff" }],
-    startEditing: true,
+    startEditing,
     onSaved,
     onClose,
   });
 }
-async function render(id: number | "new" = "new", key = String(id)) {
+async function render(
+  id: number | "new" = "new",
+  key = String(id),
+  startEditing = true
+) {
   await act(async () =>
     root.render(
       React.createElement(
         QueryClientProvider,
         { client: cache },
-        element(id, key)
+        element(id, key, startEditing)
       )
     )
   );
@@ -294,26 +307,261 @@ describe("simple staff handbook editor in the DOM", () => {
     await render();
     expect(field("Editor format").value).toBe("article");
     expect(emptyHandbookContent(99).format).toBe("process");
-    expect(details("Advanced options (optional)").open).toBe(false);
+    expect(details("Guide details (optional)").open).toBe(false);
     for (const label of [
       "Summary (optional)",
       "Owner",
       "Tags (comma separated)",
-      "Sensitivity",
       "Last reviewed date",
       "Next review date",
       "Editor format",
       "Change note (optional)",
     ])
       expect(field(label).closest("details")).toBe(
-        details("Advanced options (optional)")
+        details("Guide details (optional)")
       );
     expect(field("Category").closest("details")).toBeNull();
+    expect(field("Guidance type").closest("details")).toBeNull();
     expect(field("Content").closest("details")).toBeNull();
     expect(container.querySelector("[required]")).toBeNull();
     expect(container.textContent).not.toContain(
       "Review & internal publication"
     );
+  });
+  it("explains first-use fields and staff-only save choices without exposing technical identifiers", async () => {
+    await render();
+    expect(container.querySelector("legend")?.textContent).toBe(
+      "Create a guide"
+    );
+    expect(field("Title").getAttribute("placeholder")).toBe(
+      "How to update a booking"
+    );
+    expect(container.textContent).toContain(
+      "Explain when to use this guide, what to do, and when to ask for help"
+    );
+    expect(container.textContent).toContain(
+      "Save draft keeps your work without publishing it"
+    );
+    expect(container.textContent).toContain(
+      "Save & publish makes the guide available to staff only, never agents"
+    );
+    expect(
+      Array.from((field("Guidance type") as HTMLSelectElement).options).map(
+        option => [option.value, option.textContent]
+      )
+    ).toEqual([
+      ["operational", "Everyday procedures"],
+      ["financial", "Money, payments or refunds"],
+      ["legal", "Legal requirements"],
+      ["policy", "Company policies"],
+    ]);
+    expect(container.textContent).not.toMatch(
+      /Guide #|guide #|Staff #|Version \d|Revision \d|Sensitivity|contributor|cycle|exact saved revision/
+    );
+    expect(details("Private attachments (0)").open).toBe(false);
+  });
+  it("associates helpful field text with controls and preserves the title error association", async () => {
+    await render();
+    const title = field("Title");
+    const hintId = title.getAttribute("aria-describedby")!;
+    expect(document.getElementById(hintId)?.textContent).toContain(
+      "Name the task"
+    );
+    expect(
+      document.getElementById(
+        field("Guidance type").getAttribute("aria-describedby")!
+      )?.textContent
+    ).toContain("need a check by another staff member");
+    await click("Save draft");
+    expect(title.getAttribute("aria-describedby")?.split(" ")).toEqual([
+      "handbook-title-error",
+      hintId,
+    ]);
+    expect(
+      document.getElementById("handbook-title-error")?.textContent
+    ).toContain("Enter a title");
+    await input("Title", "Valid title");
+    expect(title.getAttribute("aria-describedby")).toBe(hintId);
+  });
+  it("does not offer a publication mutation from an already published read-only screen", async () => {
+    mocks.detail = guide();
+    mocks.detail.draft = mocks.detail.published;
+    mocks.detail.article.draftRevisionId = mocks.detail.published.id;
+    await render(7, "published", false);
+    expect(
+      container.querySelector("[data-handbook-reading]")?.textContent
+    ).toContain("Published body");
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(findButton("Save & publish")).toBeUndefined();
+    expect(findButton("Publish for staff")).toBeUndefined();
+    expect(container.textContent).not.toMatch(
+      /Guide #|guide #|Staff #|Version \d|Revision \d|Sensitivity|Not set/
+    );
+    await click("Read published");
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    await click("Edit draft");
+    expect(container.querySelector("legend")?.textContent).toBe("Edit guide");
+    expect(button("Save & publish")).toBeTruthy();
+  });
+  it.each([
+    "Read published",
+    "Preview saved draft",
+    "View saved guide · 1 Nov 2026 · Previous note",
+  ])(
+    "does not silently hide dirty edits when opening %s",
+    async destination => {
+      await render(7);
+      await input("Title", "Keep my unsaved title");
+      await input("Content", "<p>Unsaved body kept separately</p>");
+      vi.mocked(window.confirm).mockReturnValue(false);
+      await click(destination);
+      expect(window.confirm).toHaveBeenCalledWith(
+        expect.stringContaining("Your edits will be kept")
+      );
+      expect(field("Title").value).toBe("Keep my unsaved title");
+      expect(container.querySelector("[data-handbook-reading]")).toBeNull();
+      vi.mocked(window.confirm).mockReturnValue(true);
+      await click(destination);
+      expect(container.querySelector("form")).toBeNull();
+      expect(
+        container.querySelector("[data-handbook-reading]")?.textContent
+      ).not.toContain("Unsaved body kept separately");
+      expect(container.textContent).toContain(
+        "Your unsaved edits are kept, but are not shown here"
+      );
+      await click("Edit draft");
+      expect(field("Title").value).toBe("Keep my unsaved title");
+      expect(field("Content").value).toContain("Unsaved body kept separately");
+      expect(mocks.mutate).not.toHaveBeenCalled();
+    }
+  );
+  it("shows clear required-review steps with the saved draft and keeps approval independent", async () => {
+    mocks.detail = guide({
+      content: { sensitivity: "financial" },
+      article: { submittedAt: new Date() },
+      draft: { createdById: 100, contributorIds: [100] },
+    });
+    await render(7, "review", false);
+    expect(container.textContent).toContain("Choose Preview saved draft");
+    expect(findButton("Publish for staff")).toBeUndefined();
+    await click("Preview saved draft");
+    const review = details("Review required before publishing");
+    expect(review.open).toBe(true);
+    expect(review.textContent).toContain(
+      "A different staff member who has not edited this draft must check it"
+    );
+    expect(
+      Array.from(review.querySelectorAll("ol li")).map(item => item.textContent)
+    ).toEqual([
+      "Save your draft, including any attachments.",
+      "Choose Request review. Another staff member opens Preview saved draft and checks it.",
+      "After they choose Approve saved draft, choose Publish for staff.",
+    ]);
+    expect(button("Approve saved draft").disabled).toBe(false);
+    expect(button("Publish for staff").disabled).toBe(true);
+    expect(
+      container.querySelector("[data-handbook-reading]")?.textContent
+    ).toContain("Saved body");
+    expect(container.querySelector("form")).toBeNull();
+    expect(review.textContent).not.toMatch(/exact|revision|contributor|cycle/);
+  });
+  it("keeps ordinary reading focused on guidance and omits missing metadata and empty attachments", async () => {
+    const detail = guide({
+      content: { sensitivity: "policy", nextReviewAt: null },
+    });
+    const revision = { ...detail.draft, resourceIds: [] };
+    await act(async () =>
+      root.render(
+        React.createElement(GuideReading, {
+          revision,
+          resources: detail.resources,
+        })
+      )
+    );
+    const reading = container.querySelector("[data-handbook-reading]")!;
+    expect(reading.textContent).toContain("Synthetic guide");
+    expect(reading.textContent).toContain("Saved body");
+    expect(reading.textContent).not.toMatch(
+      /Revision|policy|Sensitivity|Not set|Review due|Attachments|No attachments/
+    );
+    expect(reading.querySelector("a")).toBeNull();
+  });
+  it("shows only attachments belonging to the displayed saved guide and retains strictly private URLs", async () => {
+    const detail = guide();
+    const resources = [
+      ...detail.resources,
+      {
+        ...detail.resources[0],
+        id: 5,
+        fileName: "Other draft attachment",
+        url: "/api/staff-handbook/resource/5",
+      },
+      {
+        ...detail.resources[0],
+        id: 6,
+        fileName: "Invalid remote attachment",
+        url: "https://example.invalid/private.txt",
+      },
+    ];
+    const revision = { ...detail.draft, resourceIds: [4, 6] };
+    await act(async () =>
+      root.render(React.createElement(GuideReading, { revision, resources }))
+    );
+    expect(container.querySelector("h3")?.textContent).toBe("Attachments");
+    expect(container.textContent).toContain("Private files for staff only");
+    expect(container.textContent).not.toContain("Other draft attachment");
+    expect(container.textContent).toContain(
+      "unavailable (invalid private link)"
+    );
+    expect(
+      Array.from(container.querySelectorAll("a")).map(link =>
+        link.getAttribute("href")
+      )
+    ).toEqual(["/api/staff-handbook/resource/4"]);
+  });
+  it("uses staff names and readable activity labels without mutating audit data", async () => {
+    const audit = Object.freeze([
+      Object.freeze({
+        id: 42,
+        action: "submit_review",
+        actorId: 99,
+        summary: "Internal guide action: submit_review.",
+        createdAt: new Date("2026-11-01"),
+      }),
+      Object.freeze({
+        id: 43,
+        action: "saved",
+        actorId: 100,
+        summary: "Keep the original note",
+        createdAt: new Date("2026-11-01"),
+      }),
+    ]);
+    const before = JSON.stringify(audit);
+    await act(async () =>
+      root.render(
+        React.createElement(History, {
+          audit: audit as any,
+          staff: [{ id: 99, name: "Alex Example" }],
+        })
+      )
+    );
+    expect(details("Activity history (read-only)").open).toBe(false);
+    expect(container.textContent).toContain("Review requested · Alex Example");
+    expect(container.textContent).toContain("Draft saved · Staff member");
+    expect(container.textContent).toContain("Keep the original note");
+    expect(container.textContent).not.toMatch(/submit_review|Staff #|Audit #/);
+    expect(JSON.stringify(audit)).toBe(before);
+    expect(container.querySelector("button, input, textarea")).toBeNull();
+    expect(Object.keys(sectionLabels)).toEqual([
+      "whenToUse",
+      "checks",
+      "steps",
+      "agentWording",
+      "exceptions",
+      "related",
+    ]);
+    expect(sectionLabels.agentWording).toBe("Suggested reply to an agent");
   });
   it("saves using only title and content with an automatic creation note", async () => {
     await render();
@@ -377,7 +625,9 @@ describe("simple staff handbook editor in the DOM", () => {
       id: 7,
       expectedVersion: 4,
     });
-    expect(container.textContent).toContain("saved and published internally");
+    expect(container.textContent).toContain(
+      "saved and published for staff only"
+    );
   });
   it("retains edits when atomic publish fails and never falls back to a draft or separate publication", async () => {
     mocks.mutate.mockRejectedValue(new Error("Synthetic publish conflict"));
@@ -444,15 +694,20 @@ describe("simple staff handbook editor in the DOM", () => {
     await titleAndBody();
     await submit();
     expect(onSaved).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("the action was saved as guide #7");
+    expect(container.textContent).toContain(
+      "Refresh failed, but your guide was saved"
+    );
+    expect(container.textContent).not.toMatch(
+      /Guide #|guide #|Version \d|Revision \d/
+    );
     expect(field("Title").value).toBe("Simple new guide");
     expect(field("Title").closest("fieldset")?.disabled).toBe(true);
     await submit();
-    await click("Open saved guide #7");
+    await click("Open saved guide");
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
     mocks.fetchArticle.mockResolvedValue(mocks.detail);
-    await click("Open saved guide #7");
+    await click("Open saved guide");
     expect(onSaved).toHaveBeenCalledWith(7);
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.fetchArticle.mock.calls.every(call => call[1].id === 7)).toBe(
@@ -468,7 +723,7 @@ describe("simple staff handbook editor in the DOM", () => {
     await titleAndBody();
     await submit();
     expect(onSaved).not.toHaveBeenCalled();
-    expect(button("Open saved guide #7")).toBeTruthy();
+    expect(button("Open saved guide")).toBeTruthy();
     expect(container.textContent).toContain("Refresh failed");
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
@@ -489,6 +744,31 @@ describe("simple staff handbook editor in the DOM", () => {
     expect(button("Back to guides").disabled).toBe(true);
     mocks.detail = guide({ article: { version: 4 } });
     await act(async () => mutation.resolve({ id: 7, version: 4 }));
+  });
+  it("keeps the essential Steps field open in an empty process template", async () => {
+    await render();
+    await input("Editor format", "process");
+    expect(details("When to use").open).toBe(true);
+    expect(details("Steps").open).toBe(true);
+    expect(field("Steps").value).toBe("");
+    expect(details("Steps").textContent).toContain(
+      "List what staff should do in order"
+    );
+    expect(details("Suggested reply to an agent").open).toBe(false);
+    await input("Title", "A process guide");
+    await input("Steps", "<ol><li>Check the booking.</li></ol>");
+    await click("Save & publish");
+    expect(mocks.mutate.mock.calls[0]).toEqual([
+      "staffHandbook.saveAndPublishArticle",
+      expect.objectContaining({
+        content: expect.objectContaining({
+          format: "process",
+          sections: expect.objectContaining({
+            steps: "<ol><li>Check the booking.</li></ol>",
+          }),
+        }),
+      }),
+    ]);
   });
   it("preserves all values and six sections of an existing process instead of converting it", async () => {
     const sections = {
@@ -523,9 +803,11 @@ describe("simple staff handbook editor in the DOM", () => {
     "hides quick publication for new %s guidance",
     async sensitivity => {
       await render();
-      await input("Sensitivity", sensitivity);
+      await input("Guidance type", sensitivity);
       expect(findButton("Save & publish")).toBeUndefined();
-      expect(container.textContent).toContain("Independent review required");
+      expect(container.textContent).toContain(
+        "Another staff member must check this guide"
+      );
       expect(container.textContent).not.toContain(
         "Review & internal publication"
       );
@@ -538,10 +820,10 @@ describe("simple staff handbook editor in the DOM", () => {
     mocks.detail = guide({ article: { requiresIndependentReview: true } });
     await render(7);
     expect(findButton("Save & publish")).toBeUndefined();
-    expect(details("Required independent review").open).toBe(true);
-    expect(button("Publish internally").disabled).toBe(true);
-    expect(findButton("Approve exact revision 2")).toBeUndefined();
-    expect(container.textContent).toContain("previously sensitive publication");
+    expect(details("Review required before publishing").open).toBe(true);
+    expect(button("Publish for staff").disabled).toBe(true);
+    expect(findButton("Approve saved draft")).toBeUndefined();
+    expect(container.textContent).toContain("or previously covered them");
     await click("Request review");
     expect(mocks.mutate.mock.calls[0]).toEqual([
       "staffHandbook.articleAction",
@@ -554,8 +836,8 @@ describe("simple staff handbook editor in the DOM", () => {
       article: { reviewedRevisionId: 12, reviewedById: 100 },
     });
     await render(7);
-    expect(button("Publish internally").disabled).toBe(false);
-    await click("Publish internally");
+    expect(button("Publish for staff").disabled).toBe(false);
+    await click("Publish for staff");
     expect(window.confirm).toHaveBeenCalledWith(
       expect.stringContaining("Agents will not have access")
     );
@@ -572,11 +854,11 @@ describe("simple staff handbook editor in the DOM", () => {
     });
     await render(7);
     await input("Content", "<p>Changed sensitive content</p>");
-    expect(button("Publish internally").disabled).toBe(true);
+    expect(button("Publish for staff").disabled).toBe(true);
     expect(button("Request review").disabled).toBe(true);
     expect(field("Upload private attachment").disabled).toBe(true);
     expect(findButton("Save & publish")).toBeUndefined();
-    await click("Publish internally");
+    await click("Publish for staff");
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
   it("lets a noncontributing independent staff member approve the exact submitted revision", async () => {
@@ -586,7 +868,7 @@ describe("simple staff handbook editor in the DOM", () => {
       draft: { createdById: 100, contributorIds: [100] },
     });
     await render(7);
-    await click("Approve exact revision 2");
+    await click("Approve saved draft");
     expect(mocks.mutate.mock.calls[0]).toEqual([
       "staffHandbook.articleAction",
       { id: 7, expectedVersion: 3, action: "approve" },
@@ -680,9 +962,9 @@ describe("simple staff handbook editor in the DOM", () => {
   it("keeps revision history immutable and private attachments collapsed", async () => {
     await render(7);
     expect(details("Private attachments (1)").open).toBe(false);
-    expect(details("Revision history (read-only)").open).toBe(false);
-    expect(details("Audit history (read-only)").open).toBe(false);
-    await click("Revision 2 · 1 Nov 2026 · Previous note");
+    expect(details("Saved guide history (read-only)").open).toBe(false);
+    expect(details("Activity history (read-only)").open).toBe(false);
+    await click("View saved guide · 1 Nov 2026 · Previous note");
     const historic = container.querySelector("[data-handbook-history]")!;
     expect(
       historic.querySelector("input, textarea, form, [contenteditable]")
@@ -737,17 +1019,34 @@ describe("simple staff handbook editor in the DOM", () => {
 });
 
 it("retains changed edits after a lost-response creation retry conflicts with the already saved draft", async () => {
-  const conflict = Object.assign(new Error("Guide #7 already exists from this save attempt, but these changed edits have not been saved. Your edits are retained."), { data: { code: "CONFLICT" } });
-  mocks.mutate.mockRejectedValueOnce(new Error("Synthetic save response was lost")).mockRejectedValueOnce(conflict);
-  await render(); await titleAndBody(); await submit();
+  const conflict = Object.assign(
+    new Error(
+      "Guide #7 already exists from this save attempt, but these changed edits have not been saved. Your edits are retained."
+    ),
+    { data: { code: "CONFLICT" } }
+  );
+  mocks.mutate
+    .mockRejectedValueOnce(new Error("Synthetic save response was lost"))
+    .mockRejectedValueOnce(conflict);
+  await render();
+  await titleAndBody();
+  await submit();
   const token = mocks.mutate.mock.calls[0][1].createToken;
   await input("Title", "Changed after lost response");
   await input("Content", "<p>Newer edits must not be discarded.</p>");
   await submit();
-  expect(mocks.mutate.mock.calls[1][1]).toMatchObject({ createToken: token, content: expect.objectContaining({ title: "Changed after lost response", contentHtml: "<p>Newer edits must not be discarded.</p>" }) });
+  expect(mocks.mutate.mock.calls[1][1]).toMatchObject({
+    createToken: token,
+    content: expect.objectContaining({
+      title: "Changed after lost response",
+      contentHtml: "<p>Newer edits must not be discarded.</p>",
+    }),
+  });
   expect(field("Title").value).toBe("Changed after lost response");
   expect(field("Content").value).toContain("Newer edits must not be discarded");
-  expect(container.textContent).toContain("these changed edits have not been saved");
+  expect(container.textContent).toContain(
+    "these changed edits have not been saved"
+  );
   expect(container.textContent).toContain("Unsaved changes");
   expect(onSaved).not.toHaveBeenCalled();
   expect(mocks.fetchArticle).not.toHaveBeenCalled();

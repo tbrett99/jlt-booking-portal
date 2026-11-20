@@ -5,16 +5,32 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+type LinkInput = {
+  type: "guides" | "reports";
+  scope: "active" | "published";
+  search?: string;
+  selectedId?: number | null;
+  excludeId?: number;
+  page: number;
+};
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
+  updateRecovered: vi.fn(),
+  recover: vi.fn(),
   invalidate: vi.fn(),
+  queries: [] as { input: LinkInput; options: { enabled: boolean } }[],
   pending: false,
   error: undefined as unknown,
+  recoveredPending: false,
+  recoveredError: undefined as unknown,
 }));
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       staffHandbook: {
+        recoverRequest: {
+          fetch: (...args: unknown[]) => mocks.recover(...args),
+        },
         requests: {
           invalidate: (...args: unknown[]) =>
             mocks.invalidate("staffHandbook.requests", ...args),
@@ -39,6 +55,48 @@ vi.mock("@/lib/trpc", () => ({
           mutateAsync: mocks.mutate,
         }),
       },
+      updateRecoveredRequest: {
+        useMutation: () => ({
+          isPending: mocks.recoveredPending,
+          error: mocks.recoveredError,
+          mutateAsync: mocks.updateRecovered,
+        }),
+      },
+      linkOptions: {
+        useQuery: (input: LinkInput, options: { enabled: boolean }) => {
+          mocks.queries.push({ input, options });
+          const guide = {
+            id: 7,
+            title: "Synthetic reimbursement checklist",
+            category: "Operations",
+            state: "published",
+          };
+          const eligible =
+            input.type === "guides" && input.excludeId !== guide.id;
+          const items =
+            eligible &&
+            (!input.search ||
+              guide.title.toLowerCase().includes(input.search.toLowerCase()))
+              ? [guide]
+              : [];
+          return {
+            isError: false,
+            isLoading: false,
+            isFetching: false,
+            refetch: vi.fn(),
+            data: options.enabled
+              ? {
+                  items,
+                  selected:
+                    eligible && input.selectedId === guide.id ? guide : null,
+                  total: items.length,
+                  page: input.page,
+                  pageSize: 20,
+                }
+              : undefined,
+          };
+        },
+      },
     },
   },
 }));
@@ -51,6 +109,12 @@ let onCreated: ReturnType<typeof vi.fn>;
 let onCancel: ReturnType<typeof vi.fn>;
 const titleLabel = "What guidance is missing?";
 const descriptionLabel = "What do staff need to know?";
+const optionalLabels = [
+  "How urgent is this?",
+  "What needs improving?",
+  "Where have you already looked? (optional)",
+  "How is this affecting staff? (optional)",
+];
 
 async function render(categories = ["General", "Operations"]) {
   await act(async () => {
@@ -104,6 +168,9 @@ function button(label: string) {
   expect(element, `button ${label}`).toBeTruthy();
   return element!;
 }
+async function click(label: string) {
+  await act(async () => button(label).click());
+}
 function submitEvent(form = container.querySelector("form")!) {
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 }
@@ -121,6 +188,15 @@ async function openOptional() {
     details.dispatchEvent(new Event("toggle"));
   });
   return details;
+}
+async function chooseGuide() {
+  await click("Choose a guide");
+  await input("Find a guide by title", "reimbursement");
+  const choice = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Guide choices"] button'
+  )!;
+  expect(choice.textContent).toContain("Synthetic reimbursement checklist");
+  await act(async () => choice.click());
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -146,7 +222,12 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   mocks.pending = false;
   mocks.error = undefined;
+  mocks.recoveredPending = false;
+  mocks.recoveredError = undefined;
+  mocks.queries = [];
   mocks.mutate.mockResolvedValue({ id: 8, version: 1 });
+  mocks.updateRecovered.mockResolvedValue({ id: 8, version: 2 });
+  mocks.recover.mockResolvedValue({ request: null });
   mocks.invalidate.mockResolvedValue(undefined);
   onCreated = vi.fn();
   onCancel = vi.fn();
@@ -167,33 +248,41 @@ afterEach(async () => {
 });
 
 describe("simplified missing-guidance report rendered UI", () => {
-  it("keeps title, description and category primary with optional details collapsed", async () => {
+  it("keeps only title, description and General category mounted until optional details open", async () => {
     await render();
     const details = container.querySelector("details")!;
     expect(details.open).toBe(false);
     expect(details.querySelector("summary")?.textContent?.trim()).toBe(
       "Optional details"
     );
-    for (const label of [titleLabel, descriptionLabel, "Category"]) {
-      expect(field(label).closest("details")).toBeNull();
-    }
-    for (const label of [
-      "Priority",
-      "Request kind",
-      "Guidance already checked",
-      "Impact on staff or service",
-      "Related guide ID (optional)",
-    ]) {
+    expect(
+      Array.from(container.querySelectorAll("label"), el =>
+        el.textContent?.trim()
+      )
+    ).toEqual([titleLabel, descriptionLabel, "Category"]);
+    expect(details.querySelector("input, textarea, select")).toBeNull();
+    expect(mocks.queries).toHaveLength(0);
+    expect(field("Category").value).toBe("General");
+    expect(container.textContent).toContain(
+      "Do not include customer details, payment data or passwords."
+    );
+    expect(container.querySelector('input[type="number"]')).toBeNull();
+    expect(button("Submit report").disabled).toBe(false);
+    await openOptional();
+    for (const label of optionalLabels) {
       expect(field(label).closest("details")).toBe(details);
       expect(field(label).hasAttribute("required")).toBe(false);
     }
-    expect(field("Priority").value).toBe("normal");
-    expect(field("Request kind").value).toBe("missing_process");
-    expect(field("Guidance already checked").value).toBe("");
-    expect(field("Impact on staff or service").value).toBe("");
-    expect(container.textContent).toContain(
-      "No customer details, payment data or credentials."
-    );
+    expect(field("How urgent is this?").value).toBe("normal");
+    expect(field("What needs improving?").value).toBe("missing_process");
+    expect(field("Where have you already looked? (optional)").value).toBe("");
+    expect(field("How is this affecting staff? (optional)").value).toBe("");
+    expect(
+      container.querySelector(
+        '[aria-label="Is this about an existing guide? (optional)"]'
+      )
+    ).toBeTruthy();
+    expect(mocks.queries.at(-1)?.options.enabled).toBe(false);
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
@@ -202,8 +291,7 @@ describe("simplified missing-guidance report rendered UI", () => {
     expect(field("Category").value).toBe("General");
     await input(titleLabel, "  Synthetic missing guidance  ");
     await input(descriptionLabel, "  Synthetic staff process description  ");
-    expect(button("Submit knowledge request").disabled).toBe(false);
-    await act(async () => button("Submit knowledge request").click());
+    await click("Submit report");
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith({
       createToken: expect.any(String),
@@ -226,7 +314,7 @@ describe("simplified missing-guidance report rendered UI", () => {
 
   it("shows visible validation for blank or whitespace-only primary fields", async () => {
     await render();
-    await act(async () => button("Submit knowledge request").click());
+    await click("Submit report");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Add a title and description"
     );
@@ -252,17 +340,31 @@ describe("simplified missing-guidance report rendered UI", () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
 
-  it("retains all edits on failure and reuses the creation token across an edited retry", async () => {
+  it("retains all edits on uncertain failure and reuses the creation token across an edited retry", async () => {
     mocks.mutate.mockRejectedValueOnce(new Error("Synthetic service failure"));
     await render();
     await fillPrimary();
     await openOptional();
     await input("Category", "Operations");
-    await input("Priority", "high");
-    await input("Request kind", "unclear");
-    await input("Guidance already checked", "  Synthetic search  ");
-    await input("Impact on staff or service", "  Synthetic impact  ");
-    await input("Related guide ID (optional)", "7");
+    await input("How urgent is this?", "high");
+    await input("What needs improving?", "unclear");
+    await input(
+      "Where have you already looked? (optional)",
+      "  Synthetic search  "
+    );
+    await input(
+      "How is this affecting staff? (optional)",
+      "  Synthetic impact  "
+    );
+    await chooseGuide();
+    expect(mocks.queries.at(-1)?.input).toEqual({
+      type: "guides",
+      scope: "active",
+      search: "reimbursement",
+      selectedId: 7,
+      excludeId: undefined,
+      page: 1,
+    });
     await submit();
     const first = mocks.mutate.mock.calls[0][0];
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
@@ -273,16 +375,20 @@ describe("simplified missing-guidance report rendered UI", () => {
       "Synthetic staff process description"
     );
     expect(field("Category").value).toBe("Operations");
-    expect(field("Priority").value).toBe("high");
-    expect(field("Request kind").value).toBe("unclear");
-    expect(field("Guidance already checked").value).toBe(
+    expect(field("How urgent is this?").value).toBe("high");
+    expect(field("What needs improving?").value).toBe("unclear");
+    expect(field("Where have you already looked? (optional)").value).toBe(
       "  Synthetic search  "
     );
-    expect(field("Impact on staff or service").value).toBe(
+    expect(field("How is this affecting staff? (optional)").value).toBe(
       "  Synthetic impact  "
     );
-    expect(field("Related guide ID (optional)").value).toBe("7");
-    expect(button("Submit knowledge request").disabled).toBe(false);
+    expect(
+      container.querySelector(
+        '[aria-label="Is this about an existing guide? (optional)"]'
+      )?.textContent
+    ).toContain("Synthetic reimbursement checklist");
+    expect(button("Submit report").disabled).toBe(false);
     await input(titleLabel, "Synthetic revised missing guidance");
     await submit();
     expect(mocks.mutate.mock.calls[1][0]).toEqual({
@@ -309,7 +415,7 @@ describe("simplified missing-guidance report rendered UI", () => {
     });
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(container.querySelector("fieldset")?.disabled).toBe(true);
-    expect(button("Reporting…").disabled).toBe(true);
+    expect(button("Submitting…").disabled).toBe(true);
     expect(button("Cancel report").disabled).toBe(true);
     await submit();
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
@@ -326,25 +432,72 @@ describe("simplified missing-guidance report rendered UI", () => {
   it("respects a pending mutation reported by the canonical hook", async () => {
     mocks.pending = true;
     await render();
-    expect(button("Reporting…").disabled).toBe(true);
+    expect(button("Submitting…").disabled).toBe(true);
     await submit();
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  it("does not create another report when saving succeeded but refreshing failed", async () => {
+  it("respects pending recovered-update state from the always-mounted canonical hook", async () => {
+    mocks.recoveredPending = true;
+    await render();
+    expect(button("Submitting…").disabled).toBe(true);
+    expect(button("Cancel report").disabled).toBe(true);
+    expect(container.querySelector("fieldset")?.disabled).toBe(true);
+    await submit();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.updateRecovered).not.toHaveBeenCalled();
+    expect(mocks.recover).not.toHaveBeenCalled();
+  });
+
+  it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+    "denies and clears the entire form on canonical recovered-update hook %s error",
+    async code => {
+      await render();
+      await fillPrimary();
+      cache.setQueryData([["staffHandbook", "recoverRequest"]], {
+        private: "Synthetic recovery cache",
+      });
+      mocks.recoveredError = { shape: { data: { code } } };
+      await render();
+      expect(
+        container.querySelector("form, input, textarea, select")
+      ).toBeNull();
+      expect(container.textContent).toContain("access could not be authorized");
+      expect(container.textContent).not.toContain("Synthetic missing guidance");
+      expect(
+        cache.getQueryCache().findAll({ queryKey: [["staffHandbook"]] })
+      ).toHaveLength(0);
+      expect(mocks.invalidate).toHaveBeenCalledWith(
+        "auth.me",
+        undefined,
+        undefined,
+        { throwOnError: true }
+      );
+      mocks.recoveredError = undefined;
+      await render();
+      expect(container.querySelector("form")).toBeNull();
+      expect(mocks.mutate).not.toHaveBeenCalled();
+      expect(mocks.updateRecovered).not.toHaveBeenCalled();
+      expect(mocks.recover).not.toHaveBeenCalled();
+      expect(onCreated).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not create another report when saving succeeded but refreshing failed, without exposing IDs", async () => {
     mocks.invalidate.mockRejectedValue(new Error("Synthetic refresh failure"));
     await render();
     await fillPrimary();
     const form = container.querySelector("form")!;
     await submit();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Request #8 was saved, but refresh failed"
+      "Your report was saved, but the page could not refresh"
     );
+    expect(container.textContent).not.toMatch(/#8|request\s+8|report\s+8/i);
     expect(container.querySelector("form")).toBeNull();
     expect(onCreated).not.toHaveBeenCalled();
     await act(async () => submitEvent(form));
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
-    await act(async () => button("Open saved request #8").click());
+    await click("View your saved report");
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledWith(8);
   });
@@ -386,15 +539,18 @@ describe("simplified missing-guidance report rendered UI", () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  it("asks before discarding optional-only edits", async () => {
+  it("asks before discarding optional-only edits and preserves them after cancellation", async () => {
     await render();
     await openOptional();
-    await input("Impact on staff or service", "Synthetic optional impact");
+    await input(
+      "How is this affecting staff? (optional)",
+      "Synthetic optional impact"
+    );
     vi.mocked(window.confirm).mockReturnValue(false);
-    await act(async () => button("Cancel report").click());
+    await click("Cancel report");
     expect(window.confirm).toHaveBeenCalledWith("Discard this unsaved report?");
     expect(onCancel).not.toHaveBeenCalled();
-    expect(field("Impact on staff or service").value).toBe(
+    expect(field("How is this affecting staff? (optional)").value).toBe(
       "Synthetic optional impact"
     );
   });

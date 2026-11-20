@@ -248,9 +248,18 @@ export const sectionLabels = {
   whenToUse: "When to use",
   checks: "Checks before starting",
   steps: "Steps",
-  agentWording: "Agent wording",
-  exceptions: "Exceptions & escalation",
+  agentWording: "Suggested reply to an agent",
+  exceptions: "When to ask for help",
   related: "Related guidance",
+};
+export const guidanceTypeLabels: Record<
+  HandbookContent["sensitivity"],
+  string
+> = {
+  operational: "Everyday procedures",
+  financial: "Money, payments or refunds",
+  legal: "Legal requirements",
+  policy: "Company policies",
 };
 export function Field({
   label,
@@ -258,17 +267,29 @@ export function Field({
   hint,
 }: {
   label: string;
-  children: React.ReactElement<{ id?: string }>;
+  children: React.ReactElement<{ id?: string; "aria-describedby"?: string }>;
   hint?: string;
 }) {
-  const id = useId();
+  const generatedId = useId();
+  const id = children.props.id ?? generatedId;
+  const hintId = `${id}-hint`;
+  const describedBy = [children.props["aria-describedby"], hint ? hintId : null]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className="min-w-0 space-y-1.5">
       <label htmlFor={id} className="block text-sm font-medium">
         {label}
       </label>
-      {React.cloneElement(children, { id })}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {React.cloneElement(children, {
+        id,
+        "aria-describedby": describedBy || undefined,
+      })}
+      {hint && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -492,12 +513,16 @@ export function GuideReading({
     <article data-handbook-reading className="space-y-4">
       <header>
         <h2 className="text-xl font-semibold break-words">{content.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{content.summary}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {content.category} · {content.sensitivity} · Revision{" "}
-          {revision.revisionNumber} · Review due:{" "}
-          {dateLabel(content.nextReviewAt)}
-        </p>
+        {content.summary && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {content.summary}
+          </p>
+        )}
+        {content.category && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {content.category}
+          </p>
+        )}
         {content.tags.length > 0 && (
           <p className="mt-1 text-xs">{content.tags.join(" · ")}</p>
         )}
@@ -515,9 +540,12 @@ export function GuideReading({
           </section>
         ))
       )}
-      <section>
-        <h3 className="text-sm font-semibold">Private attachments</h3>
-        {allowedResources.length ? (
+      {allowedResources.length > 0 && (
+        <section>
+          <h3 className="text-sm font-semibold">Attachments</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Private files for staff only.
+          </p>
           <ul className="mt-2 space-y-2 text-sm">
             {allowedResources.map(r => (
               <li key={r.id}>
@@ -544,12 +572,8 @@ export function GuideReading({
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-1 text-xs text-muted-foreground">
-            No attachments in this revision.
-          </p>
-        )}
-      </section>
+        </section>
+      )}
     </article>
   );
 }
@@ -567,25 +591,53 @@ export function SafeProse({
     />
   );
 }
-export function History({ audit }: { audit: Audit[] }) {
+const historyActionLabels: Record<string, string> = {
+  created: "Created",
+  saved: "Draft saved",
+  updated: "Updated",
+  submit_review: "Review requested",
+  approve: "Draft checked",
+  publish: "Published for staff",
+  archive: "Archived",
+  restore: "Restored",
+  resource_added: "Attachment added",
+  resource_removed: "Attachment removed",
+  uploaded: "Attachment uploaded",
+  removed_from_draft: "Attachment removed",
+  retired: "Attachment retired",
+  guide_drafted: "Guide draft created",
+  resolved_by_publication: "Resolved with published guidance",
+  commented: "Comment added",
+};
+export function History({
+  audit,
+  staff = [],
+}: {
+  audit: Audit[];
+  staff?: Staff[];
+}) {
   return (
     <details className="rounded-md border p-3">
       <summary className="cursor-pointer text-sm font-medium">
-        Audit history (read-only)
+        Activity history (read-only)
       </summary>
       <ol className="mt-3 max-h-64 overflow-y-auto space-y-3 text-xs">
         {audit.length ? (
           audit.map(item => (
             <li key={item.id}>
               <p className="font-medium">
-                {item.action} · Staff #{item.actorId} ·{" "}
-                {dateLabel(item.createdAt)}
+                {historyActionLabels[item.action] ?? "Activity recorded"} ·{" "}
+                {staff.find(person => person.id === item.actorId)?.name ||
+                  "Staff member"}{" "}
+                · {dateLabel(item.createdAt)}
               </p>
-              <p className="text-muted-foreground">{item.summary}</p>
+              {item.summary !== `Internal guide action: ${item.action}.` && (
+                <p className="text-muted-foreground">{item.summary}</p>
+              )}
             </li>
           ))
         ) : (
-          <li>No audit entries.</li>
+          <li>No activity yet.</li>
         )}
       </ol>
     </details>

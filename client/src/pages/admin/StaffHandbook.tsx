@@ -206,6 +206,16 @@ function HandbookWorkspace({ userId }: { userId: number }) {
       ? articleId !== null || newArticle
       : requestId !== null || reporting;
   const data = tab === "handbook" ? browse.data : requests.data;
+  const hasFilters = Boolean(
+    search ||
+      searchInput ||
+      category ||
+      (tab === "handbook" ? view !== "all" : status !== "all" || assignee)
+  );
+  function clearFilters() {
+    resetFilters();
+    setView("all");
+  }
   if (blocked) return <HandbookAccessDenied />;
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-1 sm:p-2" data-staff-handbook>
@@ -216,7 +226,8 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             Staff Handbook
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Internal guides for JLT staff.
+            Shared instructions for JLT staff. Staff only — not visible to
+            agents.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -238,7 +249,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             onClick={startReport}
           >
             <MessageSquarePlus className="mr-1 h-4 w-4" aria-hidden="true" />
-            Report missing knowledge
+            Report missing guidance
           </Button>
         </div>
       </header>
@@ -260,7 +271,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             aria-current={tab === "requests" ? "page" : undefined}
             onClick={() => changeTab("requests")}
           >
-            Missing knowledge
+            Missing guidance
           </Button>
         </nav>
       )}
@@ -298,10 +309,14 @@ function HandbookWorkspace({ userId }: { userId: number }) {
           id={requestId}
           categories={categories}
           staff={staff}
-          onGuide={id => {
+          onGuide={(id, edit = false) => {
             resetFilters();
             setView("all");
-            openArticle(id, false);
+            openArticle(id, edit);
+          }}
+          onReport={id => {
+            setRemount(previous => previous + 1);
+            route("requests", { request: id });
           }}
           onReload={() => setRemount(previous => previous + 1)}
           onClose={() => route("requests")}
@@ -310,12 +325,12 @@ function HandbookWorkspace({ userId }: { userId: number }) {
         <section className={panelClass}>
           <div>
             <h2 className="font-semibold">
-              {tab === "handbook" ? "Browse guides" : "Missing knowledge"}
+              {tab === "handbook" ? "Browse guides" : "Missing guidance"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {tab === "handbook"
-                ? "All active guides, including saved drafts and unpublished changes."
-                : "Report a gap or follow up on an existing request."}
+                ? "Published guides are ready to use. Drafts and unpublished changes are still being worked on."
+                : "Report instructions you need, or see who's helping with an existing report."}
             </p>
           </div>
           <form
@@ -328,9 +343,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
           >
             <div className="min-w-0 flex-1">
               <Field
-                label={
-                  tab === "handbook" ? "Search guidance" : "Search requests"
-                }
+                label={tab === "handbook" ? "Search guides" : "Search reports"}
               >
                 <input
                   type="search"
@@ -338,7 +351,9 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                   className={controlClass}
                   value={searchInput}
                   onChange={e => setSearchInput(e.target.value)}
-                  placeholder="Search titles, content and tags"
+                  placeholder={
+                    tab === "handbook" ? "Find instructions" : "Find a report"
+                  }
                 />
               </Field>
             </div>
@@ -348,7 +363,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             </Button>
           </form>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Filter category">
+            <Field label="Category">
               <select
                 className={controlClass}
                 value={category}
@@ -382,55 +397,54 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             )}
           </div>
           {tab === "requests" && (
-            <details className="rounded-lg border px-3 py-2">
-              <summary className="cursor-pointer text-sm font-medium">
-                Advanced filters
-                {(status !== "all" || assignee) && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {" "}
-                    (active)
-                  </span>
-                )}
-              </summary>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Field label="Filter request status">
-                  <select
-                    className={controlClass}
-                    value={status}
-                    onChange={e => {
-                      setStatus(e.target.value as typeof status);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="open">Open requests</option>
-                    {KNOWLEDGE_REQUEST_STATUSES.map(s => (
-                      <option key={s} value={s}>
-                        {KNOWLEDGE_REQUEST_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Filter assignee">
-                  <select
-                    className={controlClass}
-                    value={assignee}
-                    onChange={e => {
-                      setAssignee(e.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="">All assignees</option>
-                    <option value="unassigned">Unassigned</option>
-                    {staff.map(person => (
-                      <option key={person.id} value={person.id}>
-                        {person.name || `Staff #${person.id}`}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </details>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Status">
+                <select
+                  className={controlClass}
+                  value={status}
+                  onChange={e => {
+                    setStatus(e.target.value as typeof status);
+                    setPage(1);
+                  }}
+                >
+                  <option value="all">All statuses</option>
+                  <option value="open">Open reports</option>
+                  {KNOWLEDGE_REQUEST_STATUSES.map(s => (
+                    <option key={s} value={s}>
+                      {KNOWLEDGE_REQUEST_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Who's helping">
+                <select
+                  className={controlClass}
+                  value={assignee}
+                  onChange={e => {
+                    setAssignee(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Anyone</option>
+                  <option value="unassigned">No one yet</option>
+                  {staff.map(person => (
+                    <option key={person.id} value={person.id}>
+                      {person.name?.trim() || "Staff member"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
+          {hasFilters && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </Button>
           )}
           {overview.isError && (
             <QueryState query={overview} label="handbook filters" />
@@ -464,8 +478,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                           {item.summary}
                         </p>
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {item.category} · {item.sensitivity} · Updated{" "}
-                          {dateLabel(item.updatedAt)}
+                          {item.category} · Updated {dateLabel(item.updatedAt)}
                         </p>
                         {item.nextReviewAt &&
                           new Date(item.nextReviewAt).getTime() <
@@ -481,24 +494,34 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                 {!browse.data.items.length && (
                   <div className="space-y-2 rounded-lg bg-muted/30 p-4 text-sm">
                     <p>
-                      {search
-                        ? "No guidance matches your search."
-                        : "No guides in this view yet."}
+                      {hasFilters
+                        ? "No guides match these filters. Try clearing them, or report the instructions you need."
+                        : "No guides yet. Write a guide or report the instructions you need."}
                     </p>
-                    <Button type="button" size="sm" onClick={startReport}>
-                      Report missing knowledge
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={startNewGuide}
+                      >
+                        New guide
+                      </Button>
+                      <Button type="button" size="sm" onClick={startReport}>
+                        Report missing guidance
+                      </Button>
+                    </div>
                   </div>
                 )}
               </>
             )
           ) : requests.isError || requests.isLoading || !requests.data ? (
-            <QueryState query={requests} label="requests" />
+            <QueryState query={requests} label="reports" />
           ) : (
             <>
               <ul
                 className="max-h-[440px] overflow-y-auto space-y-2"
-                aria-label="Request results"
+                aria-label="Report results"
               >
                 {requests.data.items.map((item: RequestDto) => (
                   <li key={item.id}>
@@ -511,7 +534,10 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                         <h3 className="text-sm font-medium break-words">
                           {item.title}
                         </h3>
-                        <Badge variant="secondary" className="shrink-0">
+                        <Badge
+                          variant="secondary"
+                          className="max-w-[50%] text-right whitespace-normal"
+                        >
                           {
                             KNOWLEDGE_REQUEST_STATUS_LABELS[
                               item.status as KnowledgeRequestStatus
@@ -523,22 +549,38 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                         {item.description}
                       </p>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        #{item.id} · {item.category} · {item.priority} priority
-                        ·{" "}
-                        {staff.find(p => p.id === item.assigneeId)?.name ||
-                          (item.assigneeId
-                            ? `Staff #${item.assigneeId}`
-                            : "Unassigned")}
+                        {item.category} · Reported {dateLabel(item.createdAt)}
+                        {new Date(item.updatedAt).getTime() !==
+                          new Date(item.createdAt).getTime() && (
+                          <> · Updated {dateLabel(item.updatedAt)}</>
+                        )}
+                        {staff
+                          .find(p => p.id === item.assigneeId)
+                          ?.name?.trim() && (
+                          <>
+                            {" "}
+                            · Helping:{" "}
+                            {staff
+                              .find(p => p.id === item.assigneeId)!
+                              .name!.trim()}
+                          </>
+                        )}
                       </p>
                     </button>
                   </li>
                 ))}
               </ul>
               {!requests.data.items.length && (
-                <p className="rounded-lg bg-muted/30 p-4 text-sm">
-                  No requests match these filters. Use Report missing knowledge
-                  to raise a gap.
-                </p>
+                <div className="space-y-2 rounded-lg bg-muted/30 p-4 text-sm">
+                  <p>
+                    {hasFilters
+                      ? "No reports match these filters. Try clearing them, or report the instructions you need."
+                      : "No missing guidance has been reported yet. Tell us what instructions you need."}
+                  </p>
+                  <Button type="button" size="sm" onClick={startReport}>
+                    Report missing guidance
+                  </Button>
+                </div>
               )}
             </>
           )}

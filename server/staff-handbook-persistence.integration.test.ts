@@ -17,6 +17,14 @@ import {
   handbookArticle,
 } from "./staff-handbook-articles";
 import { emptyHandbookContent } from "../shared/staff-handbook";
+import {
+  createKnowledgeRequest,
+  createGuideFromKnowledgeRequest,
+  knowledgeRequest,
+  recoverKnowledgeRequest,
+  updateRecoveredKnowledgeRequest,
+} from "./staff-handbook-requests";
+import { handbookLinkOptions } from "./staff-handbook-links";
 const enabled = process.env.HANDBOOK_VALIDATION_DB_TEST === "1";
 /** Deliberately excluded from normal tests. Only managed validation DB; NEVER Railway. */
 describe.skipIf(!enabled)(
@@ -38,7 +46,9 @@ describe.skipIf(!enabled)(
       const token = randomUUID();
       let newUserId = 0,
         draftId = 0,
-        publishedId = 0;
+        publishedId = 0,
+        reportId = 0,
+        reportGuideId = 0;
       try {
         try {
           await db.transaction(async tx => {
@@ -77,14 +87,25 @@ describe.skipIf(!enabled)(
               changeSummary: "",
             });
             draftId = created.id;
-          const fresh = await handbookArticle(actor, created.id);
-          expect(fresh.draft?.content).toEqual(content);
-          expect(fresh.published).toBeNull();
-          await expect(saveHandbookArticle(actor, { createToken: token, content: { ...content, title: "Changed after a lost save response" }, changeSummary: "" })).rejects.toMatchObject({ code: "CONFLICT" });
-          expect((await handbookArticle(actor, created.id)).draft?.content).toEqual(content);
-          const updatedContent = {
-            ...content,
-            title: "Updated synthetic real-driver guide",
+            const fresh = await handbookArticle(actor, created.id);
+            expect(fresh.draft?.content).toEqual(content);
+            expect(fresh.published).toBeNull();
+            await expect(
+              saveHandbookArticle(actor, {
+                createToken: token,
+                content: {
+                  ...content,
+                  title: "Changed after a lost save response",
+                },
+                changeSummary: "",
+              })
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+            expect(
+              (await handbookArticle(actor, created.id)).draft?.content
+            ).toEqual(content);
+            const updatedContent = {
+              ...content,
+              title: "Updated synthetic real-driver guide",
             };
             const edited = await saveHandbookArticle(actor, {
               id: created.id,
@@ -124,8 +145,122 @@ describe.skipIf(!enabled)(
                 changeSummary: "",
               })
             ).rejects.toMatchObject({ code: "FORBIDDEN" });
+            const reportInput = {
+              createToken: randomUUID(),
+              title: "Synthetic report " + token,
+              description: "Synthetic staff need a generic checklist.",
+              category: "General",
+              kind: "missing_process" as const,
+              checkedGuidance: "",
+              impact: "",
+              priority: "normal" as const,
+              articleId: null,
+            };
+            let report = await createKnowledgeRequest(actor, reportInput);
+            reportId = report.id;
+            expect(await createKnowledgeRequest(actor, reportInput)).toEqual(
+              report
+            );
+            await expect(
+              createKnowledgeRequest(actor, {
+                ...reportInput,
+                description: "Changed after an uncertain response",
+              })
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+            const recovered = await recoverKnowledgeRequest(actor, {
+              createToken: reportInput.createToken,
+            });
+            expect(recovered.request?.id).toBe(report.id);
+            const recoveryPayload = {
+              ...reportInput,
+              id: report.id,
+              expectedVersion: report.version,
+              description:
+                "Updated after recovering the synthetic saved report.",
+            };
+            report = await updateRecoveredKnowledgeRequest(
+              actor,
+              recoveryPayload
+            );
+            expect(
+              (await knowledgeRequest(actor, report.id)).request.description
+            ).toBe(recoveryPayload.description);
+            const generated = await createGuideFromKnowledgeRequest(actor, {
+              id: report.id,
+              expectedVersion: report.version,
+              createToken: randomUUID(),
+            });
+            reportGuideId = generated.articleId;
+            const generatedDraft = await handbookArticle(
+              actor,
+              generated.articleId
+            );
+            expect(generatedDraft.draft?.content.format).toBe("article");
+            expect(generatedDraft.published).toBeNull();
+            expect(
+              (await knowledgeRequest(actor, report.id)).request.status
+            ).toBe("drafting");
+            await expect(
+              updateRecoveredKnowledgeRequest(actor, {
+                ...recoveryPayload,
+                expectedVersion: report.version,
+              })
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+            const draftChoices = await handbookLinkOptions(actor, {
+              type: "guides",
+              scope: "active",
+              search: token,
+              selectedId: generated.articleId,
+            });
+            expect(draftChoices.items.map(item => item.id)).toEqual([
+              generated.articleId,
+            ]);
+            expect(draftChoices.selected?.title).toBe(reportInput.title);
+            const unpublishedChoices = await handbookLinkOptions(actor, {
+              type: "guides",
+              scope: "published",
+              search: token,
+              selectedId: generated.articleId,
+            });
+            expect(unpublishedChoices.items).toEqual([]);
+            expect(unpublishedChoices.selected).toBeNull();
+            await saveAndPublishHandbookArticle(actor, {
+              id: generated.articleId,
+              expectedVersion: generatedDraft.article.version,
+              content: {
+                ...generatedDraft.draft!.content,
+                contentHtml: "<p>Synthetic checked steps for staff.</p>",
+              },
+              changeSummary: "",
+            });
+            const publishedChoices = await handbookLinkOptions(actor, {
+              type: "guides",
+              scope: "published",
+              search: token,
+              selectedId: generated.articleId,
+            });
+            expect(publishedChoices.selected?.state).toBe("published");
+            expect(
+              (await knowledgeRequest(actor, report.id)).request.status
+            ).toBe("resolved");
+            const reportChoices = await handbookLinkOptions(actor, {
+              type: "reports",
+              search: token,
+              selectedId: report.id,
+            });
+            expect(reportChoices.selected?.title).toBe(reportInput.title);
+            expect(
+              (
+                await handbookLinkOptions(actor, {
+                  type: "reports",
+                  search: token,
+                  selectedId: report.id,
+                  excludeId: report.id,
+                })
+              ).selected
+            ).toBeNull();
             console.log(
-              "Managed validation DB: complete handbook save/readback/edit/atomic publication, dates/JSON, idempotent retry and sensitive-review denial passed; rolling back all synthetic rows."
+              "Managed validation DB: guide saves, report retry safety, simple guide-from-report, named draft/published choices and publication resolving the report passed; rolling back all synthetic rows."
             );
             throw rollback;
           });
@@ -139,7 +274,13 @@ describe.skipIf(!enabled)(
             .from(schema.users)
             .where(eq(schema.users.id, newUserId))
         ).toEqual([]);
-        for (const id of [draftId, publishedId]) {
+        expect(
+          await db
+            .select({ id: schema.staffKnowledgeRequests.id })
+            .from(schema.staffKnowledgeRequests)
+            .where(eq(schema.staffKnowledgeRequests.id, reportId))
+        ).toEqual([]);
+        for (const id of [draftId, publishedId, reportGuideId]) {
           expect(
             await db
               .select({ id: schema.staffHandbookArticles.id })

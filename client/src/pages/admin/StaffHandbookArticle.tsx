@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { RichEmailEditor } from "@/components/RichEmailEditor";
+import { useHandbookUnsavedWork } from "./useHandbookUnsavedWork";
 import {
   emptyHandbookContent,
   STAFF_HANDBOOK_SENSITIVITIES,
@@ -18,6 +19,7 @@ import {
   dateInput,
   dateLabel,
   errorText,
+  guidanceTypeLabels,
   sectionLabels,
   safeHandbookHtml,
   type ArticleDetail,
@@ -339,6 +341,9 @@ function ArticleWorkspace({
     upload.isPending ||
     remove.isPending;
   const dirty = JSON.stringify(content) !== baseline || !!changeSummary.trim();
+  const withUnsavedWorkBypass = useHandbookUnsavedWork(
+    !blocked && (dirty || pending)
+  );
   const archived = !!detail?.article.archivedAt;
   const current =
     !queryFailed &&
@@ -400,7 +405,7 @@ function ArticleWorkspace({
         refreshed.article.version !== expectedVersion)
     )
       throw new Error(
-        "The saved guide's exact version could not be verified. Another staff member may have changed it."
+        "The saved guide could not be checked. Another staff member may have changed it."
       );
     return refreshed;
   }
@@ -434,7 +439,7 @@ function ArticleWorkspace({
       version: receipt.version,
       message: receipt.message,
     });
-    onSaved(receipt.id);
+    withUnsavedWorkBypass(() => onSaved(receipt.id));
   }
   async function retrySavedGuide() {
     const receipt = savedReceipt.current;
@@ -518,7 +523,7 @@ function ArticleWorkspace({
       if (deny(error)) return;
       if (alive.current) {
         setMessage(
-          `${success} Refresh failed; the action was saved as guide #${result.id}. ${id === "new" ? "Use Open saved guide to retry." : "Reload the latest guide before further actions."} Do not repeat the action.`
+          `${success} Refresh failed, but your guide was saved. ${id === "new" ? "Use Open saved guide to retry." : "Reload the latest guide before further actions."} Do not repeat the action.`
         );
         setFailed(true);
       }
@@ -574,7 +579,7 @@ function ArticleWorkspace({
           ? saveAndPublish.mutateAsync(input)
           : save.mutateAsync(input),
       workflow === "publish"
-        ? "Guide saved and published internally. Staff only; no agent access."
+        ? "Guide saved and published for staff only. Agents cannot access it."
         : "Draft saved. Not published; existing published guidance is unchanged.",
       saved
     );
@@ -585,13 +590,29 @@ function ArticleWorkspace({
   ) {
     setContent(previous => ({ ...previous, [key]: value }));
   }
+  function openReading(
+    draftPreview: boolean,
+    historicId: number | null = null
+  ) {
+    if (
+      pending ||
+      (dirty &&
+        !window.confirm(
+          "You have unsaved edits. Open this read-only view? Your edits will be kept. Choose Edit draft to return to them."
+        ))
+    )
+      return;
+    setEditing(false);
+    setReadingDraft(draftPreview);
+    setHistoryId(historicId);
+  }
   function close() {
     if (
       !pending &&
       !inFlight.current &&
       (!dirty || window.confirm("Discard your unsaved guide edits?"))
     )
-      onClose();
+      withUnsavedWorkBypass(onClose);
   }
   async function doAction(
     actionName: "submit_review" | "approve" | "publish" | "archive" | "restore"
@@ -604,7 +625,7 @@ function ArticleWorkspace({
       return;
     const confirmations = {
       publish:
-        "Publish this exact saved revision internally for staff only? Agents will not have access.",
+        "Publish this saved draft for staff only? Agents will not have access.",
       archive:
         "Archive this guide? It will leave the published handbook; history is retained.",
       restore:
@@ -623,9 +644,10 @@ function ArticleWorkspace({
           action: actionName,
         }),
       {
-        submit_review: "Saved revision submitted for review.",
-        approve: "Exact saved revision approved.",
-        publish: "Guide published internally. No agent access.",
+        submit_review: "Review requested for this saved draft.",
+        approve:
+          "This saved draft has been checked. Any further edits need a new check.",
+        publish: "Guide published for staff only. Agents cannot access it.",
         archive: "Guide archived.",
         restore: "Guide restored. Check its publication state before use.",
       }[actionName]
@@ -663,7 +685,7 @@ function ArticleWorkspace({
         fileBase64: base64,
         mimeType: mime,
       });
-    }, "Private attachment saved to a new draft revision. Submit it for review when ready.");
+    }, "Private attachment saved to the draft. Request a review when ready.");
   }
   const displayed = readingDraft
     ? detail?.draft
@@ -684,10 +706,7 @@ function ArticleWorkspace({
           Back to guides
         </Button>
         <span className="text-xs text-muted-foreground">
-          {id === "new"
-            ? "New staff-only draft"
-            : `Guide #${id} · Version ${version}`}{" "}
-          {archived ? "· Archived" : ""}
+          Staff-only guide {archived ? "· Archived" : ""}
         </span>
       </div>
       <Feedback message={message} error={failed} />
@@ -697,7 +716,7 @@ function ArticleWorkspace({
           disabled={pending}
           onClick={() => void retrySavedGuide()}
         >
-          Open saved guide #{savedNewId}
+          Open saved guide
         </Button>
       )}
       {detail && (detail.article.version !== version || verificationFailed) && (
@@ -706,27 +725,17 @@ function ArticleWorkspace({
           message="This guide changed, or refresh is still pending. Your editor has not been overwritten. Reload the latest guide before further actions."
         />
       )}
+      {!editing && dirty && (
+        <Feedback message="Your unsaved edits are kept, but are not shown here. Choose Edit draft to return to them." />
+      )}
       <div className="flex flex-wrap gap-2">
-        {!editing && !historic && !needsIndependentReview && (
-          <Button
-            type="button"
-            disabled={pending || archived || !current}
-            onClick={() => void submitGuide("publish")}
-          >
-            Save &amp; publish
-          </Button>
-        )}
         {detail?.published && (
           <Button
             type="button"
             variant={!editing && !readingDraft ? "default" : "outline"}
             size="sm"
             disabled={pending}
-            onClick={() => {
-              setEditing(false);
-              setReadingDraft(false);
-              setHistoryId(null);
-            }}
+            onClick={() => openReading(false)}
           >
             Read published
           </Button>
@@ -737,11 +746,7 @@ function ArticleWorkspace({
             variant={!editing && readingDraft ? "default" : "outline"}
             size="sm"
             disabled={pending}
-            onClick={() => {
-              setEditing(false);
-              setReadingDraft(true);
-              setHistoryId(null);
-            }}
+            onClick={() => openReading(true)}
           >
             Preview saved draft
           </Button>
@@ -779,7 +784,8 @@ function ArticleWorkspace({
               setBusy(true);
               try {
                 await refresh(id);
-                if (alive.current) onSaved(id);
+                if (alive.current)
+                  withUnsavedWorkBypass(() => onSaved(id));
               } catch (error) {
                 if (deny(error)) return;
                 if (alive.current) {
@@ -800,10 +806,20 @@ function ArticleWorkspace({
       </div>
       {detail?.published && (
         <p className="text-xs text-muted-foreground">
-          The published revision stays available while the draft is edited.
-          Preview and history are read-only; neither publishes changes.
+          Staff can keep reading the published guide while you edit. Preview and
+          history show saved content only; neither publishes changes.
         </p>
       )}
+      {!editing &&
+        !historic &&
+        !readingDraft &&
+        needsReview &&
+        draft?.id !== detail?.published?.id && (
+          <p className="rounded-md bg-muted/40 p-3 text-sm">
+            A draft update needs a check before publishing. Choose Preview saved
+            draft to see the review steps, or Edit draft to make changes.
+          </p>
+        )}
       {!editing && !historic && displayed && (
         <>
           <p className="rounded-md bg-muted/40 p-2 text-xs font-medium">
@@ -816,9 +832,7 @@ function ArticleWorkspace({
       )}
       {historic && (
         <div data-handbook-history className="space-y-3">
-          <h2 className="font-semibold">
-            Revision {historic.revisionNumber} — read-only history
-          </h2>
+          <h2 className="font-semibold">Saved guide — read-only history</h2>
           <p className="text-xs">
             {historic.changeSummary} · {dateLabel(historic.createdAt)}
           </p>
@@ -839,14 +853,16 @@ function ArticleWorkspace({
             className="space-y-4"
           >
             <legend className="mb-3 font-semibold">
-              {id === "new"
-                ? "Create guide draft"
-                : "Edit draft — explicit save required"}
+              {id === "new" ? "Create a guide" : "Edit guide"}
             </legend>
-            <Field label="Title">
+            <Field
+              label="Title"
+              hint="Name the task, for example: How to update a booking."
+            >
               <input
                 maxLength={255}
                 className={controlClass}
+                placeholder="How to update a booking"
                 value={content.title}
                 aria-invalid={!!titleError}
                 aria-describedby={
@@ -880,6 +896,27 @@ function ArticleWorkspace({
                 )}
               </select>
             </Field>
+            <Field
+              label="Guidance type"
+              hint="Choose what this guide covers. Money, legal requirements and company policies need a check by another staff member before publishing."
+            >
+              <select
+                className={controlClass}
+                value={content.sensitivity}
+                onChange={e =>
+                  update(
+                    "sensitivity",
+                    e.target.value as HandbookContent["sensitivity"]
+                  )
+                }
+              >
+                {STAFF_HANDBOOK_SENSITIVITIES.map(value => (
+                  <option key={value} value={value}>
+                    {guidanceTypeLabels[value]}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <p className="text-xs text-muted-foreground">
               Private staff guidance only. No customer/payment data,
               credentials, remote embeds or inline images. Use private
@@ -888,6 +925,11 @@ function ArticleWorkspace({
             {content.format === "article" ? (
               <div className="space-y-1.5">
                 <div className="text-sm font-medium">Content</div>
+                <p className="text-xs text-muted-foreground">
+                  Explain when to use this guide, what to do, and when to ask
+                  for help. For example: Open the booking, check the details,
+                  then save the change.
+                </p>
                 <PrivateEditor
                   label="Content"
                   value={content.contentHtml}
@@ -904,19 +946,23 @@ function ArticleWorkspace({
               </div>
             ) : (
               <div className="space-y-3">
-                <h3 className="text-sm font-medium">
-                  Content — six-section process
-                </h3>
+                <h3 className="text-sm font-medium">Step-by-step guidance</h3>
                 {Object.entries(sectionLabels).map(([key, label]) => (
                   <details
                     key={key}
                     className="rounded-md border p-3"
-                    open={key === "whenToUse"}
+                    open={key === "whenToUse" || key === "steps"}
                   >
                     <summary className="cursor-pointer text-sm font-medium">
                       {label}
                     </summary>
                     <div className="mt-3">
+                      {key === "steps" && (
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          List what staff should do in order. For example: Open
+                          the booking, check the details, then save the change.
+                        </p>
+                      )}
                       <PrivateEditor
                         label={label}
                         value={
@@ -944,7 +990,7 @@ function ArticleWorkspace({
             )}
             <details className="rounded-md border p-3">
               <summary className="cursor-pointer text-sm font-medium">
-                Advanced options (optional)
+                Guide details (optional)
               </summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field label="Summary (optional)">
@@ -963,13 +1009,11 @@ function ArticleWorkspace({
                   >
                     {staff.map(person => (
                       <option key={person.id} value={person.id}>
-                        {person.name || `Staff #${person.id}`}
+                        {person.name || "Staff member"}
                       </option>
                     ))}
                     {!staff.some(person => person.id === content.ownerId) && (
-                      <option value={content.ownerId}>
-                        Staff #{content.ownerId}
-                      </option>
+                      <option value={content.ownerId}>Current owner</option>
                     )}
                   </select>
                 </Field>
@@ -988,22 +1032,6 @@ function ArticleWorkspace({
                       );
                     }}
                   />
-                </Field>
-                <Field label="Sensitivity">
-                  <select
-                    className={controlClass}
-                    value={content.sensitivity}
-                    onChange={e =>
-                      update(
-                        "sensitivity",
-                        e.target.value as HandbookContent["sensitivity"]
-                      )
-                    }
-                  >
-                    {STAFF_HANDBOOK_SENSITIVITIES.map(value => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
                 </Field>
                 <Field label="Last reviewed date">
                   <input
@@ -1054,15 +1082,13 @@ function ArticleWorkspace({
                       )
                     }
                   >
-                    <option value="article">Ordinary rich text article</option>
-                    <option value="process">
-                      Reusable six-section process
-                    </option>
+                    <option value="article">Free-form guide</option>
+                    <option value="process">Step-by-step template</option>
                   </select>
                 </Field>
                 <Field
                   label="Change note (optional)"
-                  hint="Leave blank to record Guide created or Guide updated automatically."
+                  hint="Briefly explain what changed, or leave blank for an automatic note."
                 >
                   <input
                     maxLength={500}
@@ -1075,11 +1101,19 @@ function ArticleWorkspace({
             </details>
             {needsIndependentReview && (
               <p className="text-sm text-amber-700">
-                Independent review required. Save your draft, then request a
-                second staff reviewer. Changed sensitive guidance cannot be
-                published directly.
+                Another staff member must check this guide before it can be
+                published. Save your draft first, then request a review below.
               </p>
             )}
+            <p className="text-sm text-muted-foreground">
+              Save draft keeps your work without publishing it.{" "}
+              {needsIndependentReview
+                ? "After the required check, publishing makes the guide available to staff only, never agents."
+                : "Save & publish makes the guide available to staff only, never agents."}
+              {detail?.published
+                ? " Saving a draft does not change the published guide."
+                : ""}
+            </p>
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="submit"
@@ -1098,7 +1132,7 @@ function ArticleWorkspace({
                 </Button>
               )}
               <span className="text-xs text-muted-foreground">
-                {dirty ? "Unsaved changes" : "No unsaved content changes"}
+                {dirty ? "Unsaved changes" : "No unsaved changes"}
               </span>
             </div>
           </fieldset>
@@ -1106,63 +1140,86 @@ function ArticleWorkspace({
       )}
       {!historic && (
         <>
-          <AttachmentEditor
-            resources={resources.filter(r => draft?.resourceIds.includes(r.id))}
-            disabled={!canAct || archived}
-            onUpload={file => void uploadFile(file)}
-            onRemove={resourceId => {
-              if (
-                canAct &&
-                typeof id === "number" &&
-                window.confirm(
-                  "Remove this private attachment from the draft? Published and historical revisions retain their attachment history."
+          {editing && (
+            <AttachmentEditor
+              resources={resources.filter(r =>
+                draft?.resourceIds.includes(r.id)
+              )}
+              disabled={!canAct || archived}
+              onUpload={file => void uploadFile(file)}
+              onRemove={resourceId => {
+                if (
+                  canAct &&
+                  typeof id === "number" &&
+                  window.confirm(
+                    "Remove this private attachment from the draft? Published and historical guides keep their attachments."
+                  )
                 )
-              )
-                void mutate(
-                  () =>
-                    remove.mutateAsync({
-                      articleId: id,
-                      resourceId,
-                      expectedVersion: version,
-                    }),
-                  "Attachment removed from the draft."
-                );
-            }}
-          />
-          {detail && (
+                  void mutate(
+                    () =>
+                      remove.mutateAsync({
+                        articleId: id,
+                        resourceId,
+                        expectedVersion: version,
+                      }),
+                    "Attachment removed from the draft."
+                  );
+              }}
+            />
+          )}
+          {detail && (editing || readingDraft) && (
             <details
               className="space-y-3 rounded-md border bg-muted/20 p-3"
               open={needsReview}
             >
               <summary className="cursor-pointer text-sm font-medium">
                 {needsReview
-                  ? "Required independent review"
-                  : "More options (review & archive)"}
+                  ? "Review required before publishing"
+                  : "Ask for a review (optional)"}
               </summary>
-              <h3 className="text-sm font-semibold">
-                Review & internal publication
-              </h3>
+              <h3 className="text-sm font-semibold">Check this saved draft</h3>
               <p className="text-xs text-muted-foreground">
                 {needsReview
-                  ? "Financial, legal and policy guidance, including changes to a previously sensitive publication, requires a second, non-contributing reviewer for the exact saved draft revision. Any edit or attachment change needs a new review."
-                  : "Operational guidance can use Save & publish. A second staff review is optional."}
+                  ? "This guide covers money, legal requirements or company policies, or previously covered them. A different staff member who has not edited this draft must check it. Any edit or attachment change needs a new check."
+                  : "Everyday procedures can use Save & publish. You can also ask another staff member to check your draft first."}
               </p>
+              {needsReview && (
+                <ol className="list-decimal space-y-1 pl-5 text-sm">
+                  <li>Save your draft, including any attachments.</li>
+                  <li>
+                    Choose Request review. Another staff member opens Preview
+                    saved draft and checks it.
+                  </li>
+                  <li>
+                    After they choose Approve saved draft, choose Publish for
+                    staff.
+                  </li>
+                </ol>
+              )}
               {!hasBody && (
                 <p className="text-xs text-amber-700">
-                  Publication and review blocked: save an article body or
-                  process steps first.
+                  Add content or process steps, then save the draft before
+                  requesting a review or publishing.
                 </p>
               )}
               {contributor && (
                 <p className="text-xs text-amber-700">
-                  You contributed to this revision and cannot approve it. Ask
-                  another eligible staff reviewer.
+                  You edited this draft, so you cannot approve it. Ask a
+                  different staff member who has not edited it.
                 </p>
               )}
               {needsReview && !exactReview && (
                 <p className="text-xs text-amber-700">
-                  Publication blocked: the exact saved revision has not been
-                  approved by a non-contributing second reviewer.
+                  This saved draft still needs to be checked before it can be
+                  published.
+                </p>
+              )}
+              {exactReview && (
+                <p className="text-xs text-muted-foreground">
+                  {staff.find(
+                    person => person.id === detail.article.reviewedById
+                  )?.name || "Another staff member"}{" "}
+                  checked this saved draft.
                 </p>
               )}
               {dirty && (
@@ -1198,18 +1255,17 @@ function ArticleWorkspace({
                     disabled={!canApprove}
                     onClick={() => void doAction("approve")}
                   >
-                    Approve exact revision
-                    {draft ? ` ${draft.revisionNumber}` : ""}
+                    Approve saved draft
                   </Button>
                 )}
-                {needsReview && (
+                {needsReview && draft?.id !== detail.published?.id && (
                   <Button
                     type="button"
                     size="sm"
                     disabled={!canPublish}
                     onClick={() => void doAction("publish")}
                   >
-                    Publish internally
+                    Publish for staff
                   </Button>
                 )}
               </div>
@@ -1238,7 +1294,7 @@ function ArticleWorkspace({
           )}
           <details className="rounded-md border p-3">
             <summary className="cursor-pointer text-sm font-medium">
-              Revision history (read-only)
+              Saved guide history (read-only)
             </summary>
             <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
               {detail.revisions.map(revision => (
@@ -1249,18 +1305,15 @@ function ArticleWorkspace({
                   variant="outline"
                   className="flex h-auto w-full justify-start whitespace-normal text-left"
                   disabled={pending}
-                  onClick={() => {
-                    setHistoryId(revision.id);
-                    setEditing(false);
-                  }}
+                  onClick={() => openReading(false, revision.id)}
                 >
-                  Revision {revision.revisionNumber} ·{" "}
-                  {dateLabel(revision.createdAt)} · {revision.changeSummary}
+                  View saved guide · {dateLabel(revision.createdAt)} ·{" "}
+                  {revision.changeSummary}
                 </Button>
               ))}
             </div>
           </details>
-          <History audit={detail.audit} />
+          <History audit={detail.audit} staff={staff} />
         </>
       )}
     </section>
