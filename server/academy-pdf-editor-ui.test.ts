@@ -174,11 +174,14 @@ function waitFor(path: string) {
 }
 function assertNoAssessmentDrift(mode: Mode, input = saved()) {
   expect(input).toMatchObject({ assessmentMode: "quiz", assessmentPassMark: 85,
-    requiresAssessment: true, requiresAcknowledgement: true, ...template });
+    requiresAssessment: true, requiresAcknowledgement: true,
+    assessmentTemplateKey: null, assessmentTemplateName: null,
+    assessmentTemplateMimeType: null, assessmentTemplateSize: null });
   expect(mock.calls.filter(item => item.path === questionPath)).toEqual([]);
   if (mode === "admin") expect(input.questions).toEqual([question]);
   else expect(input).not.toHaveProperty("questions");
   expect(mock.data["academy.admin.editor"].modules[0].lessons[0].questions).toEqual([question]);
+  expect(mock.data["academy.admin.editor"].modules[0].lessons[0]).toMatchObject(template);
 }
 
 beforeEach(async () => {

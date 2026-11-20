@@ -13,6 +13,8 @@ import { setAcademyLessonArchived } from "./academy-lesson-archive";
 import {
   academyDocumentObjectKey,
   academyDocumentMimeTypes,
+  isAcademyDocumentMimeType,
+  MAX_ACADEMY_DOCUMENT_BYTES,
   validateAcademyDocument,
 } from "./academy-document-assessment";
 import { createAcademyDocumentDownloadUrl, isCanonicalAcademyPdfAttachment, isMissingAcademyPdfColumn } from "./academy-document-download-routes";
@@ -116,8 +118,8 @@ const lessonInput = z.object({
   assessmentMode: z.enum(["quiz", "document_upload"]).default("quiz"),
   assessmentTemplateKey: z.string().trim().max(600).nullable().optional(),
   assessmentTemplateName: z.string().trim().max(255).nullable().optional(),
-  assessmentTemplateMimeType: z.enum(academyDocumentMimeTypes).nullable().optional(),
-  assessmentTemplateSize: z.number().int().positive().max(10 * 1024 * 1024).nullable().optional(),
+  assessmentTemplateMimeType: z.union([z.enum(academyDocumentMimeTypes), z.literal("").transform(() => null)]).nullable().optional(),
+  assessmentTemplateSize: z.union([z.number().int().positive().max(MAX_ACADEMY_DOCUMENT_BYTES), z.literal("").transform(() => null)]).nullable().optional(),
   // Written assessments use this overall pass mark. Automatic multiple-choice
   // checks deliberately remain 100% mastery-based.
   assessmentPassMark: z.number().int().min(1).max(100).default(DEFAULT_WRITTEN_ASSESSMENT_PASS_MARK),
@@ -126,6 +128,35 @@ const lessonInput = z.object({
 function normaliseOptionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/** No template is a valid upload-only assessment, not an incomplete template.
+ * Validate the entire tuple before saving, publishing or snapshotting it. */
+function optionalDocumentAssessmentTemplate(input: {
+  assessmentTemplateKey?: string | null;
+  assessmentTemplateName?: string | null;
+  assessmentTemplateMimeType?: string | null;
+  assessmentTemplateSize?: number | null;
+}) {
+  const template = {
+    assessmentTemplateKey: normaliseOptionalText(input.assessmentTemplateKey),
+    assessmentTemplateName: normaliseOptionalText(input.assessmentTemplateName),
+    assessmentTemplateMimeType: normaliseOptionalText(input.assessmentTemplateMimeType),
+    assessmentTemplateSize: input.assessmentTemplateSize ?? null,
+  };
+  if (Object.values(template).every((value) => value === null)) return template;
+  const { assessmentTemplateKey: key, assessmentTemplateName: name, assessmentTemplateMimeType: mime, assessmentTemplateSize: size } = template;
+  const extension = mime === "application/pdf" ? ".pdf"
+    : mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ? ".docx" : ".xlsx";
+  if (!key || !name || !mime || !isAcademyDocumentMimeType(mime)
+    || !Number.isSafeInteger(size) || size === null || size <= 0 || size > MAX_ACADEMY_DOCUMENT_BYTES
+    || !key.toLowerCase().endsWith(extension) || !name.toLowerCase().endsWith(extension)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Assessment template metadata must be either entirely empty for an upload-only assessment, or include a matching file key, name, document type and positive size (up to 10 MB).",
+    });
+  }
+  return template;
 }
 
 function preserveOptionalTranscript(value: string | null | undefined) {
@@ -1723,9 +1754,10 @@ export const academyRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const { target: lesson } = await ensureSequentialAcademyLessonAccess(enrollment, input.lessonId);
       await ensureFeedbackAcknowledgedBeforeLesson(enrollment, lesson.id);
-      if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload" || !lesson.assessmentTemplateKey || !lesson.assessmentTemplateName || !lesson.assessmentTemplateMimeType) {
+      if (!lesson.requiresAssessment || lesson.assessmentMode !== "document_upload") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This lesson is not ready for a document assessment submission" });
       }
+      const template = optionalDocumentAssessmentTemplate(lesson);
       if (lesson.requiresAcknowledgement) {
         const [lessonProgress] = await db.select().from(academyLessonProgress)
           .where(and(eq(academyLessonProgress.enrollmentId, enrollment.id), eq(academyLessonProgress.lessonId, lesson.id))).limit(1);
@@ -1763,9 +1795,9 @@ export const academyRouter = router({
           null,
           null,
           JSON.stringify([{ documentSubmission: true }]),
-          lesson.assessmentTemplateKey,
-          lesson.assessmentTemplateName,
-          lesson.assessmentTemplateMimeType,
+          template.assessmentTemplateKey,
+          template.assessmentTemplateName,
+          template.assessmentTemplateMimeType,
           stored.key,
           document.name,
           document.mimeType,
@@ -2825,13 +2857,10 @@ export const academyRouter = router({
             message: `Add at least one question before publishing: ${incompleteKnowledgeChecks.map((lesson) => lesson.title).join(", ")}`,
           });
         }
-        const missingDocumentTemplates = structure.modules.flatMap((module) => module.lessons)
-          .filter((lesson) => lesson.requiresAssessment && lesson.assessmentMode === "document_upload" && !lesson.assessmentTemplateKey);
-        if (missingDocumentTemplates.length) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Upload the assessment template before publishing: ${missingDocumentTemplates.map((lesson) => lesson.title).join(", ")}`,
-          });
+        for (const lesson of structure.modules.flatMap((module) => module.lessons)) {
+          // Validate supplied metadata even on other modes; never silently
+          // publish a partial template. An all-null tuple needs no template.
+          optionalDocumentAssessmentTemplate(lesson);
         }
         if (course.isCoreAcademy) await db.update(academyCourses).set({ isCoreAcademy: false }).where(and(eq(academyCourses.isCoreAcademy, true), eq(academyCourses.status, "published"), ne(academyCourses.id, input.courseId)));
       }
@@ -2913,8 +2942,9 @@ export const academyRouter = router({
       if (input.assessmentMode === "document_upload" && !input.requiresAssessment) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the assessment for a document-upload lesson" });
       }
-      if (input.assessmentMode === "document_upload" && (!input.assessmentTemplateKey || !input.assessmentTemplateName || !input.assessmentTemplateMimeType || !input.assessmentTemplateSize)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the assessment template before saving this document assessment" });
+      const template = optionalDocumentAssessmentTemplate(input);
+      if (input.assessmentMode !== "document_upload" && template.assessmentTemplateKey) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Assessment templates can only be saved on a document-upload assessment" });
       }
       const videoUrl = normaliseOptionalText(input.videoUrl);
       if (videoUrl && !safeHttpsUrl(videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Video links must use HTTPS" });
@@ -2936,10 +2966,7 @@ export const academyRouter = router({
         requiresAcknowledgement: input.requiresAcknowledgement,
         requiresAssessment: input.requiresAssessment,
         assessmentMode: input.requiresAssessment ? input.assessmentMode : "quiz" as const,
-        assessmentTemplateKey: input.assessmentMode === "document_upload" ? normaliseOptionalText(input.assessmentTemplateKey) : null,
-        assessmentTemplateName: input.assessmentMode === "document_upload" ? normaliseOptionalText(input.assessmentTemplateName) : null,
-        assessmentTemplateMimeType: input.assessmentMode === "document_upload" ? input.assessmentTemplateMimeType : null,
-        assessmentTemplateSize: input.assessmentMode === "document_upload" ? input.assessmentTemplateSize : null,
+        ...template,
         assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
       };
       if (payload.embedPdf) {
@@ -2961,14 +2988,21 @@ export const academyRouter = router({
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
         const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
         const documentAssessmentChanged = lesson.assessmentMode !== payload.assessmentMode
-          || lesson.assessmentTemplateKey !== payload.assessmentTemplateKey
-          || lesson.assessmentTemplateName !== payload.assessmentTemplateName
-          || lesson.assessmentTemplateMimeType !== payload.assessmentTemplateMimeType;
+          || normaliseOptionalText(lesson.assessmentTemplateKey) !== payload.assessmentTemplateKey
+          || normaliseOptionalText(lesson.assessmentTemplateName) !== payload.assessmentTemplateName
+          || normaliseOptionalText(lesson.assessmentTemplateMimeType) !== payload.assessmentTemplateMimeType;
+        const assessmentTemplateRemoved = lesson.assessmentMode === "document_upload"
+          && payload.assessmentMode === "document_upload"
+          && Object.values(template).every((value) => value === null)
+          && [lesson.assessmentTemplateKey, lesson.assessmentTemplateName, lesson.assessmentTemplateMimeType, lesson.assessmentTemplateSize]
+            .some((value) => value != null && value !== "");
         if (hasLearnerEvidence && documentAssessmentChanged) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "This lesson has learner activity. Its document assessment template and assessment type are preserved for an accurate Academy record; create a replacement lesson for a revised template.",
-          });
+          if (!assessmentTemplateRemoved) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "This lesson has learner activity. Its assessment type cannot change and a document assessment template cannot be added or replaced; create a replacement lesson for a revised template. You may remove the template to allow upload-only submissions while preserving historical attempts.",
+            });
+          }
         }
         await recordStaffOperation(ctx.user, "academy.lesson_update", { courseId: module.courseId, lessonId: input.id, phase: "authorized_write" });
         try {
@@ -2987,7 +3021,10 @@ export const academyRouter = router({
           actorId: ctx.user.id,
           action: "lesson_updated",
           summary: hasLearnerEvidence ? `Updated lesson after learner activity: ${input.title}` : `Updated lesson: ${input.title}`,
-          metadata: hasLearnerEvidence ? { learnerEvidencePresent: true, contentRevision: true } : undefined,
+          metadata: hasLearnerEvidence || assessmentTemplateRemoved ? {
+            ...(hasLearnerEvidence ? { learnerEvidencePresent: true, contentRevision: true } : {}),
+            ...(assessmentTemplateRemoved ? { lessonId: lesson.id, assessmentTemplateRemoved: true } : {}),
+          } : undefined,
         });
         return { id: input.id };
       }

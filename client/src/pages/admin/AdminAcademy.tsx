@@ -631,10 +631,10 @@ export default function AdminAcademy() {
         attachmentUrl: snapshot.attachmentUrl || null,
         attachmentKey: snapshot.attachmentKey || null,
         attachmentName: snapshot.attachmentName || null,
-        assessmentTemplateKey: snapshot.assessmentTemplateKey || null,
-        assessmentTemplateName: snapshot.assessmentTemplateName || null,
-        assessmentTemplateMimeType: snapshot.assessmentTemplateMimeType || null,
-        assessmentTemplateSize: snapshot.assessmentTemplateSize || null,
+        assessmentTemplateKey: snapshot.assessmentMode === "document_upload" ? snapshot.assessmentTemplateKey || null : null,
+        assessmentTemplateName: snapshot.assessmentMode === "document_upload" ? snapshot.assessmentTemplateName || null : null,
+        assessmentTemplateMimeType: snapshot.assessmentMode === "document_upload" ? snapshot.assessmentTemplateMimeType || null : null,
+        assessmentTemplateSize: snapshot.assessmentMode === "document_upload" ? snapshot.assessmentTemplateSize || null : null,
       });
       const lessonId = Number(result.id);
       if (!Number.isSafeInteger(lessonId) || lessonId < 1) {
@@ -715,7 +715,7 @@ export default function AdminAcademy() {
     }
   }
   async function handleDocumentAssessmentTemplate(file: File | undefined) {
-    if (!file) return;
+    if (!file || lessonModuleId === null || lessonOperationBusy.current || lessonEditorPending) return;
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Assessment templates must be under 10 MB");
       return;
@@ -729,25 +729,38 @@ export default function AdminAcademy() {
       toast.error("Assessment templates must be a PDF, Word document or Excel workbook");
       return;
     }
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const stored = await uploadDocumentAssessmentTemplate.mutateAsync({
-      fileName: file.name,
-      fileBase64: base64,
-      mimeType: file.type as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    setLessonDraft(current => ({
-      ...current,
-      assessmentTemplateKey: stored.key,
-      assessmentTemplateName: stored.name,
-      assessmentTemplateMimeType: stored.mimeType,
-      assessmentTemplateSize: stored.size,
-    }));
-    toast.success("Private assessment template uploaded");
+    const session = lessonDraftSession.current;
+    lessonOperationBusy.current = true;
+    setReadingAttachment(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("The file could not be read."));
+        reader.onabort = () => reject(new Error("The file read was cancelled."));
+        reader.readAsDataURL(file);
+      });
+      if (session !== lessonDraftSession.current) return;
+      const stored = await uploadDocumentAssessmentTemplate.mutateAsync({
+        fileName: file.name,
+        fileBase64: base64,
+        mimeType: file.type as "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      if (session !== lessonDraftSession.current) return;
+      setLessonDraft(current => ({
+        ...current,
+        assessmentTemplateKey: stored.key,
+        assessmentTemplateName: stored.name,
+        assessmentTemplateMimeType: stored.mimeType,
+        assessmentTemplateSize: stored.size,
+      }));
+      toast.success("Private assessment template uploaded. Save the lesson to attach it.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Template upload failed. The existing template is unchanged.");
+    } finally {
+      lessonOperationBusy.current = false;
+      setReadingAttachment(false);
+    }
   }
   async function handleQuizCsvImport(file: File | undefined) {
     if (!file || !editingLessonId) return;
@@ -1919,21 +1932,21 @@ function LessonEditor({
                 })}
               >
                 <option value="quiz">Portal quiz or written responses</option>
-                <option value="document_upload">Download, complete and upload a document</option>
+                <option value="document_upload">Document upload (optional template)</option>
               </select>
               <p className="mt-2 text-xs leading-5 text-emerald-800">
                 {draft.assessmentMode === "document_upload"
-                  ? "Agents download your private template, complete it offline and upload one completed version for staff marking."
+                  ? "Learners upload their own document for staff marking. Optionally attach a private template for them to download and complete first."
                   : "Use multiple-choice and/or written questions inside the Portal."}
               </p>
               {draft.assessmentMode === "document_upload" && (
                 <div className="mt-3 rounded-lg border border-emerald-300 bg-background/80 p-3">
-                  <Label>Private assessment template</Label>
+                  <Label>Private assessment template (optional)</Label>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     PDF, Word or Excel · maximum 10 MB. The stored template and each learner submission are encrypted, and only authorised Portal users can download them.
                   </p>
                   <div className="mt-2 flex gap-2">
-                    <Input value={draft.assessmentTemplateName} readOnly placeholder="No template uploaded" />
+                    <Input value={draft.assessmentTemplateName} readOnly placeholder="No template — learners upload their own document" />
                     <label className="inline-flex shrink-0 cursor-pointer items-center rounded-md border px-3 text-sm font-medium hover:bg-muted">
                       <Upload className="mr-1" size={15} />
                       {uploadingAssessmentTemplate ? "Uploading" : "Upload"}
@@ -1941,12 +1954,30 @@ function LessonEditor({
                         className="hidden"
                         type="file"
                         accept=".pdf,.docx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        onChange={(event: ChangeEvent<HTMLInputElement>) => onUploadAssessmentTemplate(event.target.files?.[0])}
+                        aria-label="Upload private assessment template (optional)"
+                        disabled={isSaving}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                          onUploadAssessmentTemplate(event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
                       />
                     </label>
                   </div>
                   {draft.assessmentTemplateName && <p className="mt-2 text-xs font-medium text-emerald-800">Template ready: {draft.assessmentTemplateName} · {Math.max(1, Math.round(draft.assessmentTemplateSize / 1024)).toLocaleString()} KB</p>}
-                  {editing && <p className="mt-2 text-xs text-amber-800">Once a learner opens or submits this assessment, the template cannot be replaced. Create a replacement lesson for a revised template.</p>}
+                  {!draft.assessmentTemplateKey && <p className="mt-2 text-xs text-muted-foreground">No template is attached. Learners upload their own document; no download is needed.</p>}
+                  {draft.assessmentTemplateKey && <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    disabled={isSaving}
+                    onClick={() => {
+                      if (resourceBusy()) return;
+                      if (!window.confirm("Remove the assessment template? Learners will upload their own document without downloading a template. Save the lesson to apply this change. Existing submissions and their original template snapshots are kept.")) return;
+                      setDraft({ ...draft, assessmentTemplateKey: "", assessmentTemplateName: "", assessmentTemplateMimeType: "", assessmentTemplateSize: 0 });
+                    }}
+                  >Remove template</Button>}
+                  {editing && <p className="mt-2 text-xs text-amber-800">After learner activity, you can remove the template while keeping document-upload mode. Existing submissions retain their original template snapshots. Adding or replacing a template after learner activity is blocked; use a new lesson for a revised template.</p>}
                 </div>
               )}
             </div>
@@ -2277,9 +2308,6 @@ function LessonEditor({
             disabled={
               !draft.title.trim() ||
               isSaving ||
-              (draft.requiresAssessment &&
-                draft.assessmentMode === "document_upload" &&
-                !draft.assessmentTemplateKey) ||
               (draft.requiresAssessment &&
                 draft.assessmentMode === "quiz" &&
                 draft.questions.some(

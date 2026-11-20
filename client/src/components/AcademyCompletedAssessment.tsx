@@ -24,9 +24,12 @@ export function AcademyCompletedAssessment({ mode, questions, attempts, template
       <p className="font-semibold">This lesson is already recorded as complete.</p>
       <p className="mt-1">You can review its assessment material here. New answers or document uploads are not required while it remains complete. If this completion was recorded in error, ask the JLT team to reopen the lesson before submitting work.</p>
     </div>
-    {mode === "document_upload" ? <div className="mt-5 flex flex-col gap-3 rounded-xl border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div><p className="font-semibold">Download the assessment template</p><p className="mt-1 text-sm text-muted-foreground">{templateName || "Assessment template"}</p>{!templateAvailable && <p className="mt-2 text-sm text-amber-800">No assessment template is currently attached. Contact the JLT team to add the document.</p>}</div>
-      <Button type="button" variant="outline" disabled={!templateAvailable || downloadDisabled || downloadPending} onClick={onDownload}><Download className="mr-2" size={16} />{downloadPending ? "Preparing..." : "Download template"}</Button>
+    {mode === "document_upload" ? templateAvailable ? <div className="mt-5 flex flex-col gap-3 rounded-xl border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div><p className="font-semibold">Download the assessment template</p><p className="mt-1 text-sm text-muted-foreground">{templateName || "Assessment template"}</p></div>
+      <Button type="button" variant="outline" disabled={downloadDisabled || downloadPending} onClick={onDownload}><Download className="mr-2" size={16} />{downloadPending ? "Preparing..." : "Download template"}</Button>
+    </div> : <div className="mt-5 rounded-xl border bg-background p-4">
+      <p className="font-semibold">Upload-only document assessment — review</p>
+      <p className="mt-1 text-sm text-muted-foreground">No template download is needed. This assessment uses your own document and the instructions in this lesson. Your recorded completion and feedback remain unchanged.</p>
     </div> : <div className="mt-5 space-y-4">
       {questions.length ? questions.map((question, index) => {
         const response = attempts.flatMap(attempt => attempt.responses).find(item => item.questionId === question.id);

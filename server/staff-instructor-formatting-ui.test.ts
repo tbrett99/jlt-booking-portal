@@ -294,7 +294,9 @@ function savedLesson(
 ) {
   const { questions: _questions, ...lesson } =
     mock.data["academy.admin.editor"].modules[0].lessons[0];
-  return { ...lesson, embedPdf: lesson.embedPdf === true, contentHtml, ...overrides };
+  return { ...lesson, embedPdf: lesson.embedPdf === true, contentHtml,
+    assessmentTemplateKey: null, assessmentTemplateName: null,
+    assessmentTemplateMimeType: null, assessmentTemplateSize: null, ...overrides };
 }
 function assertFormatting(element: ParentNode) {
   expect(element.querySelector("h2")?.textContent).toBe("Travel Safety");

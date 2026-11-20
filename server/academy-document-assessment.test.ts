@@ -42,7 +42,7 @@ describe("Academy document assessment workflow", () => {
     expect(downloadRoute).toContain("scope === \"staff\"");
   });
 
-  it("requires a reviewed template, preserves it after learner activity, and keeps document work out of quiz submission", () => {
+  it("protects private-template endpoints and learner evidence while keeping document work out of quiz submission", () => {
     expect(router).toContain("uploadDocumentAssessmentTemplate: instructorProcedure");
     expect(router).toContain("await requireAcademyUploadCourse(ctx.user, input.courseId)");
     expect(router).toContain("submitDocumentAssessment: protectedProcedure");
@@ -55,9 +55,9 @@ describe("Academy document assessment workflow", () => {
     expect(router).toContain("await requireAcademyAttempt(ctx.user, input.attemptId)");
   });
 
-  it("provides a download-complete-upload agent workflow and a separate staff review queue", () => {
-    expect(builder).toContain("Download, complete and upload a document");
-    expect(builder).toContain("Private assessment template");
+  it("provides document upload with an optional download-complete template and separate staff review queue", () => {
+    expect(builder).toContain("Document upload (optional template)");
+    expect(builder).toContain("Private assessment template (optional)");
     expect(learner).toContain("Document assessment");
     expect(learner).toContain("Download the template");
     expect(learner).toContain("Submit document for marking");

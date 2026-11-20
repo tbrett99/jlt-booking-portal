@@ -581,6 +581,7 @@ function LessonForm({
           fileBase64: base64,
           mimeType: mimeType as (typeof templateMimes)[number],
         });
+        if (!activeDraft.current || !resourceAllowed.current) return;
         setDraft(current => ({
           ...current,
           assessmentTemplateKey: stored.key,
@@ -608,7 +609,15 @@ function LessonForm({
         className="space-y-4"
         onSubmit={event => {
           event.preventDefault();
-          if (allowed && !pending && !resourceBusy.current) save.mutate(draft);
+          if (allowed && !pending && !resourceBusy.current) save.mutate({
+            ...draft,
+            ...(draft.assessmentMode === "quiz" ? {
+              assessmentTemplateKey: null,
+              assessmentTemplateName: null,
+              assessmentTemplateMimeType: null,
+              assessmentTemplateSize: null,
+            } : {}),
+          });
         }}
       >
         <h2 className="text-xl font-semibold">
@@ -810,7 +819,7 @@ function LessonForm({
                   <option value="quiz">
                     Questions (multiple choice / written)
                   </option>
-                  <option value="document_upload">Document upload</option>
+                  <option value="document_upload">Document upload (optional template)</option>
                 </select>
               </StaffField>
               <StaffField label="Written / document pass mark (%)">
@@ -827,11 +836,18 @@ function LessonForm({
               </StaffField>
               {draft.assessmentMode === "document_upload" && (
                 <>
-                  <StaffField label="Assessment template (PDF, DOCX or XLSX, up to 10 MB)">
+                  <p className="text-sm text-muted-foreground">
+                    Learners upload their own document for staff marking. Optionally attach a private template for them to download and complete first.
+                  </p>
+                  <StaffField label="Private assessment template (optional)">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      PDF, DOCX or XLSX · up to 10 MB. Templates and learner submissions stay private and encrypted, separate from ordinary lesson resources.
+                    </p>
                     <input
                       className={staffControl}
                       type="file"
                       accept=".pdf,.docx,.xlsx"
+                      disabled={!allowed || pending}
                       onChange={event => {
                         void upload(event.target.files?.[0], "template");
                         event.target.value = "";
@@ -840,8 +856,22 @@ function LessonForm({
                   </StaffField>
                   <p className="text-sm text-muted-foreground">
                     {draft.assessmentTemplateName ||
-                      "Upload a template before saving this assessment."}
+                      "No template is attached. Learners upload their own document; no download is needed."}
                   </p>
+                  {draft.assessmentTemplateKey && <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!allowed || pending}
+                    onClick={() => {
+                      if (!allowed || pending || resourceBusy.current) return;
+                      if (!window.confirm("Remove the assessment template? Learners will upload their own document without downloading a template. Save the lesson to apply this change. Existing submissions and their original template snapshots are kept.")) return;
+                      setDraft(current => ({ ...current, assessmentTemplateKey: null, assessmentTemplateName: null, assessmentTemplateMimeType: null, assessmentTemplateSize: null }));
+                    }}
+                  >Remove template</Button>}
+                  {savedLessonId && <p className="text-xs text-amber-800">
+                    After learner activity, you can remove the template while keeping document-upload mode. Existing submissions retain their original template snapshots. Adding or replacing a template after learner activity is blocked; use a new lesson for a revised template.
+                  </p>}
                 </>
               )}
             </div>
@@ -854,11 +884,7 @@ function LessonForm({
           <StaffMutationError error={save.error} />
           <Button
             type="submit"
-            disabled={
-              pending ||
-              (draft.assessmentMode === "document_upload" &&
-                !draft.assessmentTemplateKey)
-            }
+            disabled={!allowed || pending}
           >
             {pending ? "Saving / uploading…" : "Save lesson"}
           </Button>

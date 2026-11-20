@@ -102,11 +102,14 @@ describe("agent completed assessment visibility", () => {
     expect(container.textContent).toContain("No quiz questions are currently configured");
     expect(container.textContent).not.toContain("All questions in this knowledge check have been passed");
   });
-  it("explains a missing private template and does not make a doomed download request", async () => {
+  it("reviews an upload-only completed assessment without requiring a template or download", async () => {
     await render(lesson({ assessmentMode: "document_upload", hasAssessmentTemplate: false, assessmentTemplateName: null, questions: [] }));
-    expect(container.textContent).toContain("No assessment template is currently attached");
-    expect(button("Download template").disabled).toBe(true);
-    await act(async () => button("Download template").click());
+    expect(container.textContent).toContain("Upload-only document assessment — review");
+    expect(container.textContent).toContain("No template download is needed");
+    expect(container.textContent).toContain("This lesson is already recorded as complete");
+    expect(container.textContent).not.toContain("Contact the JLT team to add");
+    expect([...container.querySelectorAll("button")].some(control => control.textContent === "Download template")).toBe(false);
+    expect(container.querySelector('input[type="file"]')).toBeNull();
     expect(mocks.calls.some(call => call.path.endsWith("getDocumentAssessmentTemplate"))).toBe(false);
   });
 });

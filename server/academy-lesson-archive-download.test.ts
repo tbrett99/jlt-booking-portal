@@ -430,3 +430,38 @@ describe("archived private course attachments distinguish learners from scoped i
     expect(external.requireCourse).not.toHaveBeenCalled();
   });
 });
+
+describe("upload-only document assessment private downloads", () => {
+  function removeCurrentTemplate() {
+    Object.assign(mock.tables.academy_lessons[0], {
+      assessmentTemplateKey: null,
+      assessmentTemplateName: null,
+      assessmentTemplateMimeType: null,
+      assessmentTemplateSize: null,
+    });
+  }
+  it("downloads an upload-only learner submission without a current or historic template", async () => {
+    removeCurrentTemplate();
+    Object.assign(mock.tables.academy_assessment_attempts[0], {
+      assessmentTemplateKey: null, assessmentTemplateName: null, assessmentTemplateMimeType: null,
+    });
+    const before = structuredClone(mock.tables);
+    expectPrivateSuccess(await document(mint({ kind: "submission", attemptId: 66 })), "submitted-work.pdf");
+    expect(external.storage).toHaveBeenCalledWith("synthetic/submitted-file");
+    expect(mock.tables).toEqual(before); expect(mock.writes).toEqual([]);
+  });
+  it("retains the original staff template download after the lesson becomes upload-only", async () => {
+    removeCurrentTemplate(); external.user = instructor; external.grants = [33];
+    const before = structuredClone(mock.tables);
+    expectPrivateSuccess(await document(mint({ scope: "staff", userId: 90, kind: "template", attemptId: 66 })), "historic-template.pdf");
+    expect(external.storage).toHaveBeenCalledWith("synthetic/historic-template");
+    expect(mock.tables).toEqual(before); expect(mock.writes).toEqual([]);
+  });
+  it("does not fabricate a historic template download for an upload-only attempt", async () => {
+    removeCurrentTemplate(); external.user = instructor; external.grants = [33];
+    Object.assign(mock.tables.academy_assessment_attempts[0], {
+      assessmentTemplateKey: null, assessmentTemplateName: null, assessmentTemplateMimeType: null,
+    });
+    expectDenied(await document(mint({ scope: "staff", userId: 90, kind: "template", attemptId: 66 })));
+  });
+});
