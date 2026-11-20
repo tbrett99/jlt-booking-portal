@@ -1,0 +1,1 @@
+ALTER TABLE `academy_lessons` ADD `embedPdf` boolean DEFAULT false NOT NULL;

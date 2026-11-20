@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BookOpen, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { RichEmailEditor, lessonHtmlToPlainText, plainTextToLessonHtml } from "@/components/RichEmailEditor";
 import { AcademyQuestionRichTextEditor } from "@/components/AcademyQuestionRichTextEditor";
+import { isAcademyPdfResource } from "@shared/academy-pdf";
 import {
   StaffField,
   StaffMutationError,
@@ -49,6 +50,7 @@ function lessonDraft(moduleId: number, lesson?: Lesson): LessonDraft {
     attachmentUrl: lesson?.attachmentUrl ?? null,
     attachmentKey: lesson?.attachmentKey ?? null,
     attachmentName: lesson?.attachmentName ?? null,
+    embedPdf: lesson?.embedPdf === true,
     estimatedMinutes: lesson?.estimatedMinutes ?? 5,
     isRequired: lesson?.isRequired ?? true,
     requiresAcknowledgement: lesson?.requiresAcknowledgement ?? false,
@@ -493,6 +495,14 @@ function LessonForm({
   const [uploadError, setUploadError] = useState("");
   const [readingFile, setReadingFile] = useState(false);
   const [formatSummary, setFormatSummary] = useState<string | null>(null);
+  const resourceBusy = useRef(false);
+  const activeDraft = useRef(true);
+  const resourceAllowed = useRef(allowed);
+  resourceAllowed.current = allowed;
+  useEffect(() => {
+    activeDraft.current = true;
+    return () => { activeDraft.current = false; };
+  }, []);
   const save = trpc.academy.admin.saveLesson.useMutation({
     onSuccess: result => {
       setSavedLessonId(result.id);
@@ -507,6 +517,7 @@ function LessonForm({
   const pending =
     save.isPending || attachment.isPending || template.isPending || readingFile;
   function change<K extends keyof LessonDraft>(key: K, value: LessonDraft[K]) {
+    if (!allowed || pending || resourceBusy.current) return;
     setDraft(current => ({ ...current, [key]: value }));
   }
   function smartFormatCurrentContent() {
@@ -523,13 +534,18 @@ function LessonForm({
     file: File | undefined,
     kind: "attachment" | "template"
   ) {
-    if (!file || !allowed || pending) return;
+    if (!file || !allowed || pending || resourceBusy.current) return;
+    resourceBusy.current = true;
     setUploadError("");
     setReadingFile(true);
     try {
       const base64 = await fileBase64(file);
+      if (!activeDraft.current || !resourceAllowed.current) return;
+      const attachmentExtensionMimes = { pdf: "application/pdf", docx: DOCX, xlsx: XLSX } as const;
+      const extension = file.name.toLowerCase().split(".").pop() as keyof typeof attachmentExtensionMimes;
       const mimeType =
         file.type ||
+        (kind === "attachment" ? attachmentExtensionMimes[extension] : "") ||
         (file.name.toLowerCase().endsWith(".csv")
           ? "text/csv"
           : file.name.toLowerCase().endsWith(".txt")
@@ -548,11 +564,13 @@ function LessonForm({
           fileBase64: base64,
           mimeType: mimeType as (typeof attachmentMimes)[number],
         });
+        if (!activeDraft.current || !resourceAllowed.current) return;
         setDraft(current => ({
           ...current,
           attachmentUrl: stored.url,
           attachmentKey: stored.key,
           attachmentName: stored.name,
+          embedPdf: false,
         }));
       } else {
         if (!templateMimes.includes(mimeType as (typeof templateMimes)[number]))
@@ -573,13 +591,15 @@ function LessonForm({
       }
       toast.success("File uploaded. Save the lesson to attach it.");
     } catch (error) {
+      if (!activeDraft.current) return;
       setUploadError(
         error instanceof Error
           ? error.message
           : "Upload failed. No lesson changes were saved."
       );
     } finally {
-      setReadingFile(false);
+      resourceBusy.current = false;
+      if (activeDraft.current) setReadingFile(false);
     }
   }
   return (
@@ -588,7 +608,7 @@ function LessonForm({
         className="space-y-4"
         onSubmit={event => {
           event.preventDefault();
-          if (allowed && !pending) save.mutate(draft);
+          if (allowed && !pending && !resourceBusy.current) save.mutate(draft);
         }}
       >
         <h2 className="text-xl font-semibold">
@@ -727,6 +747,7 @@ function LessonForm({
                 className={staffControl}
                 type="file"
                 accept=".pdf,.docx,.xlsx,.txt,.csv"
+                disabled={!allowed || pending}
                 onChange={event => {
                   void upload(event.target.files?.[0], "attachment");
                   event.target.value = "";
@@ -740,17 +761,36 @@ function LessonForm({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
+                  disabled={!allowed || pending}
+                  onClick={() => {
+                    if (!allowed || pending || resourceBusy.current) return;
                     setDraft(current => ({
                       ...current,
                       attachmentUrl: null,
                       attachmentKey: null,
                       attachmentName: null,
-                    }))
-                  }
+                      embedPdf: false,
+                    }));
+                  }}
                 >
                   Remove resource
                 </Button>
+              </div>
+            )}
+            {isAcademyPdfResource(draft) && (
+              <div className="mt-3 space-y-1.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    aria-label="Display PDF inside lesson"
+                    checked={draft.embedPdf === true}
+                    disabled={!allowed || pending}
+                    onCheckedChange={embedPdf => change("embedPdf", embedPdf)}
+                  />
+                  Display PDF inside lesson
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Learners can read this PDF inside the lesson. Open and download remain available.
+                </p>
               </div>
             )}
           </div>

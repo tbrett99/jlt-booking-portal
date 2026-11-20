@@ -2904,3 +2904,10 @@
 
 ## Admin Onboarding Exclusion (Aug 14)
 - [x] Exclude admin and super-admin accounts from the onboarding queue without deleting their user accounts
+
+## Academy lesson PDF embeds — 20 November 2026
+- [x] Add an opt-in Display PDF inside lesson switch beside ordinary PDF lesson resources in the Academy Manager and assigned-course instructor editor; existing lessons stay download-only by default.
+- [x] Add a responsive native PDF viewer with an always-visible Open or download PDF fallback, without enabling arbitrary iframe/HTML embeds or assessment-document viewing.
+- [x] Preserve encrypted instructor resources through exact lesson/course/permission/release/archive checks before and after storage; retain public global-admin resource behavior without claiming public objects are private.
+- [x] Generate migration 0183 and verify the false-default nonnullable field in the separate managed validation database; owner confirmed the same one-statement Railway ALTER succeeded on 20 November 2026 at 14:02:23 UTC.
+- [x] Pass 579 focused offline Academy/instructor tests across 45 files, including actual editor/learner DOM, upload-draft protection, backend PDF validation and private viewing. Three unchanged legacy Academy suites with five previously reproduced baseline failures remain excluded; this is not a full-repository test claim.

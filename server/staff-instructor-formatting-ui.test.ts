@@ -120,6 +120,7 @@ const originalQuestion = {
   answerOptions: ["Check facts", "Skip checks"],
   correctAnswerIndex: 0,
   maxWords: 250,
+  allowPaste: false,
   explanation:
     "## Private Guide\n\nReward **accurate checks** and *clear reasoning*.\n\n1. Identify risks\n2. Verify evidence",
 };
@@ -293,7 +294,7 @@ function savedLesson(
 ) {
   const { questions: _questions, ...lesson } =
     mock.data["academy.admin.editor"].modules[0].lessons[0];
-  return { ...lesson, contentHtml, ...overrides };
+  return { ...lesson, embedPdf: lesson.embedPdf === true, contentHtml, ...overrides };
 }
 function assertFormatting(element: ParentNode) {
   expect(element.querySelector("h2")?.textContent).toBe("Travel Safety");

@@ -39,6 +39,7 @@ import {
   RichEmailEditor,
 } from "@/components/RichEmailEditor";
 import { academyQuizCsvTemplate, MAX_ACADEMY_ASSESSMENT_QUESTIONS } from "@shared/academy-quiz-csv";
+import { isAcademyPdfResource } from "@shared/academy-pdf";
 import {
   formatAcademyQuestionPrompt,
   splitAcademyQuestionInlineFormatting,
@@ -78,6 +79,7 @@ const emptyLesson = {
   attachmentUrl: "",
   attachmentKey: "",
   attachmentName: "",
+  embedPdf: false,
   estimatedMinutes: 5,
   isRequired: true,
   requiresAcknowledgement: false,
@@ -256,6 +258,7 @@ export default function AdminAcademy() {
   const lessonDraftSession = useRef(0);
   const lessonOperationBusy = useRef(false);
   const [lessonOperationPending, setLessonOperationPending] = useState(false);
+  const [readingAttachment, setReadingAttachment] = useState(false);
   const lessonEditorRef = useRef<HTMLDivElement | null>(null);
   const moduleLessonListRefs = useRef(new Map<number, HTMLDivElement>());
   const [lessonNavigationRequest, setLessonNavigationRequest] = useState<{
@@ -424,7 +427,7 @@ export default function AdminAcademy() {
     onError: e => toast.error(e.message),
   });
   const lessonEditorPending = lessonOperationPending || saveLesson.isPending ||
-    replaceQuestions.isPending || uploadAttachment.isPending ||
+    replaceQuestions.isPending || readingAttachment || uploadAttachment.isPending ||
     uploadDocumentAssessmentTemplate.isPending || importMultipleChoiceQuestions.isPending;
 
   useEffect(() => {
@@ -568,6 +571,7 @@ export default function AdminAcademy() {
       attachmentUrl: lesson.attachmentUrl ?? "",
       attachmentKey: lesson.attachmentKey ?? "",
       attachmentName: lesson.attachmentName ?? "",
+      embedPdf: lesson.embedPdf === true,
       estimatedMinutes: lesson.estimatedMinutes ?? 5,
       isRequired: lesson.isRequired,
       requiresAcknowledgement: lesson.requiresAcknowledgement,
@@ -658,29 +662,57 @@ export default function AdminAcademy() {
     }
   }
   async function handleAttachment(file: File | undefined) {
-    if (!file) return;
+    if (!file || lessonModuleId === null || lessonOperationBusy.current || lessonEditorPending) return;
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Attachments must be under 10 MB");
       return;
     }
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const stored = await uploadAttachment.mutateAsync({
-      fileName: file.name,
-      fileBase64: base64,
-      mimeType: file.type as any,
-    });
-    setLessonDraft(current => ({
-      ...current,
-      attachmentUrl: stored.url,
-      attachmentKey: stored.key,
-      attachmentName: stored.name,
-    }));
-    toast.success("Resource uploaded");
+    const extensionMimes = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      txt: "text/plain",
+      csv: "text/csv",
+    } as const;
+    const extension = file.name.toLowerCase().split(".").pop() as keyof typeof extensionMimes;
+    const mimeType = file.type || extensionMimes[extension] || "";
+    if (!(Object.values(extensionMimes) as readonly string[]).includes(mimeType)) {
+      toast.error("Choose PDF, DOCX, XLSX, TXT or CSV.");
+      return;
+    }
+    const session = lessonDraftSession.current;
+    // Lock synchronously: FileReader begins before mutation pending state exists.
+    lessonOperationBusy.current = true;
+    setReadingAttachment(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("The file could not be read."));
+        reader.onabort = () => reject(new Error("The file read was cancelled."));
+        reader.readAsDataURL(file);
+      });
+      if (session !== lessonDraftSession.current) return;
+      const stored = await uploadAttachment.mutateAsync({
+        fileName: file.name,
+        fileBase64: base64,
+        mimeType: mimeType as (typeof extensionMimes)[keyof typeof extensionMimes],
+      });
+      if (session !== lessonDraftSession.current) return;
+      setLessonDraft(current => session === lessonDraftSession.current ? {
+        ...current,
+        attachmentUrl: stored.url,
+        attachmentKey: stored.key,
+        attachmentName: stored.name,
+        embedPdf: false,
+      } : current);
+      toast.success("Resource uploaded");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Resource upload failed. The existing resource is unchanged.");
+    } finally {
+      lessonOperationBusy.current = false;
+      setReadingAttachment(false);
+    }
   }
   async function handleDocumentAssessmentTemplate(file: File | undefined) {
     if (!file) return;
@@ -1388,7 +1420,8 @@ export default function AdminAcademy() {
                                   onSave={submitLesson}
                                   isSaving={lessonEditorPending}
                                   onUpload={handleAttachment}
-                                  uploading={uploadAttachment.isPending}
+                                  uploading={readingAttachment || uploadAttachment.isPending}
+                                  resourceBusy={() => lessonOperationBusy.current || lessonEditorPending}
                                   onUploadAssessmentTemplate={handleDocumentAssessmentTemplate}
                                   uploadingAssessmentTemplate={uploadDocumentAssessmentTemplate.isPending}
                                   onImportQuizCsv={handleQuizCsvImport}
@@ -1557,6 +1590,7 @@ function LessonEditor({
   isSaving,
   onUpload,
   uploading,
+  resourceBusy,
   onUploadAssessmentTemplate,
   uploadingAssessmentTemplate,
   onImportQuizCsv,
@@ -1572,6 +1606,7 @@ function LessonEditor({
   isSaving: boolean;
   onUpload: (file: File | undefined) => void;
   uploading: boolean;
+  resourceBusy: () => boolean;
   onUploadAssessmentTemplate: (file: File | undefined) => void;
   uploadingAssessmentTemplate: boolean;
   onImportQuizCsv: (file: File | undefined) => void;
@@ -1720,9 +1755,13 @@ function LessonEditor({
                   className="hidden"
                   type="file"
                   accept=".pdf,.docx,.xlsx,.txt,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    onUpload(e.target.files?.[0])
-                  }
+                  disabled={isSaving}
+                  aria-label="Upload lesson resource"
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    onUpload(file);
+                  }}
                 />
               </label>
             </div>
@@ -1741,7 +1780,9 @@ function LessonEditor({
                   variant="outline"
                   size="sm"
                   className="h-7 border-destructive/30 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
+                  disabled={isSaving}
                   onClick={() => {
+                    if (resourceBusy()) return;
                     if (
                       !window.confirm(
                         `Remove ${draft.attachmentName || "this uploaded resource"} from this lesson?`
@@ -1753,6 +1794,7 @@ function LessonEditor({
                       attachmentUrl: "",
                       attachmentKey: "",
                       attachmentName: "",
+                      embedPdf: false,
                     });
                     toast.info(
                       "Resource removed from this lesson draft. Save the lesson to apply the change."
@@ -1762,6 +1804,22 @@ function LessonEditor({
                   <Trash2 className="mr-1" size={13} />
                   Remove resource
                 </Button>
+              </div>
+            )}
+            {isAcademyPdfResource(draft) && (
+              <div className="mt-3 space-y-1.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    aria-label="Display PDF inside lesson"
+                    checked={draft.embedPdf}
+                    disabled={isSaving}
+                    onCheckedChange={embedPdf => setDraft({ ...draft, embedPdf })}
+                  />
+                  Display PDF inside lesson
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Learners can read this PDF inside the lesson. Open and download remain available.
+                </p>
               </div>
             )}
           </div>

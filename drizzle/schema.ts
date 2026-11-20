@@ -1647,6 +1647,8 @@ export const academyLessons = mysqlTable("academy_lessons", {
   attachmentUrl: text("attachmentUrl"),
   attachmentKey: varchar("attachmentKey", { length: 600 }),
   attachmentName: varchar("attachmentName", { length: 255 }),
+  // Opt-in display of an ordinary PDF teaching attachment inside the lesson.
+  embedPdf: boolean("embedPdf").default(false).notNull(),
   estimatedMinutes: int("estimatedMinutes").default(5).notNull(),
   isRequired: boolean("isRequired").default(true).notNull(),
   requiresAcknowledgement: boolean("requiresAcknowledgement").default(false).notNull(),

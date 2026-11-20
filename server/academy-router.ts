@@ -15,7 +15,7 @@ import {
   academyDocumentMimeTypes,
   validateAcademyDocument,
 } from "./academy-document-assessment";
-import { createAcademyDocumentDownloadUrl } from "./academy-document-download-routes";
+import { createAcademyDocumentDownloadUrl, isCanonicalAcademyPdfAttachment, isMissingAcademyPdfColumn } from "./academy-document-download-routes";
 import {
   academyAccess,
   academyAssessmentAttempts,
@@ -32,6 +32,7 @@ import {
   academyQuestions,
   adminOnboardingChecklist,
   agentCrmProfiles,
+  staffAcademyUploads,
   users,
 } from "../drizzle/schema";
 import { getAccreditationEligibility, safeHttpsUrl, summariseAcademyProgress } from "../shared/academy-utils";
@@ -106,6 +107,8 @@ const lessonInput = z.object({
   attachmentUrl: z.string().trim().max(10_000).nullable().optional(),
   attachmentKey: z.string().trim().max(600).nullable().optional(),
   attachmentName: z.string().trim().max(255).nullable().optional(),
+  // Omission by older clients preserves an existing opt-in, not a reset.
+  embedPdf: z.boolean().optional(),
   estimatedMinutes: z.number().int().min(1).max(1_440).default(5),
   isRequired: z.boolean().default(true),
   requiresAcknowledgement: z.boolean().default(false),
@@ -229,6 +232,7 @@ const legacyAcademyLessonColumns = {
   attachmentUrl: academyLessons.attachmentUrl,
   attachmentKey: academyLessons.attachmentKey,
   attachmentName: academyLessons.attachmentName,
+  embedPdf: academyLessons.embedPdf,
   estimatedMinutes: academyLessons.estimatedMinutes,
   isRequired: academyLessons.isRequired,
   requiresAcknowledgement: academyLessons.requiresAcknowledgement,
@@ -242,6 +246,10 @@ const legacyAcademyLessonColumns = {
 
 type AcademyLesson = typeof academyLessons.$inferSelect;
 
+function academyPdfStorageNotReady(): never {
+  throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Academy PDF lesson storage is not ready. Apply the Academy PDF lesson database update, then retry." });
+}
+
 async function getAcademyLessonsForModules(moduleIds: number[], opts: { includeArchived?: boolean } = {}): Promise<AcademyLesson[]> {
   if (!moduleIds.length) return [];
   const db = await getDb();
@@ -251,6 +259,7 @@ async function getAcademyLessonsForModules(moduleIds: number[], opts: { includeA
     return await db.select().from(academyLessons).where(lessonFilter)
       .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
   } catch (error) {
+    if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
     if (!isMissingAcademyTranscriptColumn(error) && !isMissingAcademyDocumentAssessmentColumn(error)) throw error;
     const legacyLessons = await db.select(legacyAcademyLessonColumns).from(academyLessons)
       .where(lessonFilter)
@@ -1485,6 +1494,7 @@ export const academyRouter = router({
               attachmentUrl: locked ? null : agentLesson.attachmentUrl,
               attachmentKey: locked ? null : agentLesson.attachmentKey,
               attachmentName: locked ? null : agentLesson.attachmentName,
+              embedPdf: !locked && agentLesson.embedPdf === true,
               assessmentTemplateName: locked ? null : agentLesson.assessmentTemplateName,
               assessmentTemplateMimeType: locked ? null : agentLesson.assessmentTemplateMimeType,
               assessmentTemplateSize: locked ? null : agentLesson.assessmentTemplateSize,
@@ -1546,6 +1556,7 @@ export const academyRouter = router({
             } = lesson;
             return {
             ...previewLesson,
+            embedPdf: previewLesson.embedPdf === true,
             hasAssessmentTemplate: !!lesson.assessmentTemplateKey,
             locked: false,
             lockedReason: "",
@@ -2886,9 +2897,18 @@ export const academyRouter = router({
       const [module] = await db.select().from(academyModules).where(eq(academyModules.id, input.moduleId)).limit(1);
       if (!module) throw new TRPCError({ code: "NOT_FOUND", message: "Module not found" });
       const safeContentHtml = isFullAdmin(ctx.user) ? sanitiseLessonHtml(input.contentHtml) : sanitiseInstructorLessonHtml(input.contentHtml);
+      let currentLesson: AcademyLesson | undefined;
+      if (input.id) {
+        try {
+          [currentLesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
+        } catch (error) {
+          if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
+          throw error;
+        }
+        if (!currentLesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
+      }
       if (!isFullAdmin(ctx.user)) {
-        const existingLesson = input.id ? (await db.select().from(academyLessons).where(eq(academyLessons.id, input.id)).limit(1))[0] : undefined;
-        await assertAcademyLessonFiles(ctx.user, module.courseId, { ...input, contentHtml: safeContentHtml }, existingLesson);
+        await assertAcademyLessonFiles(ctx.user, module.courseId, { ...input, contentHtml: safeContentHtml }, currentLesson);
       }
       if (input.assessmentMode === "document_upload" && !input.requiresAssessment) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Turn on the assessment for a document-upload lesson" });
@@ -2908,6 +2928,9 @@ export const academyRouter = router({
         attachmentUrl,
         attachmentKey: normaliseOptionalText(input.attachmentKey),
         attachmentName: normaliseOptionalText(input.attachmentName),
+        embedPdf: input.embedPdf ?? (currentLesson?.embedPdf === true
+          && attachmentUrl === currentLesson.attachmentUrl
+          && normaliseOptionalText(input.attachmentKey) === currentLesson.attachmentKey),
         estimatedMinutes: input.estimatedMinutes,
         isRequired: input.isRequired,
         requiresAcknowledgement: input.requiresAcknowledgement,
@@ -2919,9 +2942,22 @@ export const academyRouter = router({
         assessmentTemplateSize: input.assessmentMode === "document_upload" ? input.assessmentTemplateSize : null,
         assessmentPassMark: input.requiresAssessment ? input.assessmentPassMark : AUTOMATIC_ASSESSMENT_PASS_MARK,
       };
+      if (payload.embedPdf) {
+        if (!isCanonicalAcademyPdfAttachment(payload)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Inline PDF display requires a PDF teaching attachment uploaded to Academy with its matching file URL." });
+        }
+        const [upload] = await db.select({ courseId: staffAcademyUploads.courseId, kind: staffAcademyUploads.kind }).from(staffAcademyUploads)
+          .where(eq(staffAcademyUploads.objectKey, payload.attachmentKey!)).limit(1);
+        // Historical global-admin public uploads predate the scoped registry.
+        // Private files always require attachment-kind registration in this course.
+        const privateFile = payload.attachmentUrl === academyPrivateAttachmentUrl(payload.attachmentKey!);
+        if ((privateFile && !upload) || (upload && (upload.kind !== "attachment" || upload.courseId !== module.courseId))) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Choose an ordinary teaching attachment uploaded for this course, not an assessment document." });
+        }
+      }
       const { videoTranscript, ...legacyPayload } = payload;
       if (input.id) {
-        const [lesson] = await db.select().from(academyLessons).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId))).limit(1);
+        const lesson = currentLesson;
         if (!lesson) throw new TRPCError({ code: "NOT_FOUND", message: "Lesson not found" });
         const hasLearnerEvidence = await hasAcademyLearnerEvidence([lesson.id]);
         const documentAssessmentChanged = lesson.assessmentMode !== payload.assessmentMode
@@ -2938,6 +2974,7 @@ export const academyRouter = router({
         try {
           await db.update(academyLessons).set(payload as any).where(and(eq(academyLessons.id, input.id), eq(academyLessons.moduleId, input.moduleId)));
         } catch (error) {
+          if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
           if (isMissingAcademyDocumentAssessmentColumn(error)) {
             throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
           }
@@ -2970,6 +3007,7 @@ export const academyRouter = router({
         payload.attachmentUrl,
         payload.attachmentKey,
         payload.attachmentName,
+        payload.embedPdf,
         payload.estimatedMinutes,
         payload.isRequired,
         payload.requiresAcknowledgement,
@@ -2987,11 +3025,12 @@ export const academyRouter = router({
       try {
         [result] = await pool.execute(
           `INSERT INTO academy_lessons
-            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (moduleId, title, summary, contentHtml, videoUrl, videoTranscript, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           insertValues,
         );
       } catch (error) {
+        if (isMissingAcademyPdfColumn(error)) academyPdfStorageNotReady();
         if (isMissingAcademyDocumentAssessmentColumn(error)) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Document assessment storage is not ready on Railway yet. Apply the Academy document-assessment database update, then save this lesson." });
         }
@@ -3000,8 +3039,8 @@ export const academyRouter = router({
         const legacyInsertValues = insertValues.filter((_, index) => index !== 5);
         [result] = await pool.execute(
           `INSERT INTO academy_lessons
-            (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentPassMark, sortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (moduleId, title, summary, contentHtml, videoUrl, attachmentUrl, attachmentKey, attachmentName, embedPdf, estimatedMinutes, isRequired, requiresAcknowledgement, requiresAssessment, assessmentMode, assessmentTemplateKey, assessmentTemplateName, assessmentTemplateMimeType, assessmentTemplateSize, assessmentPassMark, sortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           legacyInsertValues,
         );
       }
@@ -3196,6 +3235,10 @@ export const academyRouter = router({
       await requireAcademyUploadCourse(ctx.user, input.courseId);
       const bytes = Buffer.from(input.fileBase64, "base64");
       if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachments must be under 10 MB" });
+      if (input.mimeType === "application/pdf" || /\.pdf$/i.test(input.fileName)) {
+        try { validateAcademyDocument({ fileName: input.fileName, mimeType: input.mimeType, bytes }); }
+        catch (error) { throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "This PDF could not be validated" }); }
+      }
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "academy-resource";
       const objectKey = `academy/${ctx.user.id}/${randomUUID()}-${safeName}`;
       await recordStaffOperation(ctx.user, "academy.attachment_upload", { courseId: input.courseId, objectKey, kind: "attachment", phase: "authorized_write" });

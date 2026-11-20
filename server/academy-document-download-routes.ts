@@ -1,16 +1,21 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Express } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { storageGetDecrypted } from "./storage";
 import { TRPCError } from "@trpc/server";
 import { assertNotSelfReview, isFullAdmin, requireInstructorCourse } from "./staff-access";
 import { getBusinessStaffAuthority } from "./business-staff-access";
+import { isAcademyPdfResource } from "../shared/academy-pdf";
+import { buildAcademyLearningPath } from "../shared/academy-learning-path";
+import { isAcceleratorWeekAvailable } from "./academy-journey";
 import {
   academyAccess,
   academyAssessmentAttempts,
+  academyCourses,
   academyEnrollments,
+  academyLessonProgress,
   academyLessons,
   academyModules,
   staffAcademyUploads,
@@ -66,6 +71,32 @@ function parseToken(token: string): DownloadPayload | null {
 function safeDownloadName(name: string | null | undefined, fallback: string) {
   const candidate = (name ?? fallback).replace(/[\\/\r\n"]/g, "-").trim();
   return candidate || fallback;
+}
+
+/** Recognition is not authorization: additionally pin public sources to this provider. */
+export function isCanonicalAcademyPdfAttachment(resource: { attachmentUrl?: string | null; attachmentKey?: string | null }) {
+  if (!isAcademyPdfResource(resource)) return false;
+  const key = resource.attachmentKey!;
+  const privateUrl = `https://portal.thejltgroup.co.uk/api/academy/course-attachment/${encodeURIComponent(key)}`;
+  if (resource.attachmentUrl === privateUrl) return true;
+  const base = process.env.S3_PUBLIC_URL?.replace(/\/+$/, "");
+  return !!base && resource.attachmentUrl === `${base}/${key}`;
+}
+
+export function isMissingAcademyPdfColumn(error: unknown): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    const item = current as { code?: string; message?: string; sqlMessage?: string; cause?: unknown; errors?: unknown[] };
+    // Match the named missing column, not a failed SELECT listing all columns.
+    if (/unknown column\s+['`\"](?:academy_lessons\.)?embedPdf['`\"]/i.test(item.sqlMessage ?? item.message ?? "")) return true;
+    if (item.cause) pending.push(item.cause);
+    if (item.errors) pending.push(...item.errors);
+  }
+  return false;
 }
 
 export function registerAcademyDocumentDownloadRoutes(app: Express) {
@@ -197,6 +228,71 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
   // global-admin public attachments. Possessing this URL grants no access.
   app.get("/api/academy/course-attachment/:objectKey", async (req, res) => {
     try {
+      if (req.query?.view === "inline") {
+        res.set({ "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff" });
+        const key = String(req.params.objectKey ?? "");
+        const requestedId = req.query.lessonId;
+        const lessonId = typeof requestedId === "string" && /^[1-9]\d*$/.test(requestedId) ? Number(requestedId) : NaN;
+        if (!Number.isSafeInteger(lessonId)) { res.status(404).end(); return; }
+        const db = await getDb();
+        if (!db) { res.status(503).send("Document service is temporarily unavailable"); return; }
+        // Run the same checks again after storage: no stale session, grant,
+        // archived lesson, disabled flag or replaced file can release the body.
+        const authorize = async () => {
+          const user = await sdk.authenticateRequest(req).catch(() => null);
+          if (!user || user.isActive !== true || ["cancelled", "paused", "suspended"].includes(String(user.portalStatus))) return null;
+          const authority = await getBusinessStaffAuthority(user);
+          if (authority.managed && (!authority.active || !authority.membership?.permissions.academyAccess)) return null;
+          const [upload] = await db.select({ courseId: staffAcademyUploads.courseId }).from(staffAcademyUploads)
+            .where(and(eq(staffAcademyUploads.objectKey, key), eq(staffAcademyUploads.kind, "attachment"))).limit(1);
+          if (!upload) return null;
+          const [row] = await db.select({ lesson: academyLessons, module: academyModules, course: academyCourses }).from(academyLessons)
+            .innerJoin(academyModules, eq(academyModules.id, academyLessons.moduleId))
+            .innerJoin(academyCourses, eq(academyCourses.id, academyModules.courseId))
+            .where(and(eq(academyLessons.id, lessonId), eq(academyLessons.attachmentKey, key), eq(academyModules.courseId, upload.courseId), isNull(academyLessons.archivedAt))).limit(1);
+          if (!row || row.lesson.embedPdf !== true || !isCanonicalAcademyPdfAttachment(row.lesson)
+            || row.lesson.attachmentUrl !== `https://portal.thejltgroup.co.uk/api/academy/course-attachment/${encodeURIComponent(key)}`) return null;
+          if (!authority.managed) {
+            try {
+              await requireInstructorCourse(user, upload.courseId);
+              return ["draft", "published"].includes(row.course.status) ? { ...row.lesson, userId: user.id } : null;
+            } catch (error) {
+              if (!(error instanceof TRPCError) || !["FORBIDDEN", "NOT_FOUND", "UNAUTHORIZED"].includes(error.code)) throw error;
+            }
+          }
+          if (row.course.status !== "published") return null;
+          const [enrollment] = await db.select({ id: academyEnrollments.id, journeyStartedAt: academyEnrollments.journeyStartedAt }).from(academyEnrollments)
+            .innerJoin(academyAccess, and(eq(academyAccess.agentId, academyEnrollments.agentId), eq(academyAccess.status, "active")))
+            .where(and(eq(academyEnrollments.agentId, user.id), eq(academyEnrollments.courseId, upload.courseId), inArray(academyEnrollments.status, ["assigned", "in_progress", "completed"]))).limit(1);
+          if (!enrollment || (row.course.isAcceleratorJourney && !isAcceleratorWeekAvailable(enrollment.journeyStartedAt, row.module.releaseWeek))) return null;
+          const modules = await db.select({ id: academyModules.id }).from(academyModules)
+            .where(eq(academyModules.courseId, upload.courseId)).orderBy(asc(academyModules.sortOrder), asc(academyModules.id));
+          const lessons = await db.select({ id: academyLessons.id, moduleId: academyLessons.moduleId, isRequired: academyLessons.isRequired }).from(academyLessons)
+            .where(and(inArray(academyLessons.moduleId, modules.map(item => item.id)), isNull(academyLessons.archivedAt)))
+            .orderBy(asc(academyLessons.sortOrder), asc(academyLessons.id));
+          const progress = await db.select({ lessonId: academyLessonProgress.lessonId, completedAt: academyLessonProgress.completedAt }).from(academyLessonProgress)
+            .where(eq(academyLessonProgress.enrollmentId, enrollment.id));
+          const completed = new Set(progress.filter(item => !!item.completedAt).map(item => item.lessonId));
+          const path = buildAcademyLearningPath(modules.flatMap(module => lessons.filter(item => item.moduleId === module.id)).map(item => ({ id: item.id, isRequired: item.isRequired, completed: completed.has(item.id) })));
+          return path.lockedLessonIds.has(lessonId) ? null : { ...row.lesson, userId: user.id };
+        };
+        const lesson = await authorize();
+        if (!lesson) { res.status(404).end(); return; }
+        let body: Buffer;
+        try { body = await storageGetDecrypted(key); }
+        catch { res.status(404).end(); return; } // Never treat public/plain/invalid private objects as PDFs.
+        if (!Buffer.isBuffer(body) || body.subarray(0, 5).toString("ascii") !== "%PDF-") { res.status(404).end(); return; }
+        const refreshed = await authorize();
+        if (!refreshed || refreshed.userId !== lesson.userId) { res.status(404).end(); return; }
+        res.set({
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${safeDownloadName(refreshed.attachmentName, "academy-resource.pdf")}"`,
+          "Content-Security-Policy": "frame-ancestors 'self'",
+          "X-Frame-Options": "SAMEORIGIN",
+        });
+        res.status(200).send(body);
+        return;
+      }
       const user = await sdk.authenticateRequest(req).catch(() => null);
       if (!user || !user.isActive || ["cancelled", "paused", "suspended"].includes(String(user.portalStatus))) {
         res.status(404).end(); return;
@@ -234,6 +330,10 @@ export function registerAcademyDocumentDownloadRoutes(app: Express) {
         if (!res.headersSent) res.status(404).end(); return;
       }
       console.error("[AcademyAttachmentDownload] failed", error);
+      if (isMissingAcademyPdfColumn(error)) {
+        if (!res.headersSent) res.status(503).send("Academy PDF storage is not ready. Apply the Academy PDF lesson database update.");
+        return;
+      }
       if (!res.headersSent) res.status(500).send("Academy resource could not be downloaded");
     }
   });

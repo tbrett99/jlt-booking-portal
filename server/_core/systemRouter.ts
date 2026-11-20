@@ -16,6 +16,7 @@ export const systemRouter = router({
       adminTaskIdentityConsolidationGuard: 1,
       digestIntroRichFormatting: 1,
       academyLessonArchiveGuard: 1,
+      academyPdfLessonEmbed: 1,
       termsReviewCaa10aDraft: 1,
       agentSupportConversationalPilot: 1,
       agentSupportTopicRetrieval: 1,
