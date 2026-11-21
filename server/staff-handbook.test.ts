@@ -221,10 +221,13 @@ function syntheticDb(accounts = [admin(), admin(2), admin(3)]) {
                 limit: maximum,
                 skip,
                 ordering: ordering.map(order => dialect.sqlToQuery(order).sql),
+                orderParams: ordering.map(order => dialect.sqlToQuery(order).params),
                 locked,
                 sql: q.sql,
                 params: q.params,
               });
+              if (ordering.some(order => /^0\s+desc$/i.test(dialect.sqlToQuery(order).sql)))
+                throw new Error("MySQL invalid ORDER BY zero ordinal sentinel");
               if (joined) {
                 const join = dialect.sqlToQuery(joinCondition!);
                 const usesPublished = join.sql.includes("publishedRevisionId");
@@ -1635,7 +1638,32 @@ describe("API boundary and bounded SQL separation sentinels", () => {
     const reads = f.reads.filter(r => r.table === articles);
     expect(reads[reads.length - 1]).toMatchObject({ limit: 25, skip: 50 });
     expect(reads[reads.length - 1].sql).toContain("searchText");
+    expect(reads.at(-1).ordering).toEqual([
+      "JSON_EXTRACT(`staff_handbook_revisions`.`content`, '$.isPinned') = true desc",
+      "case when `staff_handbook_revisions`.`title` = ? then 3 when `staff_handbook_revisions`.`title` like ? then 2 else 0 end desc",
+      "`staff_handbook_articles`.`updatedAt` desc",
+      "`staff_handbook_articles`.`id` desc",
+    ]);
+    expect(reads.at(-1).orderParams).toEqual([[], ["secret body", "%secret body%"], [], []]);
     expect(f.writes).toHaveLength(0);
+  });
+  describe.each(["all", "published", "drafts", "archived"] as const)("MySQL-safe %s browse", view => {
+    it.each([undefined, "", "   ", "\t\n"])("omits zero ordinal with blank search %j, preserving pin/date/ID and SQL paging", async search => {
+      const f = syntheticDb();
+      const result = await browseHandbook(admin(), { view, search, page: 2 });
+      expect(result).toMatchObject({ items: [], total: 0, page: 2, pageSize: 25 });
+      const query = f.reads.find(r => r.table === articles && r.limit === 25)!;
+      expect(query.ordering).toEqual([
+        "JSON_EXTRACT(`staff_handbook_revisions`.`content`, '$.isPinned') = true desc",
+        "`staff_handbook_articles`.`updatedAt` desc",
+        "`staff_handbook_articles`.`id` desc",
+      ]);
+      expect(query.skip).toBe(25);
+      expect(query.sql).not.toContain("searchText");
+      expect(f.reads[0].table).toBe(users);
+      expect(f.reads.at(-1).table).toBe(users);
+      expect(f.writes).toEqual([]);
+    });
   });
   it("article DTO hides all storage keys and token and honestly bounds historical revisions", async () => {
     const f = syntheticDb();

@@ -420,3 +420,17 @@ export function requestDto(row: RequestRow) {
 export function likeSearch(value: string) {
   return `%${value.replace(/[\\%_]/g, char => `\\${char}`)}%`;
 }
+/** Bare integer ORDER BY keys are column ordinals in MySQL: zero is invalid.
+ * A blank search has no relevance key; keep identical browse/export ordering.
+ */
+export function handbookGuideOrderBy(search?: string) {
+  const needle = search?.trim();
+  return [
+    desc(sql`JSON_EXTRACT(${revisions.content}, '$.isPinned') = true`),
+    ...(needle
+      ? [desc(sql<number>`case when ${revisions.title} = ${needle} then 3 when ${revisions.title} like ${likeSearch(needle)} then 2 else 0 end`)]
+      : []),
+    desc(articles.updatedAt),
+    desc(articles.id),
+  ];
+}

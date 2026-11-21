@@ -84,6 +84,8 @@ function fixture() {
             return Promise.resolve().then(() => {
               const q = condition ? dialect.sqlToQuery(condition) : { sql: "", params: [] };
               reads.push({ table, fields, sql: q.sql, params: q.params, limit, transaction, order: ordering.map(o => dialect.sqlToQuery(o).sql), joins: joins.map(j => dialect.sqlToQuery(j.condition).sql) });
+              if (ordering.some(order => /^0\s+desc$/i.test(dialect.sqlToQuery(order).sql)))
+                throw new Error("MySQL invalid ORDER BY zero ordinal sentinel");
               let envs = data[ensure(table)].map(row => ({ [getTableName(table)]: row }));
               for (const join of joins) {
                 const joinSql = dialect.sqlToQuery(join.condition).sql;
@@ -260,6 +262,26 @@ describe.each(exports)("actual %s export authorization and read-only boundary", 
 });
 
 describe("actual guide export snapshots, filters and privacy", () => {
+  describe.each(["all", "published", "drafts", "archived"] as const)("MySQL-safe %s export", view => {
+    it.each([undefined, "", "   ", "\t\n"])("omits zero ordinal with blank search %j and retains bounded snapshot ordering", async search => {
+      const f = fixture();
+      guide(f, 1, { archivedAt: view === "archived" ? NOW : null }, { isPinned: true }, { title: "Published snapshot", isPinned: true });
+      guide(f, 2, { archivedAt: view === "archived" ? NOW : null }, {}, { title: "Second published snapshot" });
+      const out = await exportHandbookGuides(admin(), { view, search });
+      expect(records(out.csv).map(row => row.guide_id)).toEqual(["1", "2"]);
+      const query = f.reads.find(r => r.transaction && r.table === articles && !r.fields.total)!;
+      expect(query.order).toEqual([
+        "JSON_EXTRACT(`staff_handbook_revisions`.`content`, '$.isPinned') = true desc",
+        "`staff_handbook_articles`.`updatedAt` desc",
+        "`staff_handbook_articles`.`id` desc",
+      ]);
+      expect(query.sql).not.toContain("searchText");
+      expect(query.limit).toBe(2001);
+      expect(f.transactions).toEqual([{ isolationLevel: "repeatable read" }]);
+      expect(f.reads.at(-1)).toMatchObject({ table: users, transaction: false });
+      expect(f.writes).toEqual([]);
+    });
+  });
   it("exports selected published body/metadata despite a changed draft, with reference and dates", async () => {
     const f = fixture(); guide(f, 1, {}, { title: "Draft title", category: "General", contentHtml: "<p>Draft-only secret</p>", ownerId: 3 },
       { title: 'Publié "guide" 東京', category: "Academy", summary: "Published summary", tags: ["one", "two"], contentHtml: "<h2>Published body</h2>", reviewedAt: new Date("2026-10-01T00:00:00Z"), nextReviewAt: new Date("2027-01-01T00:00:00Z") });

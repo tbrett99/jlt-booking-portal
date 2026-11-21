@@ -34,6 +34,7 @@ import {
   countRows,
   getArticle,
   getRevision,
+  handbookGuideOrderBy,
   HISTORY_LIMIT,
   insertId,
   likeSearch,
@@ -226,21 +227,13 @@ export async function browseHandbook(
       .from(articles)
       .innerJoin(revisions, eq(revisions.id, pointer))
       .where(condition);
-    const titleWeight = search
-      ? sql<number>`case when ${revisions.title} = ${search} then 3 when ${revisions.title} like ${likeSearch(search)} then 2 else 0 end`
-      : sql<number>`0`;
     // SQL filtering, ordering and paging (including body text) precede every DTO load.
     const rows = await db
       .select({ article: articles, revision: revisions })
       .from(articles)
       .innerJoin(revisions, eq(revisions.id, pointer))
       .where(condition)
-      .orderBy(
-        desc(sql`JSON_EXTRACT(${revisions.content}, '$.isPinned') = true`),
-        desc(titleWeight),
-        desc(articles.updatedAt),
-        desc(articles.id)
-      )
+      .orderBy(...handbookGuideOrderBy(search))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE);
     const items = rows.map(

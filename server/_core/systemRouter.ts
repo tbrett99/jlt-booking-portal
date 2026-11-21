@@ -36,6 +36,7 @@ export const systemRouter = router({
       staffHandbookSimpleSave: 1,
       staffHandbookFirstUse: 1,
       staffHandbookCsvImport: 1,
+      staffHandbookBrowseOrdering: 1,
       academyQuestionPasteToggle: 1,
       academyLiveQuestionWording: 1,
       academyFirstClassWeeklyAccess: 1,

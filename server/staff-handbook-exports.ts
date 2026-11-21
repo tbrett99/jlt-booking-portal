@@ -9,7 +9,7 @@ import {
 } from "../drizzle/schema";
 import { KNOWLEDGE_REQUEST_STATUS_LABELS, type KnowledgeRequestStatus } from "../shared/staff-handbook";
 import { handbookGuideUrl, serializeHandbookCsv } from "../shared/staff-handbook-csv";
-import { likeSearch, revisionContent, withHandbookRead, type HandbookDb, type RevisionRow } from "./staff-handbook-core";
+import { handbookGuideOrderBy, likeSearch, revisionContent, withHandbookRead, type HandbookDb, type RevisionRow } from "./staff-handbook-core";
 import { articleState, fail, OPEN_REQUEST_STATUSES, type HandbookAccount } from "./staff-handbook-policy";
 
 export const HANDBOOK_EXPORT_MAX_ROWS = 2_000;
@@ -136,12 +136,9 @@ export async function exportHandbookGuides(actor: HandbookAccount, input: Handbo
       .innerJoin(revisions, eq(revisions.id, pointer)).where(condition);
     const total = verifiedTotal(count?.total);
     verifyPayloadBytes(count?.payloadBytes);
-    const titleWeight = search
-      ? sql<number>`case when ${revisions.title} = ${search} then 3 when ${revisions.title} like ${likeSearch(search)} then 2 else 0 end`
-      : sql<number>`0`;
     const rows: GuideRow[] = await tx.select({ article: articleProjection, revision: revisionProjection }).from(articles)
       .innerJoin(revisions, eq(revisions.id, pointer)).where(condition)
-      .orderBy(desc(sql`JSON_EXTRACT(${revisions.content}, '$.isPinned') = true`), desc(titleWeight), desc(articles.updatedAt), desc(articles.id))
+      .orderBy(...handbookGuideOrderBy(search))
       .limit(HANDBOOK_EXPORT_MAX_ROWS + 1);
     verifyRows(total, rows.map(row => row.article.id));
     if (rows.some(({ article: a, revision: r }) => !validId(r.id) || r.articleId !== a.id ||
