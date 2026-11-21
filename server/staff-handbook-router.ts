@@ -39,6 +39,9 @@ import {
   HANDBOOK_MAX_FILE_BYTES,
 } from "./staff-handbook-resources";
 import { handbookLinkOptions } from "./staff-handbook-links";
+import { previewHandbookImport, commitHandbookImport } from "./staff-handbook-import";
+import { exportHandbookGuides, exportHandbookRequests } from "./staff-handbook-exports";
+import { HANDBOOK_IMPORT_MAX_BYTES, HANDBOOK_IMPORT_MAX_ROWS } from "../shared/staff-handbook-import";
 
 const handbookProcedure = adminProcedure.use(async ({ ctx, next }) => {
   assertStaffHandbookAccount(ctx.user);
@@ -85,6 +88,18 @@ const createRequestInput = z.object({
 });
 export const staffHandbookRouter = router({
   overview: handbookProcedure.query(({ ctx }) => handbookOverview(ctx.user)),
+  previewImport: handbookProcedure
+    .input(input(z.object({ csv: z.string().min(1).max(HANDBOOK_IMPORT_MAX_BYTES) }).strict()))
+    .mutation(({ ctx, input }) => previewHandbookImport(ctx.user, input)),
+  commitImport: handbookProcedure
+    .input(input(z.object({ csv: z.string().min(1).max(HANDBOOK_IMPORT_MAX_BYTES), previewHash: z.string().regex(/^[a-f0-9]{64}$/), rows: z.array(z.number().int().min(2).max(HANDBOOK_IMPORT_MAX_ROWS + 1)).min(1).max(HANDBOOK_IMPORT_MAX_ROWS) }).strict()))
+    .mutation(({ ctx, input }) => commitHandbookImport(ctx.user, input)),
+  exportGuides: handbookProcedure
+    .input(input(z.object({ search, category: categorySchema.optional(), view: z.enum(["all", "published", "drafts", "archived"]) }).strict()))
+    .mutation(({ ctx, input }) => exportHandbookGuides(ctx.user, input)),
+  exportRequests: handbookProcedure
+    .input(input(z.object({ search, category: categorySchema.optional(), status: z.enum(["all", "open", ...KNOWLEDGE_REQUEST_STATUSES]).optional(), assigneeId: idSchema.nullable().optional() }).strict()))
+    .mutation(({ ctx, input }) => exportHandbookRequests(ctx.user, input)),
   linkOptions: handbookProcedure
     .input(
       input(

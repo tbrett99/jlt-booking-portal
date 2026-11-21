@@ -1604,6 +1604,10 @@ describe("API boundary and bounded SQL separation sentinels", () => {
         "updateRequest",
         "createGuideFromRequest",
         "addComment",
+        "previewImport",
+        "commitImport",
+        "exportGuides",
+        "exportRequests",
       ].sort()
     ));
   it("malformed API body returns generic error rather than raw input/query", async () => {

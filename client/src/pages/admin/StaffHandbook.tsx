@@ -15,6 +15,8 @@ import {
 } from "@shared/staff-handbook";
 import { ArticlePanel } from "./StaffHandbookArticle";
 import { ReportKnowledge, RequestPanel } from "./StaffHandbookRequests";
+import { StaffHandbookImport } from "./StaffHandbookImport";
+import { StaffHandbookExport } from "./StaffHandbookExport";
 import {
   controlClass,
   panelClass,
@@ -99,6 +101,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   const requestId = positiveId(searchParams.get("request"));
   const [newArticle, setNewArticle] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [remount, setRemount] = useState(0);
   const [search, setSearch] = useState("");
@@ -172,6 +175,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   function changeTab(nextTab: "handbook" | "requests") {
     setReporting(false);
     setNewArticle(false);
+    setImporting(false);
     setEditingId(null);
     resetFilters();
     setView("all");
@@ -197,6 +201,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   function openArticle(id: number, edit = false) {
     setNewArticle(false);
     setReporting(false);
+    setImporting(false);
     setEditingId(edit ? id : null);
     setRemount(previous => previous + 1);
     route("handbook", { article: id });
@@ -205,6 +210,10 @@ function HandbookWorkspace({ userId }: { userId: number }) {
     tab === "handbook"
       ? articleId !== null || newArticle
       : requestId !== null || reporting;
+  const importPanel = importing && !selection && tab === "handbook";
+  useEffect(() => {
+    if (selection || tab !== "handbook") setImporting(false);
+  }, [selection, tab]);
   const data = tab === "handbook" ? browse.data : requests.data;
   const hasFilters = Boolean(
     search ||
@@ -230,30 +239,47 @@ function HandbookWorkspace({ userId }: { userId: number }) {
             agents.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={selection}
-            onClick={startNewGuide}
-          >
-            <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
-            New guide
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={selection}
-            onClick={startReport}
-          >
-            <MessageSquarePlus className="mr-1 h-4 w-4" aria-hidden="true" />
-            Report missing guidance
-          </Button>
-        </div>
+        {!importPanel && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={selection}
+              onClick={startNewGuide}
+            >
+              <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+              New guide
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={selection}
+              onClick={startReport}
+            >
+              <MessageSquarePlus className="mr-1 h-4 w-4" aria-hidden="true" />
+              Report missing guidance
+            </Button>
+            {!selection && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  resetFilters();
+                  setView("all");
+                  setImporting(true);
+                  route("handbook");
+                }}
+              >
+                Import guides
+              </Button>
+            )}
+          </div>
+        )}
       </header>
-      {!selection && (
+      {!selection && !importPanel && (
         <nav aria-label="Handbook sections" className="flex gap-2">
           <Button
             type="button"
@@ -275,7 +301,17 @@ function HandbookWorkspace({ userId }: { userId: number }) {
           </Button>
         </nav>
       )}
-      {tab === "handbook" && (articleId !== null || newArticle) ? (
+      {importPanel ? (
+        <StaffHandbookImport
+          userId={userId}
+          onClose={() => setImporting(false)}
+          onGuide={id => {
+            resetFilters();
+            setView("all");
+            openArticle(id);
+          }}
+        />
+      ) : tab === "handbook" && (articleId !== null || newArticle) ? (
         <ArticlePanel
           key={`${articleId ?? "new"}:${remount}`}
           id={newArticle ? "new" : articleId!}
@@ -333,6 +369,33 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                 : "Report instructions you need, or see who's helping with an existing report."}
             </p>
           </div>
+          <StaffHandbookExport
+            tab={tab}
+            search={search || undefined}
+            category={category || undefined}
+            view={view}
+            status={status}
+            assigneeId={
+              assignee === "unassigned"
+                ? null
+                : assignee
+                  ? Number(assignee)
+                  : undefined
+            }
+            contextKey={JSON.stringify([
+              userId,
+              tab,
+              search,
+              searchInput,
+              category,
+              view,
+              status,
+              assignee,
+              page,
+              articleId,
+              requestId,
+            ])}
+          />
           <form
             onSubmit={e => {
               e.preventDefault();

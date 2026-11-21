@@ -3236,6 +3236,15 @@ export const staffHandbookRevisions = mysqlTable("staff_handbook_revisions", {
   changeSummary: varchar("changeSummary", { length: 500 }).notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 }, (t) => [foreignKey({name:"sh_revision_article_fk", columns:[t.articleId], foreignColumns:[staffHandbookArticles.id]}).onDelete("restrict"), uniqueIndex("sh_revision_number_uq").on(t.articleId, t.revisionNumber), index("sh_revision_category_idx").on(t.category)]);
+// Durable, cross-administrator CSV identity. This is not an approval or a new
+// content store: the immutable guide revision remains the authoritative draft.
+export const staffHandbookImportSources = mysqlTable("staff_handbook_import_sources", {
+  externalReference: varchar("externalReference", { length: 80 }).primaryKey(),
+  articleId: int("articleId").notNull(),
+  payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+  importedById: int("importedById").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (t) => [uniqueIndex("sh_import_article_uq").on(t.articleId), foreignKey({name:"sh_import_article_fk", columns:[t.articleId], foreignColumns:[staffHandbookArticles.id]}).onDelete("restrict")]);
 export const staffHandbookResources = mysqlTable("staff_handbook_resources", {
   id: int("id").autoincrement().primaryKey(),
   articleId: int("articleId").notNull(),

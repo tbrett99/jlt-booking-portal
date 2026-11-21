@@ -1,4 +1,4 @@
-export const STAFF_HANDBOOK_CATEGORIES = ["Bookings & Orbit", "Amendments & Ticketing", "Reimbursements & Refunds", "Commission Administration", "Memberships & Onboarding", "Academy", "Supplier Support", "Escalations", "General"] as const;
+export const STAFF_HANDBOOK_CATEGORIES = ["Bookings & Orbit", "Amendments & Ticketing", "Reimbursements & Refunds", "Commission Administration", "Memberships & Onboarding", "Academy", "Supplier Support", "Escalations", "General", "Client & Supplier Payments", "Travel Regulations & Financial Protection", "Complaints & Disputes", "Internal Operations & Administration"] as const;
 export const STAFF_HANDBOOK_SENSITIVITIES = ["operational", "financial", "legal", "policy"] as const;
 export type HandbookSensitivity = typeof STAFF_HANDBOOK_SENSITIVITIES[number];
 export const STAFF_HANDBOOK_SENSITIVITY_LABELS: Record<HandbookSensitivity, string> = { operational: "Day-to-day work", financial: "Money and payments", legal: "Legal requirements", policy: "Company policy" };
