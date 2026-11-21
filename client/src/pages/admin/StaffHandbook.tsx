@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -106,6 +106,8 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   const [remount, setRemount] = useState(0);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const guideSearchRef = useRef<HTMLInputElement | null>(null);
+  const [focusGuideSearch, setFocusGuideSearch] = useState(false);
   const [category, setCategory] = useState("");
   const [view, setView] = useState<View>("all");
   const [status, setStatus] = useState<"all" | "open" | KnowledgeRequestStatus>(
@@ -214,6 +216,19 @@ function HandbookWorkspace({ userId }: { userId: number }) {
   useEffect(() => {
     if (selection || tab !== "handbook") setImporting(false);
   }, [selection, tab]);
+  useEffect(() => {
+    if (
+      !focusGuideSearch ||
+      selection ||
+      importPanel ||
+      tab !== "handbook" ||
+      blocked
+    )
+      return;
+    guideSearchRef.current?.focus();
+    guideSearchRef.current?.scrollIntoView?.({ block: "nearest" });
+    setFocusGuideSearch(false);
+  }, [focusGuideSearch, selection, importPanel, tab, blocked]);
   const data = tab === "handbook" ? browse.data : requests.data;
   const hasFilters = Boolean(
     search ||
@@ -320,6 +335,12 @@ function HandbookWorkspace({ userId }: { userId: number }) {
           staff={staff}
           startEditing={newArticle || editingId === articleId}
           onSaved={id => openArticle(id, true)}
+          onSearch={() => {
+            setNewArticle(false);
+            setEditingId(null);
+            setFocusGuideSearch(true);
+            route("handbook");
+          }}
           onClose={() => {
             setNewArticle(false);
             setEditingId(null);
@@ -361,7 +382,7 @@ function HandbookWorkspace({ userId }: { userId: number }) {
         <section className={panelClass}>
           <div>
             <h2 className="font-semibold">
-              {tab === "handbook" ? "Browse guides" : "Missing guidance"}
+              {tab === "handbook" ? "Find a guide" : "Missing guidance"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {tab === "handbook"
@@ -369,61 +390,79 @@ function HandbookWorkspace({ userId }: { userId: number }) {
                 : "Report instructions you need, or see who's helping with an existing report."}
             </p>
           </div>
-          <StaffHandbookExport
-            tab={tab}
-            search={search || undefined}
-            category={category || undefined}
-            view={view}
-            status={status}
-            assigneeId={
-              assignee === "unassigned"
-                ? null
-                : assignee
-                  ? Number(assignee)
-                  : undefined
-            }
-            contextKey={JSON.stringify([
-              userId,
-              tab,
-              search,
-              searchInput,
-              category,
-              view,
-              status,
-              assignee,
-              page,
-              articleId,
-              requestId,
-            ])}
-          />
           <form
+            role="search"
+            aria-label={tab === "handbook" ? "Find a guide" : "Find a report"}
             onSubmit={e => {
               e.preventDefault();
               setSearch(searchInput.trim());
               setPage(1);
             }}
-            className="flex items-end gap-2"
+            className={
+              tab === "handbook"
+                ? "space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
+                : "space-y-2"
+            }
           >
-            <div className="min-w-0 flex-1">
-              <Field
-                label={tab === "handbook" ? "Search guides" : "Search reports"}
-              >
-                <input
-                  type="search"
-                  maxLength={200}
-                  className={controlClass}
-                  value={searchInput}
-                  onChange={e => setSearchInput(e.target.value)}
-                  placeholder={
-                    tab === "handbook" ? "Find instructions" : "Find a report"
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1">
+                <Field
+                  label={
+                    tab === "handbook" ? "Search guides" : "Search reports"
                   }
-                />
-              </Field>
+                >
+                  <input
+                    ref={tab === "handbook" ? guideSearchRef : undefined}
+                    type="search"
+                    maxLength={200}
+                    className={`${controlClass}${tab === "handbook" ? " h-11" : ""}`}
+                    aria-describedby={
+                      tab === "handbook"
+                        ? "handbook-guide-search-help"
+                        : undefined
+                    }
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                    placeholder={
+                      tab === "handbook"
+                        ? "e.g. reimbursements, supplier payments, complaints"
+                        : "Find a report"
+                    }
+                  />
+                </Field>
+              </div>
+              <Button
+                type="submit"
+                size={tab === "handbook" ? "default" : "sm"}
+                className={tab === "handbook" ? "sm:h-11" : undefined}
+              >
+                <Search className="mr-1 h-4 w-4" aria-hidden="true" />
+                Search
+              </Button>
+              {tab === "handbook" && (search || searchInput) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setSearchInput("");
+                    setPage(1);
+                    guideSearchRef.current?.focus();
+                  }}
+                >
+                  Clear search
+                </Button>
+              )}
             </div>
-            <Button type="submit" size="sm">
-              <Search className="mr-1 h-4 w-4" aria-hidden="true" />
-              Search
-            </Button>
+            {tab === "handbook" && (
+              <p
+                id="handbook-guide-search-help"
+                className="text-xs text-muted-foreground"
+              >
+                Search titles, summaries, tags and guide content. Enter a
+                keyword, then press Search or Enter.
+              </p>
+            )}
           </form>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Category">
@@ -509,6 +548,33 @@ function HandbookWorkspace({ userId }: { userId: number }) {
               Clear filters
             </Button>
           )}
+          <StaffHandbookExport
+            tab={tab}
+            search={search || undefined}
+            category={category || undefined}
+            view={view}
+            status={status}
+            assigneeId={
+              assignee === "unassigned"
+                ? null
+                : assignee
+                  ? Number(assignee)
+                  : undefined
+            }
+            contextKey={JSON.stringify([
+              userId,
+              tab,
+              search,
+              searchInput,
+              category,
+              view,
+              status,
+              assignee,
+              page,
+              articleId,
+              requestId,
+            ])}
+          />
           {overview.isError && (
             <QueryState query={overview} label="handbook filters" />
           )}

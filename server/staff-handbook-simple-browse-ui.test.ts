@@ -59,6 +59,8 @@ let requestRows: RequestDto[];
 let staffRows: Staff[];
 let errors: Map<string, TRPCClientError<AppRouter>>;
 let network: ReturnType<typeof vi.fn>;
+let pauseSave: boolean;
+let releaseSave: (() => void) | undefined;
 
 function guide(
   id: number,
@@ -195,9 +197,23 @@ function respond(path: string, input: any) {
     if (input.category)
       items = items.filter(item => item.category === input.category);
     if (input.search)
-      items = items.filter(item =>
-        item.title.toLowerCase().includes(input.search.toLowerCase())
-      );
+      items = items.filter(item => {
+        const saved =
+          input.view === "published"
+            ? details.get(item.id)?.published
+            : details.get(item.id)?.draft;
+        const c = saved?.content;
+        return [
+          item.title,
+          c?.summary ?? item.summary,
+          ...(c?.tags ?? item.tags),
+          c?.contentHtml ?? "",
+          ...Object.values(c?.sections ?? {}),
+        ]
+          .join("\n")
+          .toLowerCase()
+          .includes(input.search.toLowerCase());
+      });
     const page = input.page ?? 1;
     return {
       items: items.slice((page - 1) * 20, page * 20),
@@ -305,7 +321,7 @@ const syntheticTransport: TRPCLink<AppRouter> =
     observable(observer => {
       calls.push({ path: op.path, type: op.type, input: op.input });
       let stopped = false;
-      queueMicrotask(() => {
+      const deliver = () => {
         if (stopped) return;
         try {
           observer.next({ result: { data: respond(op.path, op.input) } });
@@ -313,6 +329,11 @@ const syntheticTransport: TRPCLink<AppRouter> =
         } catch (error) {
           observer.error(TRPCClientError.from(error as Error));
         }
+      };
+      queueMicrotask(() => {
+        if (pauseSave && op.path === "staffHandbook.saveArticle")
+          releaseSave = deliver;
+        else deliver();
       });
       return () => {
         stopped = true;
@@ -434,6 +455,8 @@ beforeEach(() => {
   auth.loading = false;
   calls = [];
   errors = new Map();
+  pauseSave = false;
+  releaseSave = undefined;
   guides = [
     guide(7, "Synthetic saved draft", "draft"),
     guide(8, "Synthetic published guide", "published"),
@@ -525,6 +548,196 @@ describe("simple handbook browse with synthetic tRPC transport", () => {
       /New requests|Awaiting review|Request workload|Overview counts/
     );
     expect(calls.filter(call => call.type === "mutation")).toEqual([]);
+  });
+
+  it("puts a prominent, labelled guide search above export with explicit keyword/Enter help", async () => {
+    await render();
+    await settle(() => expect(guideResults()).toBeTruthy());
+    const search = field("Search guides") as HTMLInputElement;
+    const form = search.closest('form[role="search"]')!;
+    expect(container.querySelector("h2")?.textContent).toBe("Find a guide");
+    expect(form.getAttribute("aria-label")).toBe("Find a guide");
+    expect(search.type).toBe("search");
+    expect(search.maxLength).toBe(200);
+    expect(search.classList.contains("h-11")).toBe(true);
+    expect(search.placeholder).toContain("reimbursements");
+    expect(search.id).toBeTruthy();
+    const help = document.getElementById(
+      search.getAttribute("aria-describedby")!
+    )!;
+    expect(help.textContent).toContain(
+      "Search titles, summaries, tags and guide content"
+    );
+    expect(help.textContent).toContain("press Search or Enter");
+    expect(
+      form.compareDocumentPosition(
+        container.querySelector("[data-handbook-export]")!
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      form.querySelector(".sm\\:flex-row")?.classList.contains("flex-col")
+    ).toBe(true);
+    expect(calls.filter(call => call.type === "mutation")).toEqual([]);
+  });
+
+  it("Search button applies trimmed keywords across matching guides, resets page and preserves selected filters", async () => {
+    await render();
+    await settle(() => expect(button("Next").disabled).toBe(false));
+    await click("Next");
+    await input("Category", "General");
+    await input("Guide view", "published");
+    await input("Search guides", "  published guide  ");
+    expect(lastCall("staffHandbook.browse").input.search).toBeUndefined();
+    await click("Search");
+    await settle(() =>
+      expect(guideResults()?.querySelectorAll("li")).toHaveLength(1)
+    );
+    expect(lastCall("staffHandbook.browse").input).toMatchObject({
+      search: "published guide",
+      category: "General",
+      view: "published",
+      page: 1,
+    });
+    expect(guideResults().textContent).toContain("Synthetic published guide");
+  });
+
+  it("Enter/form submit handles blank keywords and Clear search keeps category and guide view", async () => {
+    await render();
+    await input("Category", "General");
+    await input("Guide view", "drafts");
+    await input("Search guides", "  saved draft  ");
+    await submit("Search guides");
+    await settle(() =>
+      expect(lastCall("staffHandbook.browse").input.search).toBe("saved draft")
+    );
+    await click("Clear search");
+    await settle(() =>
+      expect(lastCall("staffHandbook.browse").input.search).toBeUndefined()
+    );
+    expect(field("Category").value).toBe("General");
+    expect(field("Guide view").value).toBe("drafts");
+    expect(document.activeElement).toBe(field("Search guides"));
+    await input("Search guides", "   \t");
+    await submit("Search guides");
+    expect(lastCall("staffHandbook.browse").input).toMatchObject({
+      category: "General",
+      view: "drafts",
+      page: 1,
+    });
+    expect(lastCall("staffHandbook.browse").input.search).toBeUndefined();
+  });
+
+  it("uses the same server search query for a guide summary, tag or content keyword, not current-page title filtering", async () => {
+    const c = details.get(7)!.draft!.content;
+    c.summary = "summaryneedle";
+    c.tags = ["tagneedle"];
+    c.contentHtml = "<p>bodyneedle</p>";
+    await render();
+    for (const keyword of ["summaryneedle", "tagneedle", "bodyneedle"]) {
+      await input("Search guides", keyword);
+      await submit("Search guides");
+      await settle(() =>
+        expect(guideResults()?.querySelectorAll("li")).toHaveLength(1)
+      );
+      expect(guideResults().textContent).toContain("Synthetic saved draft");
+      expect(lastCall("staffHandbook.browse").input).toMatchObject({
+        search: keyword,
+        view: "all",
+        page: 1,
+      });
+    }
+    expect(calls.filter(call => call.type === "mutation")).toEqual([]);
+  });
+
+  it("open-guide Search guides returns to the existing filtered list and focuses its searchbox", async () => {
+    await render();
+    await input("Category", "General");
+    await input("Guide view", "published");
+    await input("Search guides", "published guide");
+    await submit("Search guides");
+    await settle(() =>
+      expect(guideResults()?.querySelectorAll("li")).toHaveLength(1)
+    );
+    await act(async () =>
+      guideResults().querySelector<HTMLButtonElement>("button")!.click()
+    );
+    await settle(() =>
+      expect(container.querySelector("[data-handbook-reading]")).toBeTruthy()
+    );
+    expect(container.querySelector('input[type="search"]')).toBeNull();
+    await click("Search guides");
+    await settle(() =>
+      expect(document.activeElement).toBe(field("Search guides"))
+    );
+    expect(location.history?.at(-1)).toBe("/admin/staff-handbook?tab=handbook");
+    expect(field("Search guides").value).toBe("published guide");
+    expect(field("Category").value).toBe("General");
+    expect(field("Guide view").value).toBe("published");
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  it("Search guides refuses unsaved-draft navigation until the exact discard prompt is accepted", async () => {
+    await render();
+    await click("New guide");
+    await input("Title", "Unfinished private guide");
+    await click("Search guides");
+    expect(window.confirm).toHaveBeenCalledWith(
+      "Discard your unsaved guide edits?"
+    );
+    expect(field("Title").value).toBe("Unfinished private guide");
+    expect(container.querySelector('input[type="search"]')).toBeNull();
+    vi.mocked(window.confirm).mockReturnValue(true);
+    await click("Search guides");
+    await settle(() =>
+      expect(document.activeElement).toBe(field("Search guides"))
+    );
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(calls.filter(call => call.type === "mutation")).toEqual([]);
+  });
+
+  it("Search guides stays locked during pending save and cannot bypass the navigation guard", async () => {
+    await render();
+    await click("New guide");
+    await input("Title", "Pending synthetic guide");
+    pauseSave = true;
+    await submit("Title");
+    await settle(() => expect(releaseSave).toBeTypeOf("function"));
+    expect(button("Search guides").disabled).toBe(true);
+    await click("Search guides");
+    expect(field("Title").value).toBe("Pending synthetic guide");
+    expect(window.confirm).not.toHaveBeenCalled();
+    await act(async () => releaseSave!());
+    await settle(() =>
+      expect(location.history?.at(-1)).toBe(
+        "/admin/staff-handbook?tab=handbook&article=77"
+      )
+    );
+  });
+
+  it("report search remains separately labelled and clear guide search is not offered in report results", async () => {
+    await render("/admin/staff-handbook?tab=requests");
+    await settle(() =>
+      expect(
+        container.querySelector('[aria-label="Report results"]')
+      ).toBeTruthy()
+    );
+    expect(
+      field("Search reports").closest("form")?.getAttribute("aria-label")
+    ).toBe("Find a report");
+    expect(container.textContent).not.toContain(
+      "Search titles, summaries, tags and guide content"
+    );
+    await input("Search reports", "unassigned gap");
+    await click("Search");
+    await settle(() =>
+      expect(
+        container.querySelectorAll('[aria-label="Report results"] li')
+      ).toHaveLength(1)
+    );
+    expect(container.textContent).not.toContain("Clear search");
+    expect(lastCall("staffHandbook.requests").input.search).toBe(
+      "unassigned gap"
+    );
   });
 
   it("retains explicit search, category filters, pagination and the three optional guide views", async () => {

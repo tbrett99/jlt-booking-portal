@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { Search } from "lucide-react";
 import { RichEmailEditor } from "@/components/RichEmailEditor";
 import { useHandbookUnsavedWork } from "./useHandbookUnsavedWork";
 import {
@@ -170,6 +171,7 @@ type ArticlePanelProps = {
   startEditing?: boolean;
   onSaved: (id: number) => void;
   onClose: () => void;
+  onSearch?: () => void;
 };
 function ArticlePanelContent({
   id,
@@ -179,6 +181,7 @@ function ArticlePanelContent({
   startEditing = false,
   onSaved,
   onClose,
+  onSearch,
 }: ArticlePanelProps) {
   const query = trpc.staffHandbook.article.useQuery(
     { id: typeof id === "number" ? id : 0 },
@@ -217,6 +220,7 @@ function ArticlePanelContent({
         startEditing
         onSaved={onSaved}
         onClose={onClose}
+        onSearch={onSearch}
       />
     );
   if (!detail)
@@ -249,6 +253,7 @@ function ArticlePanelContent({
         startEditing={startEditing}
         onSaved={onSaved}
         onClose={onClose}
+        onSearch={onSearch}
       />
     </>
   );
@@ -263,6 +268,7 @@ function ArticleWorkspace({
   startEditing,
   onSaved,
   onClose,
+  onSearch,
 }: {
   id: number | "new";
   detail: ArticleDetail | null;
@@ -273,6 +279,7 @@ function ArticleWorkspace({
   startEditing: boolean;
   onSaved: (id: number) => void;
   onClose: () => void;
+  onSearch?: () => void;
 }) {
   const utils = trpc.useUtils();
   const [content, setContent] = useState<HandbookContent>(() =>
@@ -606,13 +613,16 @@ function ArticleWorkspace({
     setReadingDraft(draftPreview);
     setHistoryId(historicId);
   }
-  function close() {
+  function leaveGuide(destination: () => void) {
     if (
       !pending &&
       !inFlight.current &&
       (!dirty || window.confirm("Discard your unsaved guide edits?"))
     )
-      withUnsavedWorkBypass(onClose);
+      withUnsavedWorkBypass(destination);
+  }
+  function close() {
+    leaveGuide(onClose);
   }
   async function doAction(
     actionName: "submit_review" | "approve" | "publish" | "archive" | "restore"
@@ -696,15 +706,29 @@ function ArticleWorkspace({
   return (
     <section className={panelClass} data-handbook-article>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={pending}
-          onClick={close}
-        >
-          Back to guides
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={close}
+          >
+            Back to guides
+          </Button>
+          {onSearch && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => leaveGuide(onSearch)}
+            >
+              <Search className="mr-1 h-4 w-4" aria-hidden="true" />
+              Search guides
+            </Button>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">
           Staff-only guide {archived ? "· Archived" : ""}
         </span>
@@ -784,8 +808,7 @@ function ArticleWorkspace({
               setBusy(true);
               try {
                 await refresh(id);
-                if (alive.current)
-                  withUnsavedWorkBypass(() => onSaved(id));
+                if (alive.current) withUnsavedWorkBypass(() => onSaved(id));
               } catch (error) {
                 if (deny(error)) return;
                 if (alive.current) {
