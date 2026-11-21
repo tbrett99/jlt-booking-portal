@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   int,
@@ -3296,3 +3297,78 @@ export const staffHandbookAudit = mysqlTable("staff_handbook_audit", {
   metadata: json("metadata"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 }, (t) => [index("sh_audit_entity_idx").on(t.entityType, t.entityId, t.createdAt)]);
+
+// ─── Private staff diaries (isolated from public calendar and recruitment) ──
+export const staffCalls = mysqlTable("staff_calls", {
+  id: int("id").autoincrement().primaryKey(),
+  hostUserId: int("hostUserId").notNull(),
+  reasonKey: varchar("reasonKey", { length: 64 }).notNull(),
+  reasonExplanation: varchar("reasonExplanation", { length: 1000 }),
+  format: mysqlEnum("format", ["one_to_one", "group"]).notNull(),
+  startAt: timestamp("startAt", { fsp: 3 }).notNull(),
+  endAt: timestamp("endAt", { fsp: 3 }).notNull(),
+  status: mysqlEnum("status", ["pending", "booked", "needs_recovery", "cancelled"]).default("pending").notNull(),
+  providerBookingUid: varchar("providerBookingUid", { length: 255 }),
+  providerBookingId: varchar("providerBookingId", { length: 100 }),
+  providerEventTypeId: varchar("providerEventTypeId", { length: 100 }),
+  providerHostId: varchar("providerHostId", { length: 100 }),
+  meetingUrl: varchar("meetingUrl", { length: 2000 }),
+  version: int("version").default(1).notNull(),
+  activeOperationId: int("activeOperationId"),
+  createdById: int("createdById").notNull(),
+  bookedAt: timestamp("bookedAt", { fsp: 3 }),
+  createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [index("staff_call_host_time_idx").on(t.hostUserId, t.startAt), index("staff_call_status_idx").on(t.status, t.startAt), index("staff_call_booked_idx").on(t.bookedAt, t.id), uniqueIndex("staff_call_provider_uid_uq").on(t.providerBookingUid)]);
+export type StaffCall = typeof staffCalls.$inferSelect;
+
+export const staffCallParticipants = mysqlTable("staff_call_participants", {
+  id: int("id").autoincrement().primaryKey(),
+  callId: int("callId").notNull(),
+  agentId: int("agentId").notNull(),
+  attendance: mysqlEnum("attendance", ["awaiting", "attended", "no_show", "excused", "notheld"]).default("awaiting").notNull(),
+  outcome: mysqlEnum("outcome", ["completed", "follow_up_required", "no_contact", "not_held"]),
+  privateNotes: text("privateNotes"),
+  sharedSummary: text("sharedSummary"),
+  sharedAt: timestamp("sharedAt", { fsp: 3 }),
+  version: int("version").default(1).notNull(),
+  providerSeatUid: varchar("providerSeatUid", { length: 255 }),
+  status: mysqlEnum("status", ["active", "cancelled"]).default("active").notNull(),
+  bookedAt: timestamp("bookedAt", { fsp: 3 }),
+  createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [uniqueIndex("staff_call_agent_uq").on(t.callId, t.agentId), uniqueIndex("staff_call_seat_uq").on(t.providerSeatUid), index("staff_call_participant_agent_idx").on(t.agentId, t.callId), foreignKey({ name: "staff_call_participant_call_fk", columns: [t.callId], foreignColumns: [staffCalls.id] }).onDelete("restrict")]);
+export type StaffCallParticipant = typeof staffCallParticipants.$inferSelect;
+
+// Append-only exact revisions. Never overwritten by provider updates.
+export const staffCallHistory = mysqlTable("staff_call_history", {
+  id: int("id").autoincrement().primaryKey(), callId: int("callId").notNull(), participantId: int("participantId"),
+  actorId: int("actorId"), action: varchar("action", { length: 80 }).notNull(),
+  beforeState: json("beforeState"), afterState: json("afterState").notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [index("staff_call_history_call_idx").on(t.callId, t.id), foreignKey({ name: "staff_call_history_call_fk", columns: [t.callId], foreignColumns: [staffCalls.id] }).onDelete("restrict")]);
+
+// One immutable request identity; pending survives a crash before/after dispatch.
+export const staffCallOperations = mysqlTable("staff_call_operations", {
+  id: int("id").autoincrement().primaryKey(), requestId: varchar("requestId", { length: 64 }).notNull(),
+  actorId: int("actorId").notNull(), payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+  kind: mysqlEnum("kind", ["book", "reschedule", "cancel", "cancel_participant"]).notNull(),
+  callId: int("callId").notNull(), participantId: int("participantId"),
+  state: mysqlEnum("state", ["pending", "succeeded", "needs_recovery", "failed"]).default("pending").notNull(),
+  payload: json("payload").notNull(), result: json("result"), lastError: varchar("lastError", { length: 500 }),
+  createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(), updatedAt: timestamp("updatedAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [uniqueIndex("staff_call_request_uq").on(t.requestId), index("staff_call_operation_state_idx").on(t.state, t.createdAt), foreignKey({ name: "staff_call_operation_call_fk", columns: [t.callId], foreignColumns: [staffCalls.id] }).onDelete("restrict")]);
+export type StaffCallOperation = typeof staffCallOperations.$inferSelect;
+
+// Only bounded verified normalized events, no raw provider bodies or attendee email lists.
+export const staffCallWebhookInbox = mysqlTable("staff_call_webhook_inbox", {
+  id: int("id").autoincrement().primaryKey(), eventKey: varchar("eventKey", { length: 255 }).notNull(),
+  payloadHash: varchar("payloadHash", { length: 64 }).notNull(), event: json("event").notNull(),
+  state: mysqlEnum("state", ["received", "processed", "ignored", "rejected"]).default("received").notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(), processedAt: timestamp("processedAt", { fsp: 3 }),
+}, t => [uniqueIndex("staff_call_webhook_event_uq").on(t.eventKey), index("staff_call_webhook_state_idx").on(t.state, t.createdAt)]);
+
+export const staffCallActionSources = mysqlTable("staff_call_action_sources", {
+  id: int("id").autoincrement().primaryKey(), callId: int("callId").notNull(), participantId: int("participantId").notNull(),
+  planId: int("planId").notNull(), createdById: int("createdById").notNull(), createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [uniqueIndex("staff_call_action_plan_uq").on(t.planId), index("staff_call_action_source_idx").on(t.callId, t.participantId), foreignKey({ name: "staff_call_action_plan_fk", columns: [t.planId], foreignColumns: [academyActionPlans.id] }).onDelete("restrict"), foreignKey({ name: "staff_call_action_participant_fk", columns: [t.participantId], foreignColumns: [staffCallParticipants.id] }).onDelete("restrict")]);

@@ -72,6 +72,9 @@ const CommissionClaimableMissingPaymentDate = lazy(() => import("./pages/admin/C
 const AdminNotifPrefs = lazy(() => import("./pages/admin/AdminNotifPrefs"));
 const AdminTasks = lazy(() => import("./pages/admin/AdminTasks"));
 const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
+const StaffCalls = lazy(() => import("./pages/staff/StaffCalls"));
+const StaffCallReports = lazy(() => import("./pages/admin/StaffCallReports"));
+const AgentCalls = lazy(() => import("./pages/agent/AgentCalls"));
 const AdminReimbursements = lazy(() => import("./pages/admin/AdminReimbursements"));
 const AdminInboxConfig = lazy(() => import("./pages/admin/AdminInboxConfig"));
 const AdminApiKeys = lazy(() => import("./pages/admin/AdminApiKeys"));
@@ -406,6 +409,7 @@ export function AuthRouter() {
           <Route path="/flight-requests" component={AgentFlightRequests} />
           <Route path="/notifications" component={AgentNotifications} />
           <Route path="/messages" component={AgentMessages} />
+          <Route path="/my-calls" component={AgentCalls} />
           <Route path="/my-profile" component={MyProfile} />
           <Route path="/my-agreements" component={MyAgreements} />
           <Route path="/my-public-profile" component={MyPublicProfile} />
@@ -541,6 +545,8 @@ export function AuthRouter() {
         <Route path="/notif-prefs" component={AdminNotifPrefs} />
         <Route path="/admin/tasks" component={AdminTasks} />
         <Route path="/admin/calendar" component={AdminCalendar} />
+        <Route path="/admin/staff-calls" component={StaffCalls} />
+        <Route path="/admin/staff-call-reports" component={StaffCallReports} />
         <Route path="/admin/reimbursements" component={AdminReimbursements} />
         <Route path="/admin/inbox-config" component={AdminInboxConfig} />
         <Route path="/admin/inbox-audit" component={AdminInboxAudit} />

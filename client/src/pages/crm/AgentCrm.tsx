@@ -35,6 +35,7 @@ import { getOffboardingChecklist } from "@shared/offboarding-checklist";
 import { AgentMergeDialog } from "@/components/AgentMergeDialog";
 import { AgentMergeHistory } from "@/components/AgentMergeHistory";
 import { CrmSupplierAccess } from "@/components/CrmSupplierAccess";
+import StaffCallCrmHistory from "@/components/StaffCallCrmHistory";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   CRM_MEMBERSHIP_OPTIONS, CRM_STATUS_OPTIONS, currentCrmMembership, currentCrmStatus,
@@ -640,6 +641,7 @@ function AgentOverviewTab({ agent, profile, onNavigate }: { agent: AgentRow; pro
         ) : <p className="mt-4 text-sm font-medium text-emerald-800">No immediate membership, payment, engagement or training attention is recorded.</p>}
       </div>
 
+      <StaffCallCrmHistory agentId={agent.id} />
       <AgentCallSnapshot userId={agent.id} onNavigate={onNavigate} />
 
       <div className="grid gap-4 xl:grid-cols-2">

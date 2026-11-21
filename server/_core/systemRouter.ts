@@ -33,6 +33,7 @@ export const systemRouter = router({
       financialsGoCardlessOnlyVat: 1,
       staffHandbookInternal: 1,
       staffWorkloadReporting: 1,
+      privateStaffCalls: 1,
       amendmentDepartureFilters: 1,
       staffHandbookSimpleSave: 1,
       staffHandbookFirstUse: 1,

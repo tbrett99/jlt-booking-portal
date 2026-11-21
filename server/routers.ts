@@ -186,6 +186,7 @@ import { academyRouter } from "./academy-router";
 import { agentDevelopmentRouter } from "./agent-development-router";
 import { libraryRouter } from "./library-router";
 import { staffHandbookRouter } from "./staff-handbook-router";
+import { staffCallsRouter } from "./staff-calls-router";
 import { agentSupportRouter } from "./agent-support-router";
 import { membershipPaymentsRouter } from "./membership-payment-issues-router";
 import { agentMergeRouter } from "./agent-merge-router";
@@ -473,6 +474,7 @@ export const appRouter = router({
   agentDevelopment: agentDevelopmentRouter,
   library: libraryRouter,
   staffHandbook: staffHandbookRouter,
+  staffCalls: staffCallsRouter,
   agentSupport: agentSupportRouter,
   membershipPayments: membershipPaymentsRouter,
   agentMerge: agentMergeRouter,

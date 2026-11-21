@@ -11,6 +11,8 @@ import { registerAcademyDocumentDownloadRoutes } from "../academy-document-downl
 import { registerBookingDocumentDownloadRoutes } from "../booking-document-download-routes";
 import { registerStaffHandbookDownloadRoutes } from "../staff-handbook-download-routes";
 import { registerMembershipPaymentRoutes } from "../membership-payment-routes";
+import { handleStaffCallsWebhook } from "../staff-calls-service";
+import { registerStaffCallsSyncRoute } from "../staff-calls-sync-route";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -229,6 +231,20 @@ async function startServer() {
   // Must be registered BEFORE express.json() so the raw Buffer is preserved.
   app.use("/api/gocardless/webhook", express.raw({ type: "application/json", limit: "1mb" }));
 
+  // Separate support-call namespace: recruitment email matching is never used.
+  // Cal.com signs exact bytes, so this route terminates before JSON middleware.
+  app.post("/api/staff-calls/webhook", express.raw({ type: "application/json", limit: "256kb" }), async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      if (!Buffer.isBuffer(req.body)) { res.status(400).json({ accepted: false }); return; }
+      const result = await handleStaffCallsWebhook(req.body, req.headers);
+      res.status(result.status).json(result.body);
+    } catch {
+      // No payload, signature, provider response, stack or calendar identity logs.
+      res.status(503).json({ accepted: false, message: "Staff-call synchronisation is temporarily unavailable." });
+    }
+  });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -244,6 +260,7 @@ async function startServer() {
   // through a role- and ownership-checked download route.
   registerAcademyDocumentDownloadRoutes(app);
   registerMembershipPaymentRoutes(app);
+  registerStaffCallsSyncRoute(app);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 

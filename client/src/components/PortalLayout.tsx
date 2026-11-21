@@ -447,6 +447,7 @@ function RegularPortalLayout({ children }: { children: React.ReactNode }) {
       defaultOpen: true,
       items: [
         { label: "Messages", href: "/messages", icon: <MessageSquare size={16} /> },
+        ...(isAgent ? [{ label: "My Support Calls", href: "/my-calls", icon: <CalendarDays size={16} /> }] : []),
       ],
     },
     {
@@ -514,6 +515,7 @@ function RegularPortalLayout({ children }: { children: React.ReactNode }) {
         { label: "Messages", href: "/messages", icon: <MessageSquare size={16} /> },
         { label: "Tasks", href: "/admin/tasks", icon: <CheckSquare size={16} /> },
         { label: "Calendar", href: "/admin/calendar", icon: <CalendarDays size={16} /> },
+        { label: "Staff Call Diaries", href: "/admin/staff-calls", icon: <CalendarDays size={16} /> },
       ],
     },
     {
@@ -596,6 +598,7 @@ function RegularPortalLayout({ children }: { children: React.ReactNode }) {
           ? [{ label: "Business Intelligence", href: "/super-admin", icon: <Activity size={16} /> }]
           : []),
         { label: "Admin Reports", href: "/reports", icon: <FileText size={16} /> },
+        { label: "Call Reporting", href: "/admin/staff-call-reports", icon: <BarChart2 size={16} /> },
         { label: "Commission Margin", href: "/commission-margin", icon: <TrendingUp size={16} /> },
         { label: "Agent Performance", href: "/agent-performance", icon: <BarChart2 size={16} /> },
       ],

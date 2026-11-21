@@ -14,6 +14,7 @@ import NotFound from "@/pages/NotFound";
 
 const Instructor = lazy(() => import("./StaffInstructor"));
 const Engagement = lazy(() => import("./StaffEngagement"));
+const Calls = lazy(() => import("./StaffCalls"));
 export type StaffAuthority = {
   instructor: boolean;
   engagement: boolean;
@@ -253,7 +254,7 @@ export default function StaffWorkspace() {
   const hasAccess = access.instructor || access.engagement;
   const deniedRoute =
     (location === "/staff/instructor" && !access.instructor) ||
-    (location === "/staff/engagement" && !access.engagement);
+    ((location === "/staff/engagement" || location === "/staff/calls") && !access.engagement);
   return (
     <Authority.Provider value={access}>
       <div className="min-h-screen bg-slate-50 text-slate-900 md:grid md:grid-cols-[230px_minmax(0,1fr)]">
@@ -291,6 +292,7 @@ export default function StaffWorkspace() {
                 Agent Engagement
               </Link>
             )}
+            {access.engagement && <Link href="/staff/calls" className={`rounded-lg px-3 py-2 text-sm ${location === "/staff/calls" ? "bg-emerald-50 font-semibold text-emerald-800" : "hover:bg-slate-50"}`}>My Call Diary</Link>}
           </nav>
           <Link
             href="/dashboard"
@@ -331,6 +333,7 @@ export default function StaffWorkspace() {
                   {access.engagement && (
                     <Route path="/staff/engagement" component={Engagement} />
                   )}
+                  {access.engagement && <Route path="/staff/calls" component={Calls} />}
                   <Route component={NotFound} />
                 </Switch>
               )}
