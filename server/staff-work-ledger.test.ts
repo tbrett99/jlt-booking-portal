@@ -425,6 +425,29 @@ describe("actual flight tRPC mutations", () => {
     const created = await caller(agent).create({ bookingId: 100, requestType: "ticketing", supplier: "Aviate", pnr: "SYNTHETIC", departureDate: new Date("2027-02-01"), ticketingDeadline: new Date("2027-01-01") });
     expect(f.events()[0]).toMatchObject({ eventType: "created", requestId: created.id, requestType: "ticketing", actorId: 10, actorRole: "agent", actorName: null, receivedAt: created.createdAt }); assertSourceLinks("flight");
   });
+  it.each(["ticketing", "cancellation", "both"] as const)("persists Faremine for %s through the normal atomic create and audit workflow", async requestType => {
+    const original = structuredClone(f.rows.get(schema.flightRequests));
+    const created = await caller(agent).create({ bookingId: 100, requestType, supplier: "Faremine", pnr: "SYNTHETIC", departureDate: new Date("2027-02-01"), ticketingDeadline: new Date("2027-01-01"), flightCost: 100,
+      ...(requestType === "both" ? { cancellationPnr: "CANCEL", cancellationDepartureDate: new Date("2027-02-02"), cancellationTicketingDeadline: new Date("2027-01-02"), cancellationFlightCost: 50 } : {}) });
+    expect(created).toMatchObject({ bookingId: 100, agentId: 10, requestType, supplier: "Faremine", status: "pending", flightCost: "100" });
+    expect(f.rows.get(schema.flightRequests)!.filter(row => row.id === 3)).toEqual(original);
+    expect(f.events()[0]).toMatchObject({ eventType: "created", requestId: created.id, requestType, actorId: 10, actorRole: "agent", actorName: null });
+    expect(f.audits("flight")).toHaveLength(1); assertSourceLinks("flight");
+    if (requestType === "both") expect(created).toMatchObject({ cancellationPnr: "CANCEL", cancellationFlightCost: "50" });
+  });
+  it.each(["Lime", "VA Flight Store"] as const)("still accepts existing supplier %s", async supplier => {
+    const created = await caller(agent).create({ bookingId: 100, requestType: "ticketing", supplier, pnr: "SYNTHETIC", departureDate: new Date("2027-02-01"), ticketingDeadline: new Date("2027-01-01") });
+    expect(created.supplier).toBe(supplier); assertSourceLinks("flight");
+  });
+  it("does not allow arbitrary supplier strings", async () => {
+    await expect(caller(agent).create({ bookingId: 100, requestType: "ticketing", supplier: "Unsupported supplier" as any, pnr: "SYNTHETIC", departureDate: new Date("2027-02-01"), ticketingDeadline: new Date("2027-01-01") })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // Protected middleware still checks whether the caller is business staff.
+    expect(f.trace.every(entry => entry.kind === "read" && entry.table === "business_staff_memberships")).toBe(true);
+  });
+  it("denies Faremine requests on another agent's booking without a write", async () => {
+    await expect(caller({ ...agent, id: 99 }).create({ bookingId: 100, requestType: "ticketing", supplier: "Faremine", pnr: "SYNTHETIC", departureDate: new Date("2027-02-01"), ticketingDeadline: new Date("2027-01-01") })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(f.trace.some(entry => ["insert", "update", "delete", "begin"].includes(entry.kind))).toBe(false);
+  });
   it.each(["updateStatus", "toggleInvoice", "delete", "notifyPriceIncrease"] as const)("retains admin role denial for %s", async operation => {
     await expect((caller(agent)[operation] as any)({ id: 3, status: "completed", invoiceAddedToPts: true, newPrice: 20 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(f.events()).toEqual([]); expect(f.trace).toEqual([]);

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { FLIGHT_REQUEST_SUPPLIERS } from "@shared/flight-request-suppliers";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +34,6 @@ const REQUEST_TYPES = [
   { value: "cancellation", label: "Cancellation" },
   { value: "both", label: "Ticketing & Cancellation (Both)" },
 ] as const;
-
-const SUPPLIERS = ["Aviate", "Lime", "VA Flight Store"] as const;
 
 /** Reusable PNR / date block */
 function FlightSection({
@@ -192,7 +191,7 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
     createMutation.mutate({
       bookingId,
       requestType: requestType as "ticketing" | "cancellation" | "both",
-      supplier: supplier as "Aviate" | "Lime" | "VA Flight Store",
+      supplier: supplier as (typeof FLIGHT_REQUEST_SUPPLIERS)[number],
       pnr: pnr.trim(),
       departureDate: new Date(departureDate),
       ticketingDeadline: new Date(ticketingDeadline),
@@ -243,7 +242,7 @@ export function FlightRequestForm({ open, onOpenChange, bookingId, clientName, o
                 <SelectValue placeholder="Select supplier…" />
               </SelectTrigger>
               <SelectContent>
-                {SUPPLIERS.map((s) => (
+                {FLIGHT_REQUEST_SUPPLIERS.map((s) => (
                   <SelectItem key={s} value={s}>{s}</SelectItem>
                 ))}
               </SelectContent>

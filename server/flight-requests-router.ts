@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, desc, asc, count, inArray } from "drizzle-orm";
+import { FLIGHT_REQUEST_SUPPLIERS } from "../shared/flight-request-suppliers";
 import { router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import { getDb, getBookingById } from "./db";
 import { flightRequests, flightRequestActions, bookings, users } from "../drizzle/schema";
@@ -48,7 +49,7 @@ export const flightRequestsRouter = router({
       z.object({
         bookingId: z.number(),
         requestType: z.enum(["ticketing", "cancellation", "both"]),
-        supplier: z.enum(["Aviate", "Lime", "VA Flight Store"]),
+        supplier: z.enum(FLIGHT_REQUEST_SUPPLIERS),
         // Ticketing fields (also used as the primary set for single-type requests)
         pnr: z.string().min(1).max(50),
         departureDate: z.date(),

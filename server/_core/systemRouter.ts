@@ -29,6 +29,7 @@ export const systemRouter = router({
       businessStaffOrbitPending: 1,
       businessStaffPortalResources: 1,
       businessStaffStandardBookings: 1,
+      flightRequestsFaremine: 1,
       financialsGoCardlessOnlyVat: 1,
       staffHandbookInternal: 1,
       staffWorkloadReporting: 1,
