@@ -16,7 +16,10 @@ import { AcademyConversionError, academyConversionReason, classifyAcademyConvers
 // only keys/hashes. No storage work or global DB helpers run inside the cutover.
 export const FIRST_CLASS_CONVERSION_MAX_FILES = 100;
 export const FIRST_CLASS_CONVERSION_PREPARATION_MS = 120_000;
-export const FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+// The course allowance must accommodate every individually valid teaching file.
+// This is a transfer/accounting bound, not retained plaintext: the same three
+// workers discard bytes after verification and keep only small metadata rows.
+export const FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES = FIRST_CLASS_CONVERSION_MAX_FILES * MAX_ACADEMY_DOCUMENT_BYTES;
 const MAX_SCOPE_ROWS = 1000;
 const PRIVATE_ENVELOPE_BYTES = 34;
 const teachingKey = /^academy\/[1-9]\d*\/([a-z0-9][a-z0-9._-]*)$/i;

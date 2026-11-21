@@ -20,7 +20,7 @@ vi.mock("./business-staff-access", () => ({ getBusinessStaffAuthority: async () 
 import { academyRouter } from "./academy-router";
 import { academyPrivateAttachmentUrl } from "./academy-staff-access";
 import { decryptPrivateStoragePayload, encryptPrivateStoragePayload, storageGetRawBounded, storagePutEncrypted } from "./storage";
-import { convertFirstClassCourseResources, FIRST_CLASS_CONVERSION_MAX_FILES, FIRST_CLASS_CONVERSION_PREPARATION_MS } from "./academy-first-class-conversion";
+import { convertFirstClassCourseResources, FIRST_CLASS_CONVERSION_MAX_FILES, FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES, FIRST_CLASS_CONVERSION_PREPARATION_MS } from "./academy-first-class-conversion";
 import { MAX_ACADEMY_DOCUMENT_BYTES } from "./academy-document-assessment";
 
 const routes = router({ academy: academyRouter });
@@ -142,8 +142,34 @@ beforeEach(() => {
     academy_assessment_responses: [{ id: 77, attemptId: 66, responseText: "Original response" }], academy_assessment_question_resets: [{ id: 88, lessonId: 11 }],
   }); state.db = mock.db; installTransactions();
 });
-afterEach(() => { expect(state.external).not.toHaveBeenCalled(); expect(state.email).not.toHaveBeenCalled(); expect(state.notify).not.toHaveBeenCalled(); expect(commands.every(command => ["get", "put"].includes(command.operation))).toBe(true); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+afterEach(() => {
+  try { expect(state.external).not.toHaveBeenCalled(); expect(state.email).not.toHaveBeenCalled(); expect(state.notify).not.toHaveBeenCalled(); expect(commands.every(command => ["get", "put"].includes(command.operation))).toBe(true); }
+  finally { objects.clear(); commands.length = 0; state.send.mockReset(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); }
+});
 const untouched = (before: any) => { expect(mock.tables).toEqual(before); expect(mock.writes).toEqual([]); };
+
+function largeResourceFixture(reusedReferences = 0, distinctFiles = 11) {
+  // Distinct object keys can share immutable synthetic source bytes. Retain just
+  // one source buffer and one encrypted buffer per PUT, not a second SDK copy.
+  const bytes = Buffer.alloc(MAX_ACADEMY_DOCUMENT_BYTES);
+  pdf.copy(bytes); const footer = Buffer.from("\n%%EOF"); footer.copy(bytes, bytes.length - footer.length);
+  const baseLesson = { ...lesson() };
+  const outsideLessons = mock.tables.academy_lessons.filter(row => row.moduleId !== 22);
+  const sources = Array.from({ length: distinctFiles }, (_, index) => `academy/90/${index}-large-guide.pdf`);
+  mock.tables.academy_lessons = sources.map((source, index) => {
+    objects.set(source, bytes);
+    return { ...baseLesson, id: index === 0 ? baseLesson.id : 100 + index, attachmentKey: source, attachmentUrl: publicUrl(source) };
+  });
+  for (let index = 0; index < reusedReferences; index++) mock.tables.academy_lessons.push({ ...mock.tables.academy_lessons[0], id: 1000 + index, archivedAt: index % 2 ? stamp : null });
+  mock.tables.academy_lessons.push(...outsideLessons);
+  const send = state.send.getMockImplementation()!;
+  state.send.mockImplementation(async (command: any, options: any) => {
+    if (command.operation !== "put") return send(command, options);
+    expect(txActive).toBe(false); expect(command.input.ContentType).toBe("application/octet-stream"); expect(command.input.CacheControl).toBe("no-store");
+    commands.push(command); objects.set(command.input.Key, command.input.Body); return {};
+  });
+  return { bytes, sources, convertedBytes: sources.length * bytes.length };
+}
 
 describe("actual course save automatic First Class conversion with raw SDK storage", () => {
   it.each(["admin", "super_admin"])("converts reused archived legacy PDFs as %s, retains private references and all history bytes", async role => {
@@ -238,11 +264,79 @@ describe("refuses unsafe, malformed and out-of-scope resource snapshots before s
     });
     const before = structuredClone(mock.tables); await expect(caller().saveCourse(courseSave())).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("Guide") }); untouched(before); expect(transactions).toBe(0);
   });
-  it("enforces aggregate bytes separately from the per-file 10 MB bound", async () => {
-    mock.tables.academy_lessons = [];
-    const bytes = Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(MAX_ACADEMY_DOCUMENT_BYTES - 5)]);
-    for (let index = 0; index < 11; index++) { const source = `academy/90/${index}-guide.pdf`; objects.set(source, bytes); mock.tables.academy_lessons.push({ id: index + 1, moduleId: 22, title: "Guide", attachmentKey: source, attachmentUrl: publicUrl(source), attachmentName: "Guide.pdf", updatedAt: stamp }); }
-    const before = structuredClone(mock.tables); await expect(caller().saveCourse(courseSave())).rejects.toMatchObject({ code: "BAD_REQUEST" }); untouched(before); expect(transactions).toBe(0);
+});
+
+describe("aggregate conversion capacity without weakening individual guards", () => {
+  it("derives aggregate capacity from 100 distinct files at 10 MiB each and retains the 120-second deadline", () => {
+    expect(FIRST_CLASS_CONVERSION_MAX_FILES).toBe(100);
+    expect(MAX_ACADEMY_DOCUMENT_BYTES).toBe(10 * 1024 * 1024);
+    expect(FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES).toBe(FIRST_CLASS_CONVERSION_MAX_FILES * MAX_ACADEMY_DOCUMENT_BYTES);
+    expect(FIRST_CLASS_CONVERSION_PREPARATION_MS).toBe(120_000);
+  });
+  it("activates >100 MiB of distinct verified encrypted PDFs, counting reused references only once and preserving history", async () => {
+    const { bytes, sources, convertedBytes } = largeResourceFixture(FIRST_CLASS_CONVERSION_MAX_FILES);
+    const before = structuredClone(mock.tables); const originalHistoryBytes = JSON.stringify(history());
+    const referenceCount = before.academy_lessons.filter(row => row.moduleId === 22).length;
+    expect(convertedBytes).toBeGreaterThan(100 * 1024 * 1024);
+    expect(referenceCount).toBeGreaterThan(FIRST_CLASS_CONVERSION_MAX_FILES);
+    expect(referenceCount * bytes.length).toBeGreaterThan(FIRST_CLASS_CONVERSION_MAX_TOTAL_BYTES);
+    beforeTransaction = async () => {
+      expect(commands.filter(command => command.operation === "put")).toHaveLength(sources.length);
+      expect(commands.filter(command => command.operation === "get")).toHaveLength(sources.length * 2);
+    };
+    expect(await caller().saveCourse(courseSave())).toEqual({ id: 33 });
+    expect(transactions).toBe(1); expect(state.authenticate).toHaveBeenCalledOnce();
+    expect(course()).toEqual({ ...before.academy_courses[0], title: "Saved full payload", summary: "New summary", coverImageUrl: "https://example.test/new-cover.png", estimatedMinutes: 47, isFirstClassTraining: true, updatedById: 99 });
+    const puts = commands.filter(command => command.operation === "put");
+    expect(puts).toHaveLength(sources.length); expect(new Set(puts.map(command => command.input.Key)).size).toBe(sources.length);
+    for (const source of sources) {
+      expect(objects.get(source)).toBe(bytes);
+      expect(commands.filter(command => command.operation === "get" && command.input.Key === source)).toHaveLength(1);
+      const references = mock.tables.academy_lessons.filter(row => row.moduleId === 22 && before.academy_lessons.find(original => original.id === row.id)?.attachmentKey === source);
+      const target = references[0].attachmentKey;
+      expect(target).toMatch(/^academy\/99\/[a-f0-9-]{36}-\d+-large-guide\.pdf$/);
+      expect(references.every(row => row.attachmentKey === target && row.attachmentUrl === academyPrivateAttachmentUrl(target))).toBe(true);
+      expect(commands.filter(command => command.operation === "get" && command.input.Key === target)).toHaveLength(1);
+      const encrypted = objects.get(target)!;
+      expect(encrypted.length).toBe(bytes.length + 34); expect(encrypted.equals(bytes)).toBe(false);
+      expect(decryptPrivateStoragePayload(encrypted).equals(bytes)).toBe(true);
+    }
+    for (const original of before.academy_lessons) {
+      const saved = mock.tables.academy_lessons.find(row => row.id === original.id);
+      if (original.moduleId !== 22) { expect(saved).toEqual(original); continue; }
+      const { attachmentKey: _oldKey, attachmentUrl: _oldUrl, ...originalFields } = original;
+      const { attachmentKey: _newKey, attachmentUrl: _newUrl, ...savedFields } = saved;
+      expect(savedFields).toEqual(originalFields);
+    }
+    expect(JSON.stringify(history())).toBe(originalHistoryBytes);
+    expect(mock.tables.academy_modules).toEqual(before.academy_modules); expect(mock.tables.academy_courses[1]).toEqual(before.academy_courses[1]);
+    expect(mock.tables.staff_academy_uploads).toHaveLength(sources.length);
+    expect(mock.tables.staff_academy_uploads.every(row => row.userId === 99 && row.courseId === 33 && row.kind === "attachment" && puts.some(command => command.input.Key === row.objectKey))).toBe(true);
+    expect(mock.tables.academy_audit_log).toHaveLength(1);
+    expect(mock.tables.academy_audit_log[0].metadata).toMatchObject({ convertedFileCount: sources.length, convertedReferenceCount: referenceCount, convertedBytes, learnerEvidencePreserved: true, historicalPublicObjectsUntouched: true });
+  });
+  it("rejects a later valid-but-different readback after >100 MiB preparation with all database rows unchanged", async () => {
+    const { bytes, sources } = largeResourceFixture(0, 12);
+    const before = structuredClone(mock.tables); const originalHistoryBytes = JSON.stringify(history());
+    const send = state.send.getMockImplementation()!;
+    let readbackBytes = 0; let rejectedAfterBytes = 0;
+    state.send.mockImplementation(async (command: any, options: any) => {
+      if (command.operation === "get" && command.input.Key.startsWith("academy/99/")) {
+        if (command.input.Key.endsWith("-11-large-guide.pdf")) {
+          rejectedAfterBytes = readbackBytes; commands.push(command);
+          const different = Buffer.from(bytes); different[different.length - 8] ^= 1;
+          return stream(encryptPrivateStoragePayload(different));
+        }
+        readbackBytes += bytes.length;
+      }
+      return send(command, options);
+    });
+    await expect(caller().saveCourse(courseSave())).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("No course changes were saved") });
+    expect(rejectedAfterBytes).toBeGreaterThan(100 * 1024 * 1024);
+    expect(commands.filter(command => command.operation === "put")).toHaveLength(sources.length);
+    expect(transactions).toBe(0); expect(state.authenticate).not.toHaveBeenCalled(); untouched(before);
+    expect(JSON.stringify(history())).toBe(originalHistoryBytes); expect(course().isFirstClassTraining).toBe(false);
+    for (const source of sources) expect(objects.get(source)).toBe(bytes);
   });
 });
 

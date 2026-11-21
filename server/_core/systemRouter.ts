@@ -40,6 +40,7 @@ export const systemRouter = router({
       academyFirstClassWeeklyAccess: 1,
       academyFirstClassResourceConversion: 1,
       academyFirstClassConversionDiagnostics: 1,
+      academyFirstClassLargeResourceConversion: 1,
       crmMembershipMultiFilters: 1,
     })),
 

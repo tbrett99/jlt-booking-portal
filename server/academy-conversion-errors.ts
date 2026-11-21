@@ -76,7 +76,7 @@ export function academyConversionReason(code: AcademyConversionCode, stage: Acad
     case "cancelled": return "resource preparation was cancelled";
     case "deadline_exceeded": return "resource preparation exceeded the 120-second save limit";
     case "oversize": return readingCopy ? "the private copy exceeds its verification size limit" : "the original file exceeds the 10 MB limit";
-    case "total_oversize": return "the files exceed the 100 MB total conversion limit";
+    case "total_oversize": return "the files exceed the 1000 MB total conversion limit";
     case "empty": return readingCopy ? "storage returned an empty private copy" : "the original file is empty";
     case "truncated": return readingCopy ? "storage returned an incomplete private copy" : "storage returned an incomplete original file";
     case "unreadable": return readingCopy ? "storage returned no readable private copy" : "storage returned no readable original file";

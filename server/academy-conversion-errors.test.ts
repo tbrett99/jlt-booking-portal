@@ -20,7 +20,7 @@ import { academyRouter } from "./academy-router";
 import { MAX_ACADEMY_DOCUMENT_BYTES } from "./academy-document-assessment";
 import { FIRST_CLASS_CONVERSION_PREPARATION_MS } from "./academy-first-class-conversion";
 import { StorageReadError, encryptPrivateStoragePayload, storageGetRawBounded } from "./storage";
-import { classifyAcademyConversionError } from "./academy-conversion-errors";
+import { academyConversionReason, classifyAcademyConversionError } from "./academy-conversion-errors";
 
 const routes = router({ academy: academyRouter });
 const admin = { id: 99, role: "admin", isActive: true, portalStatus: "active", openId: "offline-admin" };
@@ -76,6 +76,10 @@ async function assertFailure(code: string, stage: string, reason: string, before
 }
 
 describe("actual offline course-save diagnostic stages without API or log secrets", () => {
+  it("reports the corrected finite course-wide allowance without suggesting one PDF is too large", () => {
+    expect(academyConversionReason("total_oversize", "validate")).toBe("the files exceed the 1000 MB total conversion limit");
+    expect(academyConversionReason("oversize", "source_read")).toBe("the original file exceeds the 10 MB limit");
+  });
   it.each([
     ["NoSuchKey", 404, "missing_file", "the original file could not be found in storage"],
     ["AccessDenied", 403, "permission_denied", "storage denied permission to read the original file"],
