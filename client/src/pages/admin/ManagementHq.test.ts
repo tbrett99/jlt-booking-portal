@@ -487,7 +487,7 @@ describe("Management HQ on actual DOM", () => {
       container.querySelector('[aria-label="Executive KPIs"]')
     ).toBeTruthy();
     expect(container.textContent).toContain(
-      "January booking changes from £5,000 to £6,000 in April"
+      "January booking changes from £10,000 to £11,000"
     );
     expect(container.textContent).toContain("January 2026");
     expect(container.textContent).toContain("April 2026");
@@ -536,6 +536,131 @@ describe("Management HQ on actual DOM", () => {
       container.querySelector("input[type=file], textarea, form")
     ).toBeNull();
   });
+  it("keeps provisional current owner and assigned staff separate from null seller and admin processor", async () => {
+    const owner = { ...seller, name: "Synthetic Current Owner" };
+    const staff = {
+      userId: 102,
+      uniqueAgentId: "JLT102",
+      name: "Synthetic Assigned Staff",
+      role: "staff",
+    };
+    const file = {
+      ...booking(),
+      seller: null,
+      sellerReason: "Current ownership does not establish original seller",
+      currentOwner: owner,
+      assignedStaff: staff,
+      attributionState: "provisional_current_owner",
+    };
+    mock.data["managementHq.report"].bookings = [file];
+    mock.data["managementHq.report"].undatedExceptions = [];
+    mock.data["managementHq.report"].agents = [
+      {
+        agent: owner,
+        attributionState: "provisional_current_owner",
+        totals: totals(),
+        pendingCount: 0,
+        cancelledCount: 0,
+      },
+    ];
+    mock.data["managementHq.report"].watermark = "NEVER-RENDER-OPAQUE-CURSOR";
+    mock.data["managementHq.report"].snapshotId = "NEVER-RENDER-GENERATION-KEY";
+    await render();
+    const table = container.querySelector(
+      '[aria-label="Booking drilldown"] table'
+    )!;
+    const headers = [...table.querySelectorAll("thead th")].map(
+      item => item.textContent
+    );
+    const cells = [...table.querySelectorAll("tbody tr:first-child > *")];
+    expect(cells[headers.indexOf("Seller")]?.textContent).toContain(
+      "Unattributed"
+    );
+    expect(cells[headers.indexOf("Seller")]?.textContent).not.toContain(
+      owner.name
+    );
+    expect(cells[headers.indexOf("Current owner")]?.textContent).toContain(
+      owner.name
+    );
+    expect(cells[headers.indexOf("Current owner")]?.textContent).toContain(
+      "Provisional current owner · not original seller"
+    );
+    expect(cells[headers.indexOf("Assigned staff")]?.textContent).toContain(
+      staff.name
+    );
+    expect(cells[headers.indexOf("Admin processor")]?.textContent).toContain(
+      processor.name
+    );
+    expect(
+      cells[headers.indexOf("Admin processor")]?.textContent
+    ).not.toContain(staff.name);
+    await click("Agent Activity");
+    const activity = container.querySelector('[aria-label="Agent activity"]')!;
+    expect(activity.textContent).toContain(
+      "Provisional current owner · not original seller"
+    );
+    expect(activity.textContent).not.toContain(staff.name);
+    expect(activity.textContent).not.toContain(processor.name);
+    await click("Source values for SAMPLE-1");
+    const attribution = container.querySelector(
+      '[aria-label="Booking attribution"]'
+    )!;
+    expect(attribution.textContent).toContain("Current owner");
+    expect(attribution.textContent).toContain("Assigned staff");
+    expect(attribution.textContent).toContain("SellerUnattributed");
+    expect(container.textContent).not.toContain("NEVER-RENDER");
+  });
+  it.each(["initial", "amended", "cancelled", "registered"] as const)(
+    "renders the actual implemented %s scenario without inventing a verified seller",
+    async scenario => {
+      const {
+        runHqImplementedSampleScenario,
+        createHqImplementedSampleDirectory,
+      } = await import("../../../../server/management-hq-implemented-fixtures");
+      const { getHqReport } = await import(
+        "../../../../server/management-hq-engine"
+      );
+      const state = await runHqImplementedSampleScenario(scenario);
+      mock.data["managementHq.report"] = await getHqReport(
+        state,
+        createHqImplementedSampleDirectory(),
+        { year: 2026 }
+      );
+      await render();
+      const table = container.querySelector(
+        '[aria-label="Booking drilldown"]'
+      )!;
+      expect(table.textContent).toContain("SYN-HQ-1");
+      expect(table.textContent).toContain(
+        scenario === "initial" ? "£10,000.00" : "£11,000.00"
+      );
+      expect(table.textContent).toContain(
+        scenario === "registered" ? "2026-02-03" : "2026-01-10"
+      );
+      expect(table.textContent).toContain(
+        "Original seller unavailable; current owner provisional"
+      );
+      expect(table.textContent).toContain("Synthetic Assigned Staff");
+      expect(table.textContent).not.toContain("Synthetic Admin Processor");
+      const cancelled = scenario === "cancelled" || scenario === "registered";
+      const kpis = container.querySelector('[aria-label="Executive KPIs"]')!;
+      const bookings = [...kpis.querySelectorAll("div")].find(
+        item => item.querySelector("h2")?.textContent === "Active bookings"
+      );
+      expect(bookings?.querySelector("strong")?.textContent).toBe(
+        cancelled ? "0" : "1"
+      );
+      if (!cancelled)
+        expect(kpis.textContent).toContain(
+          scenario === "initial" ? "£1,500.00" : "£2,500.00"
+        );
+      await click("Agent Activity");
+      expect(
+        container.querySelector('[aria-label="Agent activity"]')?.textContent
+      ).toContain("Provisional current owner · not original seller");
+      expect(container.textContent).not.toContain(state.resumeCursor);
+    }
+  );
   it("preserves cancelled records, reporting dates, processing-only attribution and sourced drilldown", async () => {
     await render();
     const table = container.querySelector('[aria-label="Booking drilldown"]')!;
@@ -598,7 +723,7 @@ describe("Management HQ on actual DOM", () => {
     await click("Refresh");
     expect(currentReport()).toBeNull();
     expect(button("Refresh").disabled).toBe(true);
-    expect(button("Replay April value change").disabled).toBe(true);
+    expect(button("Replay value amendment").disabled).toBe(true);
     await act(async () =>
       pending.resolve({ data: mock.data["managementHq.status"], error: null })
     );
@@ -635,7 +760,7 @@ describe("Management HQ on actual DOM", () => {
     await render();
     expect(container.textContent).toContain("No sample loaded");
     expect(button("Load initial sample").disabled).toBe(false);
-    expect(button("Replay April value change").disabled).toBe(true);
+    expect(button("Replay value amendment").disabled).toBe(true);
     await click("Load initial sample");
     expect(mock.mutations).toEqual([
       { scenario: "initial", expectedVersion: null },
@@ -646,15 +771,16 @@ describe("Management HQ on actual DOM", () => {
     await render();
     const pending = deferred();
     mock.mutationWait = pending.promise;
-    await click("Replay April value change");
+    await click("Replay value amendment");
     expect(mock.mutations).toEqual([
       { scenario: "amended", expectedVersion: 4 },
     ]);
     expect(currentReport()).toBeNull();
     for (const text of [
       "Load initial sample",
-      "Replay April value change",
+      "Replay value amendment",
       "Replay sample cancellation",
+      "Replay later registration",
       "Refresh",
     ])
       expect(button(text).disabled).toBe(true);
@@ -671,14 +797,14 @@ describe("Management HQ on actual DOM", () => {
   it("withholds values on CAS conflict and requires refresh before another replay", async () => {
     await render();
     mock.mutationError = { data: { code: "CONFLICT" } };
-    await click("Replay April value change");
+    await click("Replay value amendment");
     expect(currentReport()).toBeNull();
     expect(container.textContent).toContain("Refresh before replaying");
-    expect(button("Replay April value change").disabled).toBe(true);
+    expect(button("Replay value amendment").disabled).toBe(true);
     mock.mutationError = null;
     await click("Refresh");
     expect(currentReport()).toBeTruthy();
-    await click("Replay April value change");
+    await click("Replay value amendment");
     expect(mock.mutations.at(-1)).toEqual({
       scenario: "amended",
       expectedVersion: 4,
@@ -740,6 +866,7 @@ describe("Management HQ on actual DOM", () => {
     "filter",
     "route",
     "cancel",
+    "register",
     "refresh",
     "query-error",
     "unmount",
@@ -763,6 +890,7 @@ describe("Management HQ on actual DOM", () => {
         window.history.replaceState({}, "", "/super-admin")
       );
     if (changeType === "cancel") await click("Replay sample cancellation");
+    if (changeType === "register") await click("Replay later registration");
     if (changeType === "refresh") await click("Refresh");
     if (changeType === "query-error") {
       mock.errors["managementHq.report"] = { data: { code: "FORBIDDEN" } };

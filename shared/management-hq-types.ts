@@ -1,4 +1,5 @@
 /** Server-validated proposed reporting DTOs; no identity namespace literal is approved here. */
+import type { HqWireMemberLink } from './management-hq-wire';
 export const HQ_CONTRACT_VERSION = "1.0.0-proposed" as const;
 
 export type HqAmount = {
@@ -178,6 +179,13 @@ export type HqBooking = {
   payments: HqPaymentEvidence[];
   childMembershipComplete: boolean;
   qualityIssues: string[];
+  /** Internal read projection only; never source historical selling verification. */
+  projectionSource?: 'implemented_wire';
+  currentOwnerLink?: HqWireMemberLink;
+  assignedStaffLink?: HqWireMemberLink;
+  currentOwnerSourceReason?: string;
+  weightedMarginContribution?: { profitPence: number | null; coveredGrossPence: number | null; methodology: string };
+  sourceFinance?: { netCostStatus: string; baselineStatus: string; economicsStatus: string; vatStatus: string; knownPpsFeeEstimateSubtotal: HqAmount; grossMarginPct: string | null; reasons: string[] };
 };
 
 export type HqCoverage = {

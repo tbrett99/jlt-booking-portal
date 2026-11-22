@@ -33,7 +33,7 @@ const VIEWS = [
   "Agent Activity",
 ] as const;
 type View = (typeof VIEWS)[number];
-type Scenario = "initial" | "amended" | "cancelled";
+type Scenario = "initial" | "amended" | "cancelled" | "registered";
 type Actor = {
   id: number;
   role: string;
@@ -207,6 +207,15 @@ function Person({ person }: { person: HqReportPerson | null }) {
     </span>
   ) : (
     <span className="text-muted-foreground">Unattributed</span>
+  );
+}
+
+function ProvisionalAttribution({ state }: { state?: string }) {
+  if (!state || !/provisional|current_owner/.test(state)) return null;
+  return (
+    <span className="mt-1 block text-xs font-medium text-amber-600 dark:text-amber-300">
+      Provisional current owner · not original seller
+    </span>
   );
 }
 
@@ -456,7 +465,7 @@ function ActorHq({
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Restated booking performance, financial coverage and individual
-            selling activity.
+            attribution activity.
           </p>
         </div>
         <Button
@@ -491,10 +500,11 @@ function ActorHq({
           </span>
         </div>
         <p className="text-sm text-muted-foreground">
-          A January booking changes from £5,000 to £6,000 in April: the change
-          restates January, not April. The sample cancellation removes that file
-          from headlines but retains its cancelled record in the drilldown and
-          export.
+          A January booking changes from £10,000 to £11,000: the amendment
+          restates January, not the observation month. The sample cancellation
+          removes that file from headlines but retains its cancelled record in
+          the drilldown and export. Later registration moves the retained record
+          to February.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -521,7 +531,7 @@ function ActorHq({
             }
             onClick={() => void replay("amended")}
           >
-            Replay April value change
+            Replay value amendment
           </Button>
           <Button
             size="sm"
@@ -536,6 +546,20 @@ function ActorHq({
             onClick={() => void replay("cancelled")}
           >
             Replay sample cancellation
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              busy ||
+              !statusReady ||
+              !status.data?.sampleEnabled ||
+              !status.data.hasSample ||
+              !!actionError
+            }
+            onClick={() => void replay("registered")}
+          >
+            Replay later registration
           </Button>
         </div>
         {replaying && (
@@ -974,18 +998,21 @@ function ReportView({
         <section className={`${panel} space-y-3`} aria-label="Agent activity">
           <h2 className="font-semibold">Agent Activity</h2>
           <p className="text-sm text-muted-foreground">
-            Individual source-identified sellers, using existing numeric / JLT
-            portal IDs. Processing administrators are not treated as sellers.
-            Unattributed sellers: {data.cohorts.unattributedCount} · unmatched
-            businesses: {data.cohorts.unmatchedBusinessCount}.
+            Current-owner matches use existing numeric / JLT portal IDs and are
+            provisional, not evidence of the original seller. Assigned staff and
+            processing administrators are separate and are not treated as
+            sellers. Unattributed sellers: {data.cohorts.unattributedCount} ·
+            unmatched businesses: {data.cohorts.unmatchedBusinessCount}.
           </p>
           <div className="overflow-x-auto">
             <table className={tableClass}>
-              <caption className="sr-only">Individual selling activity</caption>
+              <caption className="sr-only">
+                Individual attribution activity
+              </caption>
               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   {[
-                    "Selling agent",
+                    "Agent / attribution basis",
                     "Active bookings",
                     "Known gross / coverage",
                     "Gross profit / coverage",
@@ -1011,6 +1038,7 @@ function ReportView({
                     >
                       <td className={cell}>
                         <Person person={row.agent} />
+                        <ProvisionalAttribution state={row.attributionState} />
                       </td>
                       <td className={cell}>{row.totals.bookingCount}</td>
                       <td className={cell}>
@@ -1026,7 +1054,7 @@ function ReportView({
                 {!data.agents.length && (
                   <tr>
                     <td colSpan={6} className={cell}>
-                      No attributed sellers in this current result; unmatched
+                      No attributed agents in this current result; unmatched
                       records are not assigned to processors.
                     </td>
                   </tr>
@@ -1048,9 +1076,9 @@ function ReportView({
       >
         <h2 className="font-semibold">Monthly restated totals</h2>
         <p className="text-sm text-muted-foreground">
-          Original management reporting month is preserved. Later value changes
-          restate that month; cancelled records leave active totals, not the
-          retained file history.
+          Later value changes restate the selected management reporting month;
+          registration or date corrections can move a record to another month.
+          Cancelled records leave active totals, not the retained file history.
         </p>
         <div className="overflow-x-auto">
           <table className={tableClass}>
@@ -1111,6 +1139,8 @@ function ReportView({
                   "Status / cohort",
                   "Reporting date / source",
                   "Seller",
+                  "Current owner",
+                  "Assigned staff",
                   "Admin processor",
                   "Source gross",
                   "Source profit",
@@ -1158,8 +1188,23 @@ function ReportView({
                       <Person person={file.seller} />
                       {!file.seller && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {file.sellerReason ??
-                            "No verified selling attribution"}
+                          {file.currentOwner
+                            ? "Original seller unavailable; current owner provisional"
+                            : (file.sellerReason ??
+                              "No verified selling attribution")}
+                        </p>
+                      )}
+                    </td>
+                    <td className={cell}>
+                      <Person person={file.currentOwner ?? null} />
+                      <ProvisionalAttribution state={file.attributionState} />
+                    </td>
+                    <td className={cell}>
+                      <Person person={file.assignedStaff ?? null} />
+                      {file.assignedStaff && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Current assigned staff only · not seller or admin
+                          processor
                         </p>
                       )}
                     </td>
@@ -1195,7 +1240,7 @@ function ReportView({
                 ))}
               {!files.length && (
                 <tr>
-                  <td colSpan={9} className={cell}>
+                  <td colSpan={11} className={cell}>
                     No retained records in this successfully loaded period.
                   </td>
                 </tr>
@@ -1284,6 +1329,38 @@ function BookingDetail({
         {file.dateSource} · {file.business.name} ({file.business.mappingStatus})
         · currency {file.currency ?? "Unknown"} ({file.currencyBasis}).
       </p>
+      <dl
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        aria-label="Booking attribution"
+      >
+        <div>
+          <dt className="text-xs text-muted-foreground">Seller</dt>
+          <dd>
+            <Person person={file.seller} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Current owner</dt>
+          <dd>
+            <Person person={file.currentOwner ?? null} />
+            <ProvisionalAttribution state={file.attributionState} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Assigned staff</dt>
+          <dd>
+            <Person person={file.assignedStaff ?? null} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">
+            Admin processor · processing only
+          </dt>
+          <dd>
+            <Person person={file.processor} />
+          </dd>
+        </div>
+      </dl>
       <p className="text-sm text-muted-foreground">
         Baseline complete: {file.financials.baselineComplete ? "yes" : "no"} ·
         policy complete: {file.financials.policyComplete ? "yes" : "no"}.

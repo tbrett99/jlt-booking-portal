@@ -1,0 +1,1161 @@
+{
+  "note": "Synthetic local HTTP demonstration with actual pure adapters/router and injected read store. No Orbit live records, no Portal deployment, no provider calls.",
+  "unauthorized": {
+    "httpStatus": 401,
+    "body": {
+      "error": {
+        "code": "unauthorized",
+        "message": "A dedicated server reporting credential is required.",
+        "requestId": "e12af6ac-b547-4f08-8b33-c50993165145"
+      }
+    }
+  },
+  "beforeAmendment": {
+    "httpStatus": 200,
+    "body": {
+      "generationId": 1,
+      "projectionVersion": "1.0.0",
+      "scope": "company_all_real_and_unattributed",
+      "sourceObservationWindow": {
+        "from": "2026-11-22T11:59:59.000Z",
+        "to": "2026-11-22T12:00:00.000Z"
+      },
+      "publishedAt": "2026-11-22T12:00:00.000Z",
+      "expiresAt": "2026-11-23T12:00:00.000Z",
+      "changeUpper": 1,
+      "sourceAgeSeconds": 0,
+      "freshnessTargetSeconds": 900,
+      "stale": false,
+      "consistency": "sealed_reporting_generation_with_per_page_source_snapshot",
+      "counts": {
+        "bookingCount": 1,
+        "businessCount": 1
+      },
+      "entityType": "booking",
+      "items": [
+        {
+          "entityType": "booking",
+          "entityId": 1,
+          "revision": 1,
+          "payload": {
+            "bookingRef": "SYN-HQ-1",
+            "bookingTotal": "10000.00",
+            "portalRegisteredAt": null,
+            "bookedOn": "2026-01-10",
+            "status": "confirmed",
+            "travelers": 2,
+            "packageType": "hotel",
+            "usesManualProductGrouping": false,
+            "orbitBookingId": 1,
+            "orbitTenantId": 90052,
+            "assignedTenantUserId": 360040,
+            "dates": {
+              "portalRegisteredAt": null,
+              "bookedOn": "2026-01-10",
+              "managementDate": "2026-01-10",
+              "dateSource": "booked_on",
+              "month": "2026-01",
+              "timezone": "Europe/London",
+              "issues": []
+            },
+            "identity": {
+              "orbitTenantId": 90052,
+              "mappingState": "existing_owner_link",
+              "status": "candidate",
+              "reason": "single_owner_with_agent_id",
+              "sourceOnly": true,
+              "portalVerified": false,
+              "historicalSellingRelationshipVerified": false,
+              "attributionBasis": "current_owning_tenant_and_current_membership",
+              "ownerTenantUserId": 120051,
+              "memberJltAgentId": "SYN-MEMBER-1",
+              "memberJltOpenId": "synthetic-owner-open-id",
+              "ownerCandidates": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                }
+              ],
+              "members": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                },
+                {
+                  "id": 360040,
+                  "tenantId": 90052,
+                  "role": "staff",
+                  "isActive": true,
+                  "jltAgentId": "SYN-STAFF-1",
+                  "jltOpenId": "synthetic-staff-open-id"
+                }
+              ],
+              "assignedStaff": {
+                "orbitTenantUserId": 360040,
+                "status": "current_member",
+                "jltAgentId": "SYN-STAFF-1",
+                "jltOpenId": "synthetic-staff-open-id",
+                "role": "staff",
+                "isActive": true,
+                "sourceOnly": true,
+                "portalVerified": false
+              }
+            },
+            "paymentSummary": {
+              "count": 0,
+              "amountMinor": 0,
+              "basis": "synthetic_ledger"
+            },
+            "snapshotConsistency": "repeatable_read_per_source_page_not_run_wide",
+            "financials": {
+              "version": "management_hq_financials_v1",
+              "currency": "GBP",
+              "valueBasis": "current_stored_restated",
+              "bookingStatus": "confirmed",
+              "cancelled": false,
+              "headlineEligible": true,
+              "economicProfitEligible": true,
+              "grossBookingValue": 10000,
+              "headlineGrossBookingValue": 10000,
+              "activeProductGrossValue": 10000,
+              "activeProductGrossSubtotal": 10000,
+              "totalNetCost": 8500,
+              "netCostSubtotal": 8500,
+              "netCostStatus": "complete",
+              "grossBookingProfit": 1500,
+              "grossMarginPct": 15,
+              "negativeGrossProfit": false,
+              "weightedMarginContribution": {
+                "profitPence": 150000,
+                "coveredGrossPence": 1000000,
+                "methodology": "sum_profit_pence_divided_by_matching_sum_covered_gross_pence_times_100"
+              },
+              "reconciliation": {
+                "status": "matched",
+                "activeGrossMinusStoredPence": 0,
+                "tolerancePence": 1
+              },
+              "products": [
+                {
+                  "id": 1,
+                  "status": "confirmed",
+                  "productType": "hotel",
+                  "financialActive": true,
+                  "price": 10000,
+                  "netPrice": 8500,
+                  "vat": {
+                    "storedApplicable": true,
+                    "productOverride": null,
+                    "isReimbursement": false,
+                    "eligibilityKnown": true,
+                    "effectiveApplicable": true,
+                    "computedDeduction": 250,
+                    "reason": "positive_margin_one_sixth",
+                    "currentSupplierPolicyParity": "unverified_policy_not_supplied"
+                  }
+                }
+              ],
+              "vatDeduction": 250,
+              "vatStatus": "computed_not_paid",
+              "storedVatVsCurrentSupplierPolicy": {
+                "parity": "unverified",
+                "reason": "current_policy_evidence_not_in_function_inputs"
+              },
+              "bookingVatOverride": {
+                "storedAmount": null,
+                "present": false,
+                "appliedByExistingHelper": false,
+                "materialConflict": false
+              },
+              "estimatedPtsFees": 25.9,
+              "actualPtsFees": null,
+              "estimatedCardProcessingFees": null,
+              "knownPpsFeeEstimateSubtotal": null,
+              "actualCardProcessingFees": null,
+              "pps": {
+                "links": [],
+                "completeness": {
+                  "status": "incomplete",
+                  "reasons": [
+                    "no_pps_links_is_not_evidence_of_no_card_fees"
+                  ]
+                },
+                "scope": "supplied_links_only_not_reconciled_booking_payments_or_settlement"
+              },
+              "netDistributableCommission": null,
+              "agentCommission": null,
+              "jltRetainedCommission": null,
+              "retainedCancellationIncome": null,
+              "settledJltIncome": null,
+              "termsStatus": "unverified_default",
+              "baselineEstimate": {
+                "status": "estimated",
+                "basis": "orbit_vat_pts_estimate",
+                "financials": {
+                  "grossBookingValue": 10000,
+                  "totalNetCost": 8500,
+                  "netCostSubtotal": 8500,
+                  "netCostStatus": "complete",
+                  "missingNetCostProducts": 0,
+                  "grossMargin": 1500,
+                  "grossCommissionBeforeVat": 1500,
+                  "vatDeduction": 250,
+                  "grossCommissionAfterVat": 1250,
+                  "estimatedPtsFees": 25.9,
+                  "netDistributableCommission": 1224.1,
+                  "jltRetainedCommission": 244.82,
+                  "agentExpectedCommission": 979.28
+                },
+                "reasons": [],
+                "cardProcessingFeesIncluded": false,
+                "otherDeductionsIncluded": false,
+                "agentSplitPct": 80,
+                "jltSplitPct": 20,
+                "splitBasis": "default_not_verified_custom_terms",
+                "splitRoundingResidualPence": 0,
+                "grossBasis": "existing_helper_active_product_gross_validated_against_stored_total",
+                "rounding": "existing_helper_sums_raw_vat_and_pts_then_splits_unrounded_post_fee_amount_and_rounds_each_share_independently",
+                "ptsAssumptions": {
+                  "numPassengers": 2,
+                  "passengersDefaulted": false,
+                  "packageType": "hotel",
+                  "numInfants": 0,
+                  "numClientPayments": 2,
+                  "paymentMethod": "card",
+                  "isInternational": false,
+                  "numSupplierPaymentsGBP": 1,
+                  "numSupplierPaymentsEUR": 0,
+                  "numSupplierPaymentsOther": 0,
+                  "numReimbursements": 0,
+                  "numRefunds": 0,
+                  "dynamicPackageAllocation": "40_percent_flight_60_percent_ground_existing_bands",
+                  "incomingCardFeeMeaning": "pts_flat_0_12_per_assumed_payment_not_pps_merchant_fee"
+                }
+              },
+              "completeness": {
+                "status": "partial",
+                "economicsStatus": "complete",
+                "strictSourceComplete": true,
+                "policyStatus": "incomplete",
+                "activeProductCount": 1,
+                "inactiveProductCount": 0,
+                "missingPriceProducts": 0,
+                "missingNetCostProducts": 0,
+                "economicsReasons": [],
+                "policyReasons": [
+                  "actual_or_applicable_card_processing_fee_evidence_unverified",
+                  "actual_pts_charge_evidence_unverified",
+                  "other_deductions_applicability_unverified",
+                  "commission_terms_unverified_default",
+                  "current_supplier_vat_policy_parity_unverified"
+                ]
+              },
+              "methodology": {
+                "gross": "stored_bookingTotal_once_no_revenue_fallback_no_passenger_multiplier",
+                "profit": "signed_stored_gross_minus_complete_active_supplier_net_before_vat_pts_pps_and_split",
+                "vat": "existing_supplierVat_stored_product_eligibility_and_override_computed_not_actual_paid",
+                "pps": "existing_getPpsFeeEstimate_only_current_applicable_rate_not_actual_charge_no_surcharge_or_amountRetained_deduction",
+                "deductions": "baseline_deducts_vat_and_pts_once_no_second_net_cost_extra_product_or_pts_card_fee_deduction_no_pps_adjusted_entitlement",
+                "cancellation": "retain_current_gross_and_product_values_exclude_headline_and_profit_retained_income_unknown_no_claim_cash_inference"
+              }
+            },
+            "products": [
+              {
+                "id": 1,
+                "productType": "hotel",
+                "bookingStatus": "confirmed",
+                "price": "10000.00",
+                "netPrice": "8500.00",
+                "vatApplicable": true,
+                "vatOverride": null,
+                "isReimbursement": false,
+                "supplierName": "Synthetic supplier",
+                "supplierId": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            "payments": [],
+            "ppsLinks": [],
+            "childrenComplete": true,
+            "eligibility": {
+              "activeSalesHeadline": true,
+              "pending": false,
+              "cancelled": false,
+              "undated": false
+            }
+          }
+        }
+      ],
+      "nextCursor": null,
+      "resumeCursor": "eyJ2IjoxLCJyb3V0ZSI6ImNoYW5nZXMiLCJtb2RlIjoiY2hlY2twb2ludCIsImdlbmVyYXRpb24iOjEsImFmdGVyIjoxLCJleHBpcmVzQXQiOjE3OTU0MzUyMDAwMDB9.h1c2czfb-YM9cDXfrlJNMwFjZ_eOX2y03ny06bCyKsg",
+      "complete": true,
+      "checkpointInstructions": "Commit resumeCursor only after every page and full aggregate replacement have been atomically applied. Pin the same generationId for business and booking backfills."
+    }
+  },
+  "afterAmendment": {
+    "httpStatus": 200,
+    "body": {
+      "generationId": 2,
+      "projectionVersion": "1.0.0",
+      "scope": "company_all_real_and_unattributed",
+      "sourceObservationWindow": {
+        "from": "2026-11-22T11:59:59.000Z",
+        "to": "2026-11-22T12:00:00.000Z"
+      },
+      "publishedAt": "2026-11-22T12:00:00.000Z",
+      "expiresAt": "2026-11-23T12:00:00.000Z",
+      "changeUpper": 2,
+      "sourceAgeSeconds": 0,
+      "freshnessTargetSeconds": 900,
+      "stale": false,
+      "consistency": "sealed_reporting_generation_with_per_page_source_snapshot",
+      "counts": {
+        "bookingCount": 1,
+        "businessCount": 1
+      },
+      "entityType": "mixed",
+      "items": [
+        {
+          "seq": 2,
+          "entityType": "booking",
+          "entityId": 1,
+          "revision": 2,
+          "operation": "upsert",
+          "payload": {
+            "bookingRef": "SYN-HQ-1",
+            "bookingTotal": "11000.00",
+            "portalRegisteredAt": null,
+            "bookedOn": "2026-01-10",
+            "status": "confirmed",
+            "travelers": 2,
+            "packageType": "hotel",
+            "usesManualProductGrouping": false,
+            "orbitBookingId": 1,
+            "orbitTenantId": 90052,
+            "assignedTenantUserId": 360040,
+            "dates": {
+              "portalRegisteredAt": null,
+              "bookedOn": "2026-01-10",
+              "managementDate": "2026-01-10",
+              "dateSource": "booked_on",
+              "month": "2026-01",
+              "timezone": "Europe/London",
+              "issues": []
+            },
+            "identity": {
+              "orbitTenantId": 90052,
+              "mappingState": "existing_owner_link",
+              "status": "candidate",
+              "reason": "single_owner_with_agent_id",
+              "sourceOnly": true,
+              "portalVerified": false,
+              "historicalSellingRelationshipVerified": false,
+              "attributionBasis": "current_owning_tenant_and_current_membership",
+              "ownerTenantUserId": 120051,
+              "memberJltAgentId": "SYN-MEMBER-1",
+              "memberJltOpenId": "synthetic-owner-open-id",
+              "ownerCandidates": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                }
+              ],
+              "members": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                },
+                {
+                  "id": 360040,
+                  "tenantId": 90052,
+                  "role": "staff",
+                  "isActive": true,
+                  "jltAgentId": "SYN-STAFF-1",
+                  "jltOpenId": "synthetic-staff-open-id"
+                }
+              ],
+              "assignedStaff": {
+                "orbitTenantUserId": 360040,
+                "status": "current_member",
+                "jltAgentId": "SYN-STAFF-1",
+                "jltOpenId": "synthetic-staff-open-id",
+                "role": "staff",
+                "isActive": true,
+                "sourceOnly": true,
+                "portalVerified": false
+              }
+            },
+            "paymentSummary": {
+              "count": 0,
+              "amountMinor": 0,
+              "basis": "synthetic_ledger"
+            },
+            "snapshotConsistency": "repeatable_read_per_source_page_not_run_wide",
+            "financials": {
+              "version": "management_hq_financials_v1",
+              "currency": "GBP",
+              "valueBasis": "current_stored_restated",
+              "bookingStatus": "confirmed",
+              "cancelled": false,
+              "headlineEligible": true,
+              "economicProfitEligible": true,
+              "grossBookingValue": 11000,
+              "headlineGrossBookingValue": 11000,
+              "activeProductGrossValue": 11000,
+              "activeProductGrossSubtotal": 11000,
+              "totalNetCost": 8500,
+              "netCostSubtotal": 8500,
+              "netCostStatus": "complete",
+              "grossBookingProfit": 2500,
+              "grossMarginPct": 22.727272727272727,
+              "negativeGrossProfit": false,
+              "weightedMarginContribution": {
+                "profitPence": 250000,
+                "coveredGrossPence": 1100000,
+                "methodology": "sum_profit_pence_divided_by_matching_sum_covered_gross_pence_times_100"
+              },
+              "reconciliation": {
+                "status": "matched",
+                "activeGrossMinusStoredPence": 0,
+                "tolerancePence": 1
+              },
+              "products": [
+                {
+                  "id": 1,
+                  "status": "confirmed",
+                  "productType": "hotel",
+                  "financialActive": true,
+                  "price": 11000,
+                  "netPrice": 8500,
+                  "vat": {
+                    "storedApplicable": true,
+                    "productOverride": null,
+                    "isReimbursement": false,
+                    "eligibilityKnown": true,
+                    "effectiveApplicable": true,
+                    "computedDeduction": 416.67,
+                    "reason": "positive_margin_one_sixth",
+                    "currentSupplierPolicyParity": "unverified_policy_not_supplied"
+                  }
+                }
+              ],
+              "vatDeduction": 416.67,
+              "vatStatus": "computed_not_paid",
+              "storedVatVsCurrentSupplierPolicy": {
+                "parity": "unverified",
+                "reason": "current_policy_evidence_not_in_function_inputs"
+              },
+              "bookingVatOverride": {
+                "storedAmount": null,
+                "present": false,
+                "appliedByExistingHelper": false,
+                "materialConflict": false
+              },
+              "estimatedPtsFees": 27.47,
+              "actualPtsFees": null,
+              "estimatedCardProcessingFees": null,
+              "knownPpsFeeEstimateSubtotal": null,
+              "actualCardProcessingFees": null,
+              "pps": {
+                "links": [],
+                "completeness": {
+                  "status": "incomplete",
+                  "reasons": [
+                    "no_pps_links_is_not_evidence_of_no_card_fees"
+                  ]
+                },
+                "scope": "supplied_links_only_not_reconciled_booking_payments_or_settlement"
+              },
+              "netDistributableCommission": null,
+              "agentCommission": null,
+              "jltRetainedCommission": null,
+              "retainedCancellationIncome": null,
+              "settledJltIncome": null,
+              "termsStatus": "unverified_default",
+              "baselineEstimate": {
+                "status": "estimated",
+                "basis": "orbit_vat_pts_estimate",
+                "financials": {
+                  "grossBookingValue": 11000,
+                  "totalNetCost": 8500,
+                  "netCostSubtotal": 8500,
+                  "netCostStatus": "complete",
+                  "missingNetCostProducts": 0,
+                  "grossMargin": 2500,
+                  "grossCommissionBeforeVat": 2500,
+                  "vatDeduction": 416.67,
+                  "grossCommissionAfterVat": 2083.33,
+                  "estimatedPtsFees": 27.47,
+                  "netDistributableCommission": 2055.86,
+                  "jltRetainedCommission": 411.17,
+                  "agentExpectedCommission": 1644.69
+                },
+                "reasons": [],
+                "cardProcessingFeesIncluded": false,
+                "otherDeductionsIncluded": false,
+                "agentSplitPct": 80,
+                "jltSplitPct": 20,
+                "splitBasis": "default_not_verified_custom_terms",
+                "splitRoundingResidualPence": 0,
+                "grossBasis": "existing_helper_active_product_gross_validated_against_stored_total",
+                "rounding": "existing_helper_sums_raw_vat_and_pts_then_splits_unrounded_post_fee_amount_and_rounds_each_share_independently",
+                "ptsAssumptions": {
+                  "numPassengers": 2,
+                  "passengersDefaulted": false,
+                  "packageType": "hotel",
+                  "numInfants": 0,
+                  "numClientPayments": 2,
+                  "paymentMethod": "card",
+                  "isInternational": false,
+                  "numSupplierPaymentsGBP": 1,
+                  "numSupplierPaymentsEUR": 0,
+                  "numSupplierPaymentsOther": 0,
+                  "numReimbursements": 0,
+                  "numRefunds": 0,
+                  "dynamicPackageAllocation": "40_percent_flight_60_percent_ground_existing_bands",
+                  "incomingCardFeeMeaning": "pts_flat_0_12_per_assumed_payment_not_pps_merchant_fee"
+                }
+              },
+              "completeness": {
+                "status": "partial",
+                "economicsStatus": "complete",
+                "strictSourceComplete": true,
+                "policyStatus": "incomplete",
+                "activeProductCount": 1,
+                "inactiveProductCount": 0,
+                "missingPriceProducts": 0,
+                "missingNetCostProducts": 0,
+                "economicsReasons": [],
+                "policyReasons": [
+                  "actual_or_applicable_card_processing_fee_evidence_unverified",
+                  "actual_pts_charge_evidence_unverified",
+                  "other_deductions_applicability_unverified",
+                  "commission_terms_unverified_default",
+                  "current_supplier_vat_policy_parity_unverified"
+                ]
+              },
+              "methodology": {
+                "gross": "stored_bookingTotal_once_no_revenue_fallback_no_passenger_multiplier",
+                "profit": "signed_stored_gross_minus_complete_active_supplier_net_before_vat_pts_pps_and_split",
+                "vat": "existing_supplierVat_stored_product_eligibility_and_override_computed_not_actual_paid",
+                "pps": "existing_getPpsFeeEstimate_only_current_applicable_rate_not_actual_charge_no_surcharge_or_amountRetained_deduction",
+                "deductions": "baseline_deducts_vat_and_pts_once_no_second_net_cost_extra_product_or_pts_card_fee_deduction_no_pps_adjusted_entitlement",
+                "cancellation": "retain_current_gross_and_product_values_exclude_headline_and_profit_retained_income_unknown_no_claim_cash_inference"
+              }
+            },
+            "products": [
+              {
+                "id": 1,
+                "productType": "hotel",
+                "bookingStatus": "confirmed",
+                "price": "11000.00",
+                "netPrice": "8500.00",
+                "vatApplicable": true,
+                "vatOverride": null,
+                "isReimbursement": false,
+                "supplierName": "Synthetic supplier",
+                "supplierId": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            "payments": [],
+            "ppsLinks": [],
+            "childrenComplete": true,
+            "eligibility": {
+              "activeSalesHeadline": true,
+              "pending": false,
+              "cancelled": false,
+              "undated": false
+            }
+          }
+        }
+      ],
+      "nextCursor": null,
+      "resumeCursor": "eyJ2IjoxLCJyb3V0ZSI6ImNoYW5nZXMiLCJtb2RlIjoiY2hlY2twb2ludCIsImdlbmVyYXRpb24iOjIsImFmdGVyIjoyLCJleHBpcmVzQXQiOjE3OTU0MzUyMDAwMDB9.66jgV2tS6Q1Ho3-ZJcKeu5wqoThOcjQMOSpRMQuedLI",
+      "complete": true,
+      "checkpointInstructions": "Commit resumeCursor only after every page and full aggregate replacement have been atomically applied. Pin the same generationId for business and booking backfills."
+    }
+  },
+  "afterCancellation": {
+    "httpStatus": 200,
+    "body": {
+      "generationId": 3,
+      "projectionVersion": "1.0.0",
+      "scope": "company_all_real_and_unattributed",
+      "sourceObservationWindow": {
+        "from": "2026-11-22T11:59:59.000Z",
+        "to": "2026-11-22T12:00:00.000Z"
+      },
+      "publishedAt": "2026-11-22T12:00:00.000Z",
+      "expiresAt": "2026-11-23T12:00:00.000Z",
+      "changeUpper": 3,
+      "sourceAgeSeconds": 0,
+      "freshnessTargetSeconds": 900,
+      "stale": false,
+      "consistency": "sealed_reporting_generation_with_per_page_source_snapshot",
+      "counts": {
+        "bookingCount": 1,
+        "businessCount": 1
+      },
+      "entityType": "booking",
+      "items": [
+        {
+          "entityType": "booking",
+          "entityId": 1,
+          "revision": 3,
+          "payload": {
+            "bookingRef": "SYN-HQ-1",
+            "bookingTotal": "11000.00",
+            "portalRegisteredAt": null,
+            "bookedOn": "2026-01-10",
+            "status": "cancelled",
+            "travelers": 2,
+            "packageType": "hotel",
+            "usesManualProductGrouping": false,
+            "orbitBookingId": 1,
+            "orbitTenantId": 90052,
+            "assignedTenantUserId": 360040,
+            "dates": {
+              "portalRegisteredAt": null,
+              "bookedOn": "2026-01-10",
+              "managementDate": "2026-01-10",
+              "dateSource": "booked_on",
+              "month": "2026-01",
+              "timezone": "Europe/London",
+              "issues": []
+            },
+            "identity": {
+              "orbitTenantId": 90052,
+              "mappingState": "existing_owner_link",
+              "status": "candidate",
+              "reason": "single_owner_with_agent_id",
+              "sourceOnly": true,
+              "portalVerified": false,
+              "historicalSellingRelationshipVerified": false,
+              "attributionBasis": "current_owning_tenant_and_current_membership",
+              "ownerTenantUserId": 120051,
+              "memberJltAgentId": "SYN-MEMBER-1",
+              "memberJltOpenId": "synthetic-owner-open-id",
+              "ownerCandidates": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                }
+              ],
+              "members": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                },
+                {
+                  "id": 360040,
+                  "tenantId": 90052,
+                  "role": "staff",
+                  "isActive": true,
+                  "jltAgentId": "SYN-STAFF-1",
+                  "jltOpenId": "synthetic-staff-open-id"
+                }
+              ],
+              "assignedStaff": {
+                "orbitTenantUserId": 360040,
+                "status": "current_member",
+                "jltAgentId": "SYN-STAFF-1",
+                "jltOpenId": "synthetic-staff-open-id",
+                "role": "staff",
+                "isActive": true,
+                "sourceOnly": true,
+                "portalVerified": false
+              }
+            },
+            "paymentSummary": {
+              "count": 0,
+              "amountMinor": 0,
+              "basis": "synthetic_ledger"
+            },
+            "snapshotConsistency": "repeatable_read_per_source_page_not_run_wide",
+            "financials": {
+              "version": "management_hq_financials_v1",
+              "currency": "GBP",
+              "valueBasis": "current_stored_restated",
+              "bookingStatus": "cancelled",
+              "cancelled": true,
+              "headlineEligible": false,
+              "economicProfitEligible": false,
+              "grossBookingValue": 11000,
+              "headlineGrossBookingValue": null,
+              "activeProductGrossValue": 11000,
+              "activeProductGrossSubtotal": 11000,
+              "totalNetCost": 8500,
+              "netCostSubtotal": 8500,
+              "netCostStatus": "complete",
+              "grossBookingProfit": null,
+              "grossMarginPct": null,
+              "negativeGrossProfit": null,
+              "weightedMarginContribution": {
+                "profitPence": null,
+                "coveredGrossPence": null,
+                "methodology": "sum_profit_pence_divided_by_matching_sum_covered_gross_pence_times_100"
+              },
+              "reconciliation": {
+                "status": "matched",
+                "activeGrossMinusStoredPence": 0,
+                "tolerancePence": 1
+              },
+              "products": [
+                {
+                  "id": 1,
+                  "status": "confirmed",
+                  "productType": "hotel",
+                  "financialActive": true,
+                  "price": 11000,
+                  "netPrice": 8500,
+                  "vat": {
+                    "storedApplicable": true,
+                    "productOverride": null,
+                    "isReimbursement": false,
+                    "eligibilityKnown": true,
+                    "effectiveApplicable": true,
+                    "computedDeduction": 416.67,
+                    "reason": "positive_margin_one_sixth",
+                    "currentSupplierPolicyParity": "unverified_policy_not_supplied"
+                  }
+                }
+              ],
+              "vatDeduction": null,
+              "vatStatus": "incomplete",
+              "storedVatVsCurrentSupplierPolicy": {
+                "parity": "unverified",
+                "reason": "current_policy_evidence_not_in_function_inputs"
+              },
+              "bookingVatOverride": {
+                "storedAmount": null,
+                "present": false,
+                "appliedByExistingHelper": false,
+                "materialConflict": false
+              },
+              "estimatedPtsFees": null,
+              "actualPtsFees": null,
+              "estimatedCardProcessingFees": null,
+              "knownPpsFeeEstimateSubtotal": null,
+              "actualCardProcessingFees": null,
+              "pps": {
+                "links": [],
+                "completeness": {
+                  "status": "incomplete",
+                  "reasons": [
+                    "no_pps_links_is_not_evidence_of_no_card_fees"
+                  ]
+                },
+                "scope": "supplied_links_only_not_reconciled_booking_payments_or_settlement"
+              },
+              "netDistributableCommission": null,
+              "agentCommission": null,
+              "jltRetainedCommission": null,
+              "retainedCancellationIncome": null,
+              "settledJltIncome": null,
+              "termsStatus": "unverified_default",
+              "baselineEstimate": {
+                "status": "excluded",
+                "basis": "orbit_vat_pts_estimate",
+                "financials": null,
+                "reasons": [
+                  "cancelled_booking_excluded"
+                ],
+                "cardProcessingFeesIncluded": false,
+                "otherDeductionsIncluded": false,
+                "agentSplitPct": 80,
+                "jltSplitPct": 20,
+                "splitBasis": "default_not_verified_custom_terms",
+                "splitRoundingResidualPence": null,
+                "grossBasis": "existing_helper_active_product_gross_validated_against_stored_total",
+                "rounding": "existing_helper_sums_raw_vat_and_pts_then_splits_unrounded_post_fee_amount_and_rounds_each_share_independently",
+                "ptsAssumptions": {
+                  "numPassengers": 2,
+                  "passengersDefaulted": false,
+                  "packageType": "hotel",
+                  "numInfants": 0,
+                  "numClientPayments": 2,
+                  "paymentMethod": "card",
+                  "isInternational": false,
+                  "numSupplierPaymentsGBP": 1,
+                  "numSupplierPaymentsEUR": 0,
+                  "numSupplierPaymentsOther": 0,
+                  "numReimbursements": 0,
+                  "numRefunds": 0,
+                  "dynamicPackageAllocation": "40_percent_flight_60_percent_ground_existing_bands",
+                  "incomingCardFeeMeaning": "pts_flat_0_12_per_assumed_payment_not_pps_merchant_fee"
+                }
+              },
+              "completeness": {
+                "status": "partial",
+                "economicsStatus": "excluded",
+                "strictSourceComplete": true,
+                "policyStatus": "incomplete",
+                "activeProductCount": 1,
+                "inactiveProductCount": 0,
+                "missingPriceProducts": 0,
+                "missingNetCostProducts": 0,
+                "economicsReasons": [
+                  "cancelled_booking_excluded"
+                ],
+                "policyReasons": [
+                  "cancelled_booking_excluded",
+                  "actual_or_applicable_card_processing_fee_evidence_unverified",
+                  "actual_pts_charge_evidence_unverified",
+                  "other_deductions_applicability_unverified",
+                  "commission_terms_unverified_default",
+                  "current_supplier_vat_policy_parity_unverified"
+                ]
+              },
+              "methodology": {
+                "gross": "stored_bookingTotal_once_no_revenue_fallback_no_passenger_multiplier",
+                "profit": "signed_stored_gross_minus_complete_active_supplier_net_before_vat_pts_pps_and_split",
+                "vat": "existing_supplierVat_stored_product_eligibility_and_override_computed_not_actual_paid",
+                "pps": "existing_getPpsFeeEstimate_only_current_applicable_rate_not_actual_charge_no_surcharge_or_amountRetained_deduction",
+                "deductions": "baseline_deducts_vat_and_pts_once_no_second_net_cost_extra_product_or_pts_card_fee_deduction_no_pps_adjusted_entitlement",
+                "cancellation": "retain_current_gross_and_product_values_exclude_headline_and_profit_retained_income_unknown_no_claim_cash_inference"
+              }
+            },
+            "products": [
+              {
+                "id": 1,
+                "productType": "hotel",
+                "bookingStatus": "confirmed",
+                "price": "11000.00",
+                "netPrice": "8500.00",
+                "vatApplicable": true,
+                "vatOverride": null,
+                "isReimbursement": false,
+                "supplierName": "Synthetic supplier",
+                "supplierId": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            "payments": [],
+            "ppsLinks": [],
+            "childrenComplete": true,
+            "eligibility": {
+              "activeSalesHeadline": false,
+              "pending": false,
+              "cancelled": true,
+              "undated": false
+            }
+          }
+        }
+      ],
+      "nextCursor": null,
+      "resumeCursor": "eyJ2IjoxLCJyb3V0ZSI6ImNoYW5nZXMiLCJtb2RlIjoiY2hlY2twb2ludCIsImdlbmVyYXRpb24iOjMsImFmdGVyIjozLCJleHBpcmVzQXQiOjE3OTU0MzUyMDAwMDB9.lcxcjPQ8hEg_Oj4cn2ikEbAejBI_rQ_0Gvtpwtf4eDs",
+      "complete": true,
+      "checkpointInstructions": "Commit resumeCursor only after every page and full aggregate replacement have been atomically applied. Pin the same generationId for business and booking backfills."
+    }
+  },
+  "afterLaterRegistration": {
+    "httpStatus": 200,
+    "body": {
+      "generationId": 4,
+      "projectionVersion": "1.0.0",
+      "scope": "company_all_real_and_unattributed",
+      "sourceObservationWindow": {
+        "from": "2026-11-22T11:59:59.000Z",
+        "to": "2026-11-22T12:00:00.000Z"
+      },
+      "publishedAt": "2026-11-22T12:00:00.000Z",
+      "expiresAt": "2026-11-23T12:00:00.000Z",
+      "changeUpper": 4,
+      "sourceAgeSeconds": 0,
+      "freshnessTargetSeconds": 900,
+      "stale": false,
+      "consistency": "sealed_reporting_generation_with_per_page_source_snapshot",
+      "counts": {
+        "bookingCount": 1,
+        "businessCount": 1
+      },
+      "entityType": "booking",
+      "items": [
+        {
+          "entityType": "booking",
+          "entityId": 1,
+          "revision": 4,
+          "payload": {
+            "bookingRef": "SYN-HQ-1",
+            "bookingTotal": "11000.00",
+            "portalRegisteredAt": null,
+            "bookedOn": "2026-01-10",
+            "status": "cancelled",
+            "travelers": 2,
+            "packageType": "hotel",
+            "usesManualProductGrouping": false,
+            "orbitBookingId": 1,
+            "orbitTenantId": 90052,
+            "assignedTenantUserId": 360040,
+            "dates": {
+              "portalRegisteredAt": "2026-02-03T12:00:00.000Z",
+              "bookedOn": "2026-01-10",
+              "managementDate": "2026-02-03",
+              "dateSource": "portal_registered_at",
+              "month": "2026-02",
+              "timezone": "Europe/London",
+              "issues": []
+            },
+            "identity": {
+              "orbitTenantId": 90052,
+              "mappingState": "existing_owner_link",
+              "status": "candidate",
+              "reason": "single_owner_with_agent_id",
+              "sourceOnly": true,
+              "portalVerified": false,
+              "historicalSellingRelationshipVerified": false,
+              "attributionBasis": "current_owning_tenant_and_current_membership",
+              "ownerTenantUserId": 120051,
+              "memberJltAgentId": "SYN-MEMBER-1",
+              "memberJltOpenId": "synthetic-owner-open-id",
+              "ownerCandidates": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                }
+              ],
+              "members": [
+                {
+                  "id": 120051,
+                  "tenantId": 90052,
+                  "role": "owner",
+                  "isActive": true,
+                  "jltAgentId": "SYN-MEMBER-1",
+                  "jltOpenId": "synthetic-owner-open-id"
+                },
+                {
+                  "id": 360040,
+                  "tenantId": 90052,
+                  "role": "staff",
+                  "isActive": true,
+                  "jltAgentId": "SYN-STAFF-1",
+                  "jltOpenId": "synthetic-staff-open-id"
+                }
+              ],
+              "assignedStaff": {
+                "orbitTenantUserId": 360040,
+                "status": "current_member",
+                "jltAgentId": "SYN-STAFF-1",
+                "jltOpenId": "synthetic-staff-open-id",
+                "role": "staff",
+                "isActive": true,
+                "sourceOnly": true,
+                "portalVerified": false
+              }
+            },
+            "paymentSummary": {
+              "count": 0,
+              "amountMinor": 0,
+              "basis": "synthetic_ledger"
+            },
+            "snapshotConsistency": "repeatable_read_per_source_page_not_run_wide",
+            "financials": {
+              "version": "management_hq_financials_v1",
+              "currency": "GBP",
+              "valueBasis": "current_stored_restated",
+              "bookingStatus": "cancelled",
+              "cancelled": true,
+              "headlineEligible": false,
+              "economicProfitEligible": false,
+              "grossBookingValue": 11000,
+              "headlineGrossBookingValue": null,
+              "activeProductGrossValue": 11000,
+              "activeProductGrossSubtotal": 11000,
+              "totalNetCost": 8500,
+              "netCostSubtotal": 8500,
+              "netCostStatus": "complete",
+              "grossBookingProfit": null,
+              "grossMarginPct": null,
+              "negativeGrossProfit": null,
+              "weightedMarginContribution": {
+                "profitPence": null,
+                "coveredGrossPence": null,
+                "methodology": "sum_profit_pence_divided_by_matching_sum_covered_gross_pence_times_100"
+              },
+              "reconciliation": {
+                "status": "matched",
+                "activeGrossMinusStoredPence": 0,
+                "tolerancePence": 1
+              },
+              "products": [
+                {
+                  "id": 1,
+                  "status": "confirmed",
+                  "productType": "hotel",
+                  "financialActive": true,
+                  "price": 11000,
+                  "netPrice": 8500,
+                  "vat": {
+                    "storedApplicable": true,
+                    "productOverride": null,
+                    "isReimbursement": false,
+                    "eligibilityKnown": true,
+                    "effectiveApplicable": true,
+                    "computedDeduction": 416.67,
+                    "reason": "positive_margin_one_sixth",
+                    "currentSupplierPolicyParity": "unverified_policy_not_supplied"
+                  }
+                }
+              ],
+              "vatDeduction": null,
+              "vatStatus": "incomplete",
+              "storedVatVsCurrentSupplierPolicy": {
+                "parity": "unverified",
+                "reason": "current_policy_evidence_not_in_function_inputs"
+              },
+              "bookingVatOverride": {
+                "storedAmount": null,
+                "present": false,
+                "appliedByExistingHelper": false,
+                "materialConflict": false
+              },
+              "estimatedPtsFees": null,
+              "actualPtsFees": null,
+              "estimatedCardProcessingFees": null,
+              "knownPpsFeeEstimateSubtotal": null,
+              "actualCardProcessingFees": null,
+              "pps": {
+                "links": [],
+                "completeness": {
+                  "status": "incomplete",
+                  "reasons": [
+                    "no_pps_links_is_not_evidence_of_no_card_fees"
+                  ]
+                },
+                "scope": "supplied_links_only_not_reconciled_booking_payments_or_settlement"
+              },
+              "netDistributableCommission": null,
+              "agentCommission": null,
+              "jltRetainedCommission": null,
+              "retainedCancellationIncome": null,
+              "settledJltIncome": null,
+              "termsStatus": "unverified_default",
+              "baselineEstimate": {
+                "status": "excluded",
+                "basis": "orbit_vat_pts_estimate",
+                "financials": null,
+                "reasons": [
+                  "cancelled_booking_excluded"
+                ],
+                "cardProcessingFeesIncluded": false,
+                "otherDeductionsIncluded": false,
+                "agentSplitPct": 80,
+                "jltSplitPct": 20,
+                "splitBasis": "default_not_verified_custom_terms",
+                "splitRoundingResidualPence": null,
+                "grossBasis": "existing_helper_active_product_gross_validated_against_stored_total",
+                "rounding": "existing_helper_sums_raw_vat_and_pts_then_splits_unrounded_post_fee_amount_and_rounds_each_share_independently",
+                "ptsAssumptions": {
+                  "numPassengers": 2,
+                  "passengersDefaulted": false,
+                  "packageType": "hotel",
+                  "numInfants": 0,
+                  "numClientPayments": 2,
+                  "paymentMethod": "card",
+                  "isInternational": false,
+                  "numSupplierPaymentsGBP": 1,
+                  "numSupplierPaymentsEUR": 0,
+                  "numSupplierPaymentsOther": 0,
+                  "numReimbursements": 0,
+                  "numRefunds": 0,
+                  "dynamicPackageAllocation": "40_percent_flight_60_percent_ground_existing_bands",
+                  "incomingCardFeeMeaning": "pts_flat_0_12_per_assumed_payment_not_pps_merchant_fee"
+                }
+              },
+              "completeness": {
+                "status": "partial",
+                "economicsStatus": "excluded",
+                "strictSourceComplete": true,
+                "policyStatus": "incomplete",
+                "activeProductCount": 1,
+                "inactiveProductCount": 0,
+                "missingPriceProducts": 0,
+                "missingNetCostProducts": 0,
+                "economicsReasons": [
+                  "cancelled_booking_excluded"
+                ],
+                "policyReasons": [
+                  "cancelled_booking_excluded",
+                  "actual_or_applicable_card_processing_fee_evidence_unverified",
+                  "actual_pts_charge_evidence_unverified",
+                  "other_deductions_applicability_unverified",
+                  "commission_terms_unverified_default",
+                  "current_supplier_vat_policy_parity_unverified"
+                ]
+              },
+              "methodology": {
+                "gross": "stored_bookingTotal_once_no_revenue_fallback_no_passenger_multiplier",
+                "profit": "signed_stored_gross_minus_complete_active_supplier_net_before_vat_pts_pps_and_split",
+                "vat": "existing_supplierVat_stored_product_eligibility_and_override_computed_not_actual_paid",
+                "pps": "existing_getPpsFeeEstimate_only_current_applicable_rate_not_actual_charge_no_surcharge_or_amountRetained_deduction",
+                "deductions": "baseline_deducts_vat_and_pts_once_no_second_net_cost_extra_product_or_pts_card_fee_deduction_no_pps_adjusted_entitlement",
+                "cancellation": "retain_current_gross_and_product_values_exclude_headline_and_profit_retained_income_unknown_no_claim_cash_inference"
+              }
+            },
+            "products": [
+              {
+                "id": 1,
+                "productType": "hotel",
+                "bookingStatus": "confirmed",
+                "price": "11000.00",
+                "netPrice": "8500.00",
+                "vatApplicable": true,
+                "vatOverride": null,
+                "isReimbursement": false,
+                "supplierName": "Synthetic supplier",
+                "supplierId": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            "payments": [],
+            "ppsLinks": [],
+            "childrenComplete": true,
+            "eligibility": {
+              "activeSalesHeadline": false,
+              "pending": false,
+              "cancelled": true,
+              "undated": false
+            }
+          }
+        }
+      ],
+      "nextCursor": null,
+      "resumeCursor": "eyJ2IjoxLCJyb3V0ZSI6ImNoYW5nZXMiLCJtb2RlIjoiY2hlY2twb2ludCIsImdlbmVyYXRpb24iOjQsImFmdGVyIjo0LCJleHBpcmVzQXQiOjE3OTU0MzUyMDAwMDB9.8OYKnjpE1OYjnPLliMAM7HYfC2_Z0mKqijL17jMpfR8",
+      "complete": true,
+      "checkpointInstructions": "Commit resumeCursor only after every page and full aggregate replacement have been atomically applied. Pin the same generationId for business and booking backfills."
+    }
+  }
+}

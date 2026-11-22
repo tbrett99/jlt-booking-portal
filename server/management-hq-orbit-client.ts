@@ -1,27 +1,36 @@
 import { isIP } from "node:net";
 import type {
-  HqBookingPage,
-  HqChangePage,
-  HqReader,
-} from "../shared/management-hq-types";
+  HqWireReader,
+  HqWirePageQuery,
+} from "../shared/management-hq-wire";
 import {
   HqContractError,
-  HQ_MAX_PAYLOAD_BYTES,
-  HQ_MAX_TOKEN_LENGTH,
-  validateHqBookingPage,
-  validateHqChangePage,
-} from "./management-hq-contract";
+  HQ_WIRE_MAX_PAYLOAD_BYTES as HQ_MAX_PAYLOAD_BYTES,
+  HQ_WIRE_MAX_TOKEN_LENGTH as HQ_MAX_TOKEN_LENGTH,
+  validateHqWireBookingPage,
+  validateHqWireBusinessPage,
+  validateHqWireChangePage,
+  validateHqWireCataloguePage,
+  validateHqWireStatus,
+  validateHqWireCapabilities,
+} from "./management-hq-wire-contract";
 
-export type { HqReader } from "../shared/management-hq-types";
+export type HqReader = HqWireReader;
 export {
-  validateHqBookingPage,
-  validateHqChangePage,
+  validateHqWireBookingPage,
+  validateHqWireBusinessPage,
+  validateHqWireChangePage,
+  validateHqWireCataloguePage,
+  validateHqWireStatus,
+  validateHqWireCapabilities,
+  validateHqWireError,
   HqContractError,
-} from "./management-hq-contract";
+} from "./management-hq-wire-contract";
 export interface HqOrbitClientOptions {
   /** Trusted, fixed server configuration only; never accept this object from RPC input. */
   baseUrl: string;
   apiKey: string;
+  /** Must be exactly company_all_real_and_unattributed; no tenant/custom scope. */
   scopeId: string;
   enabled?: boolean;
   /** Only usable with explicit fixture mode and a loopback or reserved .test origin. */
@@ -38,7 +47,7 @@ function configuredUrl(options: HqOrbitClientOptions): URL {
     typeof options.baseUrl !== "string" ||
     options.baseUrl.length > 2048 ||
     options.baseUrl !== options.baseUrl.trim() ||
-    /[\\\s\u0000-\u001f\u007f]/.test(options.baseUrl)
+    /[%\\\s\u0000-\u001f\u007f]/.test(options.baseUrl)
   )
     invalidConfiguration();
   let url: URL;
@@ -132,22 +141,17 @@ interface ClientState {
 }
 // No URL/key/scope/transport is an enumerable client property, even under inspect.
 const clientStates = new WeakMap<HqOrbitClient, ClientState>();
-export class HqOrbitClient implements HqReader {
+export class HqOrbitClient implements HqWireReader {
   constructor(options: HqOrbitClientOptions) {
     const baseUrl = configuredUrl(options);
     if (
       typeof options.apiKey !== "string" ||
-      options.apiKey.length === 0 ||
-      options.apiKey.length > 4096 ||
+      options.apiKey.length < 32 ||
+      options.apiKey.length > 256 ||
       /[^\x21-\x7e]/.test(options.apiKey)
     )
       invalidConfiguration();
-    if (
-      typeof options.scopeId !== "string" ||
-      !options.scopeId.trim() ||
-      options.scopeId.length > 4096 ||
-      /[\u0000-\u001f\u007f]/.test(options.scopeId)
-    )
+    if (options.scopeId !== "company_all_real_and_unattributed")
       invalidConfiguration();
     clientStates.set(this, {
       baseUrl,
@@ -160,29 +164,115 @@ export class HqOrbitClient implements HqReader {
           : globalThis.fetch,
     });
   }
-  bookings(cursor?: string): Promise<HqBookingPage> {
+  bookings(query?: HqWirePageQuery) {
     return read(
       clientStates.get(this)!,
       "bookings",
-      cursor === undefined ? {} : { cursor: token(cursor) },
-      validateHqBookingPage
+      pageQuery(query),
+      validateHqWireBookingPage,
+      query
     );
   }
-  changes(after: string, cursor?: string): Promise<HqChangePage> {
-    const checkpoint = token(after);
+  businessMappings(query?: HqWirePageQuery) {
+    return read(
+      clientStates.get(this)!,
+      "business-mappings",
+      pageQuery(query),
+      validateHqWireBusinessPage,
+      query
+    );
+  }
+  catalogue(entityType: "booking" | "business", query?: HqWirePageQuery) {
+    if (entityType !== "booking" && entityType !== "business")
+      throw new HqContractError("INVALID_QUERY");
+    return read(
+      clientStates.get(this)!,
+      "catalogue",
+      { ...pageQuery(query), entityType },
+      value => {
+        const page = validateHqWireCataloguePage(value);
+        if (page.entityType !== entityType)
+          throw new HqContractError("INVALID_SEMANTICS");
+        return page;
+      },
+      query
+    );
+  }
+  changes(cursor: string, limit?: number) {
     return read(
       clientStates.get(this)!,
       "changes",
-      cursor === undefined ? { after: checkpoint } : { cursor: token(cursor) },
-      validateHqChangePage
+      {
+        cursor: token(cursor),
+        ...pageQuery(limit === undefined ? undefined : { limit }),
+      },
+      validateHqWireChangePage,
+      limit === undefined ? undefined : { limit }
+    );
+  }
+  status() {
+    return read(clientStates.get(this)!, "status", {}, validateHqWireStatus);
+  }
+  capabilities() {
+    return read(
+      clientStates.get(this)!,
+      "capabilities",
+      {},
+      validateHqWireCapabilities
     );
   }
 }
-async function read<T extends HqBookingPage | HqChangePage>(
+function pageQuery(query?: HqWirePageQuery): Record<string, string> {
+  if (query === undefined) return {};
+  if (
+    !query ||
+    typeof query !== "object" ||
+    Array.isArray(query) ||
+    Object.getPrototypeOf(query) !== Object.prototype ||
+    Object.getOwnPropertySymbols(query).length
+  )
+    throw new HqContractError("INVALID_QUERY");
+  const descriptors = Object.getOwnPropertyDescriptors(query);
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (
+      !["cursor", "generationId", "limit"].includes(key) ||
+      !descriptor.enumerable ||
+      !Object.hasOwn(descriptor, "value")
+    )
+      throw new HqContractError("INVALID_QUERY");
+  }
+  if (query.cursor !== undefined && query.generationId !== undefined)
+    throw new HqContractError("INVALID_QUERY");
+  const result: Record<string, string> = {};
+  if (query.cursor !== undefined) result.cursor = token(query.cursor);
+  if (query.generationId !== undefined) {
+    if (!Number.isSafeInteger(query.generationId) || query.generationId < 1)
+      throw new HqContractError("INVALID_QUERY");
+    result.generationId = String(query.generationId);
+  }
+  if (query.limit !== undefined) {
+    if (
+      !Number.isSafeInteger(query.limit) ||
+      query.limit < 1 ||
+      query.limit > 100
+    )
+      throw new HqContractError("INVALID_QUERY");
+    result.limit = String(query.limit);
+  }
+  return result;
+}
+async function read<T>(
   state: ClientState,
-  endpoint: "bookings" | "changes",
+  endpoint:
+    | "bookings"
+    | "business-mappings"
+    | "catalogue"
+    | "changes"
+    | "status"
+    | "capabilities",
   params: Record<string, string>,
-  validate: (value: unknown) => T
+  validate: (value: unknown) => T,
+  query?: HqWirePageQuery
 ): Promise<T> {
   if (!state.enabled) throw new HqContractError("CLIENT_DISABLED");
   const url = new URL(state.baseUrl.href);
@@ -241,6 +331,7 @@ async function read<T extends HqBookingPage | HqChangePage>(
       )
         throw new HqContractError("REDIRECT_REJECTED");
     }
+    if (response.status === 400) throw new HqContractError("INVALID_QUERY");
     if (response.status === 401 || response.status === 403)
       throw new HqContractError("AUTH_DENIED");
     if (response.status === 410) throw new HqContractError("RESTART_REQUIRED");
@@ -290,9 +381,29 @@ async function read<T extends HqBookingPage | HqChangePage>(
     } catch {
       throw new HqContractError("INVALID_PAYLOAD");
     }
-    const page = validate(value);
-    if (page.scopeId !== state.scopeId)
+    if (
+      endpoint !== "capabilities" &&
+      value &&
+      typeof value === "object" &&
+      Object.hasOwn(value, "scope") &&
+      (value as { scope: unknown }).scope !== state.scopeId
+    )
       throw new HqContractError("SCOPE_MISMATCH");
+    const page = validate(value);
+    const wire = page as {
+      scope?: unknown;
+      generationId?: unknown;
+      items?: unknown[];
+    };
+    if (endpoint !== "capabilities" && wire.scope !== state.scopeId)
+      throw new HqContractError("SCOPE_MISMATCH");
+    if (
+      query?.generationId !== undefined &&
+      wire.generationId !== query.generationId
+    )
+      throw new HqContractError("INVALID_SEMANTICS");
+    if (wire.items && wire.items.length > (query?.limit ?? 100))
+      throw new HqContractError("INVALID_SEMANTICS");
     return page;
   } catch (error) {
     if (timedOut) throw new HqContractError("TIMEOUT");

@@ -1,5 +1,8 @@
 import type { HqAmount, HqBooking, HqBookingPage, HqChangePage, HqCommissionResult, HqEnvelope, HqIdentity } from '../shared/management-hq-types';
-import type { HqReader } from './management-hq-orbit-client';
+import type { HqReader } from '../shared/management-hq-types';
+import type { HqWireMemberLink } from '../shared/management-hq-wire';
+import type { HqImplementedState } from './management-hq-ingestion';
+import { hqAssignedStaffSourceCandidate, hqCurrentOwnerSourceCandidate, projectHqWireBooking } from './management-hq-projection';
 import { validateHqBookingPage, validateHqChangePage } from './management-hq-contract';
 import type { HqAgentReportRow, HqBookingDrilldown, HqCommissionPassthrough, HqMoneyCoverage, HqReport, HqReportPerson, HqReportTotals } from '../shared/management-hq-report';
 export type { HqReport } from '../shared/management-hq-report';
@@ -27,6 +30,9 @@ export interface HqStore {
 export interface HqIdentityDirectory {
   /** Parent owns approved namespace resolution and strict historical canonical merging. */
   resolve(evidence: HqIdentity): Promise<HqReportPerson | null>;
+  /** Existing-person mapping only, not historical selling verification. */
+  resolveCurrentOwner?(link: HqWireMemberLink): Promise<HqReportPerson | null>;
+  resolveAssignedStaff?(link: HqWireMemberLink): Promise<HqReportPerson | null>;
 }
 export type HqIngestionResult = { status: 'applied'; state: HqState; pages: number; recordsRead: number; unchanged: boolean } | { status: 'unavailable'; code: string; state: HqState | null };
 export interface HqEngineOptions {
@@ -237,6 +243,11 @@ function totals(bookings: HqBooking[]): HqReportTotals {
   const grossEligible = bookings.filter(b => b.status === 'confirmed' && b.eligibility.headlineGrossSales === true);
   let profit = BigInt(0), gross = BigInt(0), covered = 0;
   for (const b of grossEligible) {
+    if (b.projectionSource === 'implemented_wire') {
+      const w = b.weightedMarginContribution;
+      if (b.currency === 'GBP' && b.currencyBasis === 'validated_GBP' && w && w.profitPence !== null && w.coveredGrossPence !== null && Number.isSafeInteger(w.profitPence) && Number.isSafeInteger(w.coveredGrossPence) && w.coveredGrossPence >= 0) { profit += BigInt(w.profitPence); gross += BigInt(w.coveredGrossPence); covered++; }
+      continue;
+    }
     const g = known(b.financials.grossBookingValue, b), p = known(b.financials.grossBookingProfit, b);
     if (b.financials.completeGrossAndCost && g !== null && p !== null) { gross += g; profit += p; covered++; }
   }
@@ -282,21 +293,39 @@ function commissionPassthrough(c: HqCommissionResult, b: HqBooking): HqCommissio
   const a = (amount: HqAmount) => known(amount, b) === null ? null : amount.amount;
   return { basis: c.basis, complete: c.complete, netDistributableCommission: a(c.netDistributableCommission), agentCommission: a(c.agentCommission), jltRetainedCommission: a(c.jltRetainedCommission), cardProcessingFeesIncluded: c.cardProcessingFeesIncluded, vatIncluded: c.vatIncluded, ptsIncluded: c.ptsIncluded, terms: { agentFraction: c.terms.agentFraction, jltFraction: c.terms.jltFraction, state: c.terms.state }, roundingBasis: c.roundingBasis, roundingResidual: a(c.roundingResidual), limitations: [...c.limitations] };
 }
-export async function getHqReport(state: HqState, directory: HqIdentityDirectory, filters: { year: number; month?: number }): Promise<HqReport> {
+export async function getHqReport(state: HqState | HqImplementedState, directory: HqIdentityDirectory, filters: { year: number; month?: number }): Promise<HqReport> {
   if (!Number.isInteger(filters.year) || filters.year < 1900 || filters.year > 9999 || (filters.month !== undefined && (!Number.isInteger(filters.month) || filters.month < 1 || filters.month > 12))) throw new Error('Invalid HQ report period');
+  const implemented = 'wireVersion' in state ? state : null;
+  const legacy = 'envelope' in state ? state : null;
+  const metadata = implemented?.metadata;
   const result: HqReport = {
     status: 'available', unavailableReason: null, liveReady: false,
-    scopeId: state.scopeId, watermark: state.watermark, snapshotId: state.envelope.snapshotId,
+    scopeId: implemented?.scope ?? legacy!.scopeId, watermark: implemented ? '' : legacy!.watermark, snapshotId: implemented ? String(metadata!.generationId) : legacy!.envelope.snapshotId,
     filters: { year: filters.year, month: filters.month ?? null }, currency: 'GBP', totals: totals([]),
     cohorts: { pendingCount: 0, cancelledCount: 0, exceptionCount: 0, undatedCount: 0, unmatchedBusinessCount: 0, unattributedCount: 0, excludedDemoCount: 0, tombstoneCount: 0, unsupportedCurrencyCount: 0 },
     monthly: [], agents: [], bookings: [], undatedExceptions: [], exportComplete: true,
-    limitations: ['Proposed contract; no verified live deployment or approved identity namespace.', 'Current restated booking values, not an amendment/event ledger.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'GBP totals only on validated GBP basis; native/unverified currencies excluded from monetary sums.', 'Baseline commission is source passthrough, not policy-complete entitlement or settled cash.', 'Business mapping is not evidence of seller ownership; verified original seller with agent role required.', 'Quotes and independent business-mapping change events are unsupported; activity means booking cohort counts only.', ...state.envelope.coverage.limitations],
+    limitations: implemented ? ['Implemented 1.0.0 source projection; offline local examples only, no verified live deployment.', 'Current restated booking values, not an amendment/event ledger.', 'Current-owner groups are provisional current membership, never verified original selling agents.', 'Assigned staff is current membership, not evidence of a processing administrator.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'Baseline VAT/estimated PTS commission is source passthrough; all-fees entitlement, actual fees, custom terms and settled cash remain unknown.', 'Source observation is per-page, not a run-wide source snapshot.', 'Membership history/join dates and quote/conversion reporting are unavailable.'] : ['Proposed contract; no verified live deployment or approved identity namespace.', 'Current restated booking values, not an amendment/event ledger.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'GBP totals only on validated GBP basis; native/unverified currencies excluded from monetary sums.', 'Baseline commission is source passthrough, not policy-complete entitlement or settled cash.', 'Business mapping is not evidence of seller ownership; verified original seller with agent role required.', 'Quotes and independent business-mapping change events are unsupported; activity means booking cohort counts only.', ...legacy!.envelope.coverage.limitations],
+    ...(implemented ? { sourceContract: 'implemented_1.0.0' as const, generationId: metadata!.generationId, sourceObservationWindow: { from: metadata!.sourceObservationWindow.from, to: metadata!.sourceObservationWindow.to }, publishedAt: metadata!.publishedAt, sourceAgeSeconds: metadata!.sourceAgeSeconds, freshnessTargetSeconds: metadata!.freshnessTargetSeconds, stale: metadata!.stale } : {}),
   };
   const unavailable = (reason: string) => ({ ...result, status: 'unavailable' as const, unavailableReason: reason, totals: totals([]), monthly: [], agents: [], bookings: [], undatedExceptions: [], exportComplete: false });
-  if (state.scopeId !== state.envelope.scopeId || state.envelope.hasMore || state.envelope.nextCursor !== null || !state.envelope.sourceObservationCompletedAt) return unavailable('INCOMPLETE_OR_UNBOUND_STATE');
-  if (Object.keys(state.records).length > REPORT_MAX_ROWS) return unavailable('REPORT_ROW_CAP_EXCEEDED');
-  const active = Object.values(state.records).filter(r => !r.tombstone && r.booking !== null).map(r => r.booking!);
-  result.cohorts.tombstoneCount = Object.values(state.records).filter(r => r.tombstone).length;
+  let active: HqBooking[];
+  if (implemented) {
+    if (implemented.wireVersion !== '1.0.0' || implemented.scope !== 'company_all_real_and_unattributed' || metadata!.scope !== implemented.scope || metadata!.projectionVersion !== implemented.wireVersion || !Number.isSafeInteger(metadata!.generationId) || metadata!.generationId < 1 || !metadata!.sourceObservationWindow.to || !metadata!.publishedAt) return unavailable('INCOMPLETE_OR_UNBOUND_STATE');
+    if (Object.keys(implemented.entities).length > REPORT_MAX_ROWS) return unavailable('REPORT_ROW_CAP_EXCEEDED');
+    result.cohorts.tombstoneCount = Object.values(implemented.entities).filter(r => r.entity.entityType === 'booking' && (r.absent || 'deleted' in r.entity.payload && r.entity.payload.deleted === true)).length;
+    try {
+      active = Object.values(implemented.entities).filter(r => r.entity.entityType === 'booking' && !r.absent && !('deleted' in r.entity.payload && r.entity.payload.deleted === true)).map(r => {
+        const tenantId = 'orbitTenantId' in r.entity.payload ? r.entity.payload.orbitTenantId : null;
+        const business = implemented.entities[`business:${tenantId}`];
+        return projectHqWireBooking(r.entity, business && !business.absent && !('deleted' in business.entity.payload && business.entity.payload.deleted === true) ? business.entity : undefined);
+      });
+    } catch { return unavailable('INVALID_IMPLEMENTED_PROJECTION'); }
+  } else {
+    if (legacy!.scopeId !== legacy!.envelope.scopeId || legacy!.envelope.hasMore || legacy!.envelope.nextCursor !== null || !legacy!.envelope.sourceObservationCompletedAt) return unavailable('INCOMPLETE_OR_UNBOUND_STATE');
+    if (Object.keys(legacy!.records).length > REPORT_MAX_ROWS) return unavailable('REPORT_ROW_CAP_EXCEEDED');
+    active = Object.values(legacy!.records).filter(r => !r.tombstone && r.booking !== null).map(r => r.booking!);
+    result.cohorts.tombstoneCount = Object.values(legacy!.records).filter(r => r.tombstone).length;
+  }
   result.cohorts.excludedDemoCount = active.filter(b => b.currentOwningBusiness.accountType === 'demo').length;
   const real = active.filter(b => b.currentOwningBusiness.accountType === 'real');
   const undated = real.filter(b => !validDate(b.dates.managementReportingDate) || !b.eligibility.dated);
@@ -307,11 +336,17 @@ export async function getHqReport(state: HqState, directory: HqIdentityDirectory
     for (const b of [...selected, ...undated]) {
       if (b.bookingRef.length > REPORT_MAX_TEXT || b.currentOwningBusiness.name.length > REPORT_MAX_TEXT || b.qualityIssues.length > 100 || b.qualityIssues.some(s => s.length > REPORT_MAX_TEXT) || !financeTextBound(b.financials)) return unavailable('REPORT_FIELD_CAP_EXCEEDED');
       const e = b.originalSellingAgent;
-      const resolved = e.state === 'verified' && e.id && e.namespace ? boundedPerson(await directory.resolve(e)) : null;
+      const resolved = !implemented && e.state === 'verified' && e.id && e.namespace ? boundedPerson(await directory.resolve(e)) : null;
       const seller = resolved?.role === 'agent' ? resolved : null;
       const p = b.processingAdministrator;
-      const processor = p.state === 'verified' && p.id && p.namespace ? boundedPerson(await directory.resolve(p)) : null;
-      sellers.set(b.id, seller);
+      const processor = !implemented && p.state === 'verified' && p.id && p.namespace ? boundedPerson(await directory.resolve(p)) : null;
+      const link = b.currentOwnerLink;
+      const candidate = implemented && link && hqCurrentOwnerSourceCandidate(link);
+      const ownerResolved = candidate && directory.resolveCurrentOwner ? boundedPerson(await directory.resolveCurrentOwner!(link!)) : null;
+      const currentOwner = ownerResolved?.role === 'agent' ? ownerResolved : null;
+      const staffLink = b.assignedStaffLink;
+      const assignedStaff = implemented && staffLink && hqAssignedStaffSourceCandidate(staffLink) && directory.resolveAssignedStaff ? boundedPerson(await directory.resolveAssignedStaff(staffLink)) : null;
+      sellers.set(b.id, implemented ? currentOwner : seller);
       const a = (amount: HqAmount) => known(amount, b) === null ? null : amount.amount;
       const f = b.financials;
       const row: HqBookingDrilldown = {
@@ -320,6 +355,7 @@ export async function getHqReport(state: HqState, directory: HqIdentityDirectory
         dateSource: b.dates.dateSource, cohort: validDate(b.dates.managementReportingDate) && b.eligibility.dated ? cohort(b) : 'exception',
         business: { orbitTenantId: b.currentOwningBusiness.orbitTenantId, name: b.currentOwningBusiness.name, mappingStatus: b.currentOwningBusiness.mappingStatus, portalBusinessId: b.currentOwningBusiness.portalBusinessId },
         seller, sellerReason: seller ? null : resolved ? 'RESOLVED_MEMBER_NOT_AGENT' : e.state !== 'verified' ? 'ORIGINAL_SELLER_NOT_VERIFIED' : 'ORIGINAL_SELLER_UNRESOLVED', processor,
+        ...(implemented ? { currentOwner, currentOwnerReason: currentOwner ? null : b.currentOwnerSourceReason ?? (!candidate ? 'SOURCE_OWNER_LINK_UNRESOLVED_OR_INCOHERENT' : ownerResolved ? 'CURRENT_OWNER_MEMBER_NOT_AGENT' : 'CURRENT_OWNER_IDENTITY_UNRESOLVED'), assignedStaff, attributionState: currentOwner ? 'provisional_current_owner' as const : 'unresolved' as const } : {}),
         passengerCount: b.passengerCount, currency: b.currency, currencyBasis: b.currencyBasis,
         financials: {
           gross: a(f.grossBookingValue), supplierNet: f.completeGrossAndCost ? a(f.supplierNetCost) : null, knownSupplierNetSubtotal: a(f.knownSupplierNetSubtotal), grossProfit: f.completeGrossAndCost ? a(f.grossBookingProfit) : null,
@@ -333,6 +369,7 @@ export async function getHqReport(state: HqState, directory: HqIdentityDirectory
           otherDeductions: f.otherDeductions?.map(d => ({ code: d.code, amount: a(d.amount), currency: d.amount.currency, state: d.amount.state, applicability: d.applicability, alreadyIncludedElsewhere: d.alreadyIncludedElsewhere, policySource: d.policySource })) ?? null,
           policyVersion: f.policyVersion, ptsFeeBasis: f.ptsFeeBasis, ptsAssumptions: [...f.ptsAssumptions], completeGrossAndCost: f.completeGrossAndCost, completeApprovedDeductions: f.completeApprovedDeductions, warnings: [...f.warnings],
           amountStates: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== null && typeof v === 'object' && 'amount' in v && 'state' in v).map(([key, value]) => { const amount = value as HqAmount; return [key, { state: amount.state, currency: amount.currency, reason: amount.reason }]; })),
+          ...(b.sourceFinance ? { sourceStatus: { netCost: b.sourceFinance.netCostStatus, baseline: b.sourceFinance.baselineStatus, economics: b.sourceFinance.economicsStatus, vat: b.sourceFinance.vatStatus, reasons: [...b.sourceFinance.reasons] }, knownPpsFeeEstimateSubtotal: a(b.sourceFinance.knownPpsFeeEstimateSubtotal), sourceGrossMarginPct: b.sourceFinance.grossMarginPct, weightedMarginContribution: b.weightedMarginContribution ? { ...b.weightedMarginContribution } : undefined } : {}),
         }, qualityIssues: [...b.qualityIssues],
       };
       (row.reportingDate === null ? result.undatedExceptions : result.bookings).push(row);
@@ -360,7 +397,7 @@ export async function getHqReport(state: HqState, directory: HqIdentityDirectory
     if (canonicalHqJson(group.person) !== canonicalHqJson(seller)) return unavailable('DIRECTORY_CANONICAL_IDENTITY_CONFLICT');
     group.rows.push(b);
   }
-  result.agents = Array.from(agents.values()).map(({ person, rows }): HqAgentReportRow => ({ agent: person, totals: totals(rows), pendingCount: rows.filter(b => b.status === 'pending').length, cancelledCount: rows.filter(b => b.status === 'cancelled').length })).sort((a, b) => a.agent.userId - b.agent.userId);
+  result.agents = Array.from(agents.values()).map(({ person, rows }): HqAgentReportRow => ({ agent: person, totals: totals(rows), pendingCount: rows.filter(b => b.status === 'pending').length, cancelledCount: rows.filter(b => b.status === 'cancelled').length, ...(implemented ? { attributionState: 'provisional_current_owner' as const } : {}) })).sort((a, b) => a.agent.userId - b.agent.userId);
   if (Buffer.byteLength(JSON.stringify(result)) > REPORT_MAX_BYTES) return unavailable('REPORT_BYTE_CAP_EXCEEDED');
   return result;
 }
@@ -374,8 +411,8 @@ export function exportHqReportCsv(report: HqReport): string {
   if (report.status !== 'available' || !report.exportComplete) throw new Error('HQ export unavailable; complete bounded report required');
   const rows = [...report.bookings, ...report.undatedExceptions];
   if (rows.length > REPORT_MAX_ROWS) throw new Error('HQ export row cap exceeded');
-  const header = ['Booking ID', 'Reference', 'Reporting date', 'Status', 'Cohort', 'Business', 'Seller user ID', 'Seller agent ID', 'Seller', 'Processor', 'Passengers', 'Currency', 'Gross GBP', 'Gross profit GBP', 'Baseline agent commission GBP', 'Policy-complete agent commission GBP', 'Settled JLT income GBP'];
-  const csv = [header.map(v => hqCsvCell(v)).join(','), ...rows.map(b => [b.id, b.bookingRef, b.reportingDate, b.status, b.cohort, b.business.name, b.seller?.userId ?? null, b.seller?.uniqueAgentId ?? null, b.seller?.name ?? null, b.processor?.name ?? null, b.passengerCount, b.currency, b.financials.gross, b.financials.grossProfit, b.financials.baselineAgentCommission, b.financials.completeAgentCommission, b.financials.settledJltIncome].map(v => hqCsvCell(v)).join(','))].join('\r\n') + '\r\n';
+  const header = ['Booking ID', 'Reference', 'Reporting date', 'Status', 'Cohort', 'Business', 'Seller user ID', 'Seller agent ID', 'Seller', 'Processor', 'Passengers', 'Currency', 'Gross GBP', 'Gross profit GBP', 'Baseline agent commission GBP', 'Policy-complete agent commission GBP', 'Settled JLT income GBP', 'Provisional current owner user ID', 'Provisional current owner agent ID', 'Provisional current owner', 'Current owner reason', 'Assigned staff user ID', 'Assigned staff', 'Attribution state'];
+  const csv = [header.map(v => hqCsvCell(v)).join(','), ...rows.map(b => [b.id, b.bookingRef, b.reportingDate, b.status, b.cohort, b.business.name, b.seller?.userId ?? null, b.seller?.uniqueAgentId ?? null, b.seller?.name ?? null, b.processor?.name ?? null, b.passengerCount, b.currency, b.financials.gross, b.financials.grossProfit, b.financials.baselineAgentCommission, b.financials.completeAgentCommission, b.financials.settledJltIncome, b.currentOwner?.userId ?? null, b.currentOwner?.uniqueAgentId ?? null, b.currentOwner?.name ?? null, b.currentOwnerReason ?? null, b.assignedStaff?.userId ?? null, b.assignedStaff?.name ?? null, b.attributionState ?? (b.seller ? 'verified_original_seller' : 'unresolved')].map(v => hqCsvCell(v)).join(','))].join('\r\n') + '\r\n';
   if (Buffer.byteLength(csv) > REPORT_MAX_BYTES) throw new Error('HQ export byte cap exceeded');
   return csv;
 }
