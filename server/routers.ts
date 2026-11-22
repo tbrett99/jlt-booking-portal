@@ -187,6 +187,7 @@ import { agentDevelopmentRouter } from "./agent-development-router";
 import { libraryRouter } from "./library-router";
 import { staffHandbookRouter } from "./staff-handbook-router";
 import { staffCallsRouter } from "./staff-calls-router";
+import { managementHqRouter } from "./management-hq-router";
 import { agentSupportRouter } from "./agent-support-router";
 import { membershipPaymentsRouter } from "./membership-payment-issues-router";
 import { agentMergeRouter } from "./agent-merge-router";
@@ -473,6 +474,7 @@ export const appRouter = router({
   system: systemRouter,
   agentDevelopment: agentDevelopmentRouter,
   library: libraryRouter,
+  managementHq: managementHqRouter,
   staffHandbook: staffHandbookRouter,
   staffCalls: staffCallsRouter,
   agentSupport: agentSupportRouter,

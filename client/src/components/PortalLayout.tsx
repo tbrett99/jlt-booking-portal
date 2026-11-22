@@ -595,7 +595,8 @@ function RegularPortalLayout({ children }: { children: React.ReactNode }) {
       defaultOpen: false,
       items: [
         ...(user?.role === "super_admin"
-          ? [{ label: "Business Intelligence", href: "/super-admin", icon: <Activity size={16} /> }]
+          ? [{ label: "Business Intelligence", href: "/super-admin", icon: <Activity size={16} /> },
+             { label: "Management HQ · pilot", href: "/admin/management-hq", icon: <BarChart2 size={16} /> }]
           : []),
         { label: "Admin Reports", href: "/reports", icon: <FileText size={16} /> },
         { label: "Call Reporting", href: "/admin/staff-call-reports", icon: <BarChart2 size={16} /> },

@@ -3372,3 +3372,14 @@ export const staffCallActionSources = mysqlTable("staff_call_action_sources", {
   id: int("id").autoincrement().primaryKey(), callId: int("callId").notNull(), participantId: int("participantId").notNull(),
   planId: int("planId").notNull(), createdById: int("createdById").notNull(), createdAt: timestamp("createdAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
 }, t => [uniqueIndex("staff_call_action_plan_uq").on(t.planId), index("staff_call_action_source_idx").on(t.callId, t.participantId), foreignKey({ name: "staff_call_action_plan_fk", columns: [t.planId], foreignColumns: [academyActionPlans.id] }).onDelete("restrict"), foreignKey({ name: "staff_call_action_participant_fk", columns: [t.participantId], foreignColumns: [staffCallParticipants.id] }).onDelete("restrict")]);
+
+// Management HQ pilot: isolated normalized reporting generations, never operational booking/payment rows.
+// Only complete validated generations are published by versioned compare-and-swap.
+export const managementHqDatasets = mysqlTable("management_hq_datasets", {
+  datasetId: varchar("datasetId", { length: 120 }).primaryKey(),
+  mode: mysqlEnum("mode", ["sample", "live"]).notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  stateVersion: int("stateVersion").notNull(),
+  state: json("state").notNull(),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).default(sql`CURRENT_TIMESTAMP(3)`).notNull(),
+}, t => [index("management_hq_owner_idx").on(t.ownerUserId, t.mode)]);

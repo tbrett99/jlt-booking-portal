@@ -1317,6 +1317,13 @@
       "when": 1795280342834,
       "tag": "0187_overjoyed_thunderbolts",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "5",
+      "when": 1795346325571,
+      "tag": "0188_majestic_greymalkin",
+      "breakpoints": true
     }
   ]
 }
