@@ -369,6 +369,62 @@ describe("actual HQ router production read boundaries", () => {
     await next.resolveCurrentOwner!({ memberJltAgentId: "JLT101" } as any);
     expect(resolve).toHaveBeenCalledTimes(2);
   });
+  it.each(["resolve", "resolveCurrentOwner", "resolveAssignedStaff"] as const)(
+    "fresh guard brackets successful and rejected %s lookups without sharing cache across reports",
+    async method => {
+      for (const fails of [false, true]) {
+        const events: string[] = [];
+        const lookup = vi.fn(async () => {
+          events.push("lookup");
+          if (fails) throw new Error("strict merge unavailable");
+          return null;
+        });
+        const guard = vi.fn(async () => {
+          events.push("guard");
+        });
+        const directory = memoizeHqReportDirectory(
+          {
+            resolve: lookup,
+            resolveCurrentOwner: lookup,
+            resolveAssignedStaff: lookup,
+          },
+          guard
+        );
+        const first = directory[method]!({} as any);
+        if (fails)
+          await expect(first).rejects.toThrow("strict merge unavailable");
+        else await expect(first).resolves.toBeNull();
+        expect(events).toEqual(["guard", "lookup", "guard"]);
+        if (method !== "resolve") {
+          const second = directory[method]!({} as any);
+          expect(second).toBe(first);
+          if (fails)
+            await expect(second).rejects.toThrow("strict merge unavailable");
+          else await expect(second).resolves.toBeNull();
+          expect(lookup).toHaveBeenCalledOnce();
+          expect(guard).toHaveBeenCalledTimes(2);
+        }
+      }
+    }
+  );
+  it("revoked pre-lookup guard prevents a read and revoked post-failure guard overrides the failed lookup", async () => {
+    const lookup = vi.fn(async () => {
+      throw new Error("private lookup failure");
+    });
+    const revoked = new Error("fixed revoked access");
+    const guard = vi.fn(async () => {
+      throw revoked;
+    });
+    await expect(
+      memoizeHqReportDirectory({ resolve: lookup }, guard).resolve({} as any)
+    ).rejects.toBe(revoked);
+    expect(lookup).not.toHaveBeenCalled();
+    guard.mockResolvedValueOnce(undefined);
+    await expect(
+      memoizeHqReportDirectory({ resolve: lookup }, guard).resolve({} as any)
+    ).rejects.toBe(revoked);
+    expect(lookup).toHaveBeenCalledOnce();
+  });
   it("rejects arbitrary URL/key/source payloads on live report inputs", async () => {
     await expect(
       caller().report({

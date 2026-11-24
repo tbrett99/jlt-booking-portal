@@ -6,6 +6,8 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import type { HqLiveStatusDto } from "../../../../server/management-hq-live-service";
 import type { HqConnectionCheckResult } from "@shared/management-hq-connection-check";
+import type { HqInitialImportResult } from "@shared/management-hq-initial-import";
+import type { HqInitialValidationResult } from "@shared/management-hq-initial-validation";
 import type {
   HqBookingDrilldown,
   HqMoneyCoverage,
@@ -117,6 +119,161 @@ function safeConnectionResult(value: unknown): HqConnectionCheckResult {
     sourcePublishedAt: null,
     sourceObservationAt: null,
   };
+}
+
+type InitialImportView = Pick<
+  HqInitialImportResult,
+  "status" | "nextDueAt" | "hasPublished" | "progress"
+>;
+type InitialYear = HqInitialValidationResult["years"][number];
+type InitialValidationView = Pick<
+  HqInitialValidationResult,
+  "status" | "checkedAt" | "sourcePublishedAt" | "isStale" | "years"
+>;
+const safeCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const safeStamp = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) &&
+  Number.isFinite(Date.parse(value));
+const safeAmount = (value: unknown): value is string | null =>
+  value === null ||
+  (typeof value === "string" &&
+    value.length <= 100 &&
+    /^-?\d+(?:\.\d+)?$/.test(value));
+
+function safeInitialImport(value: unknown): InitialImportView {
+  const fallback: InitialImportView = {
+    status: "needs_attention",
+    nextDueAt: null,
+    hasPublished: false,
+    progress: null,
+  };
+  if (!value || typeof value !== "object") return fallback;
+  const result = value as Record<string, unknown>;
+  if (
+    ![
+      "disabled",
+      "notdue",
+      "busy",
+      "progress",
+      "applied",
+      "already_complete",
+      "needs_attention",
+    ].includes(result.status as string) ||
+    typeof result.hasPublished !== "boolean" ||
+    (result.nextDueAt !== null && !safeStamp(result.nextDueAt))
+  )
+    return fallback;
+  const progress = result.progress as Record<string, unknown> | null;
+  if (
+    progress !== null &&
+    (!progress ||
+      !safeCount(progress.pages) ||
+      !safeCount(progress.recordsRead))
+  )
+    return fallback;
+  if (
+    (result.status === "applied" || result.status === "already_complete") &&
+    !result.hasPublished
+  )
+    return fallback;
+  if (result.status === "notdue" && !safeStamp(result.nextDueAt))
+    return fallback;
+  return {
+    status: result.status as InitialImportView["status"],
+    nextDueAt: result.nextDueAt as string | null,
+    hasPublished: result.hasPublished,
+    progress: progress
+      ? {
+          pages: progress.pages as number,
+          recordsRead: progress.recordsRead as number,
+        }
+      : null,
+  };
+}
+
+function safeInitialValidation(value: unknown): InitialValidationView | null {
+  if (!value || typeof value !== "object") return null;
+  const result = value as Record<string, unknown>;
+  if (
+    !["awaiting_import", "checks_ready", "needs_attention"].includes(
+      result.status as string
+    ) ||
+    !safeStamp(result.checkedAt) ||
+    (result.sourcePublishedAt !== null &&
+      !safeStamp(result.sourcePublishedAt)) ||
+    ![true, false, null].includes(result.isStale as boolean | null) ||
+    result.manualChecksPending !== true ||
+    !Array.isArray(result.years) ||
+    result.years.length > 101
+  )
+    return null;
+  const years: InitialYear[] = [];
+  for (const entry of result.years) {
+    if (!entry || typeof entry !== "object") return null;
+    const row = entry as Record<string, unknown>;
+    if (
+      !safeCount(row.year) ||
+      row.year < 2000 ||
+      row.year > 2100 ||
+      years.some(item => item.year === row.year) ||
+      !safeAmount(row.grossSales) ||
+      !safeAmount(row.grossProfit)
+    )
+      return null;
+    const counts = [
+      "activeBookings",
+      "grossSalesMissing",
+      "grossProfitMissing",
+      "cancelledBookings",
+      "pendingBookings",
+      "undatedBookings",
+      "unattributedBookings",
+    ] as const;
+    if (counts.some(key => !safeCount(row[key]))) return null;
+    years.push({
+      year: row.year,
+      grossSales: row.grossSales,
+      grossProfit: row.grossProfit,
+      activeBookings: row.activeBookings as number,
+      grossSalesMissing: row.grossSalesMissing as number,
+      grossProfitMissing: row.grossProfitMissing as number,
+      cancelledBookings: row.cancelledBookings as number,
+      pendingBookings: row.pendingBookings as number,
+      undatedBookings: row.undatedBookings as number,
+      unattributedBookings: row.unattributedBookings as number,
+    });
+  }
+  // Only the explicit validation summary is retained. No source rows, messages,
+  // identities, opaque source identifiers or arbitrary limitations are displayed.
+  return {
+    status: result.status as InitialValidationView["status"],
+    checkedAt: result.checkedAt,
+    sourcePublishedAt: result.sourcePublishedAt as string | null,
+    isStale: result.isStale as boolean | null,
+    years: result.status === "checks_ready" ? years : [],
+  };
+}
+
+function initialImportMessage(result: InitialImportView): string {
+  if (
+    result.hasPublished &&
+    ["applied", "already_complete"].includes(result.status)
+  )
+    return "First import complete. Check the imported figures when you are ready. HQ dashboards remain off.";
+  switch (result.status) {
+    case "disabled":
+      return "Awaiting approved server setup. Import has not been enabled here.";
+    case "notdue":
+      return `Wait until ${new Date(result.nextDueAt!).toLocaleString()}, then continue`;
+    case "busy":
+      return "An import is already running. Use Refresh to check its status before continuing.";
+    case "progress":
+      return "One import step completed. Continue the first import with another explicit click.";
+    default:
+      return "The first import needs attention. Use Refresh to check the current status; no automatic retry is performed.";
+  }
 }
 
 /** Group decimal strings without passing money through IEEE-754 or rounding source precision. */
@@ -319,9 +476,7 @@ function Pagination({
 
 function LiveConnection({ live }: { live: HqLiveStatusDto }) {
   const stamp = (value: string | null) =>
-    value
-      ? `${value.replace("T", " ").replace(".000Z", " UTC")}`
-      : "Not yet recorded";
+    safeStamp(value) ? new Date(value).toLocaleString() : "Not yet recorded";
   const attention = live.health === "needs_attention";
   return (
     <section
@@ -368,6 +523,12 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
           Automatic import is disabled. Refresh does not restart it.
         </p>
       )}
+      {live.syncEnabled && !live.readEnabled && (
+        <p className="text-sm">
+          First-import access is enabled on the server. This page never starts
+          it automatically.
+        </p>
+      )}
       {!live.readEnabled && (
         <p className="text-sm">
           Report reading is disabled pending approval. Import monitoring does
@@ -409,8 +570,8 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
           <dd>{stamp(live.lastPublishedAt)}</dd>
         </div>
         <div>
-          <dt>Source generation</dt>
-          <dd>{live.generationId ?? "No published generation"}</dd>
+          <dt>Source publication</dt>
+          <dd>{stamp(live.sourcePublishedAt)}</dd>
         </div>
         <div>
           <dt>Source observation</dt>
@@ -434,7 +595,7 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
       </dl>
       <p className="text-xs text-muted-foreground">
         Refresh rereads Portal status and reports only; it does not contact
-        Orbit or write data. No sync-now action is available.
+        Orbit or write data. No automatic import starts from this page.
       </p>
     </section>
   );
@@ -508,11 +669,26 @@ function ActorHq({
   const [connectionAccessRevoked, setConnectionAccessRevoked] = useState(false);
   const [connectionResult, setConnectionResult] =
     useState<HqConnectionCheckResult | null>(null);
+  const [initialBusy, setInitialBusy] = useState<"import" | "check" | null>(
+    null
+  );
+  const [initialResult, setInitialResult] = useState<InitialImportView | null>(
+    null
+  );
+  const [initialValidation, setInitialValidation] =
+    useState<InitialValidationView | null>(null);
+  const [initialCheckFailed, setInitialCheckFailed] = useState(false);
   const alive = useRef(true);
   const lock = useRef(false);
   const epoch = useRef(0);
   const connectionAttempt = useRef(0);
   const connectionFlight = useRef<symbol | null>(null);
+  const initialAttempt = useRef(0);
+  const initialFlight = useRef<symbol | null>(null);
+  const initialRefresh = useRef(false);
+  const initialSettings = useRef("");
+  const initialResultBoundary = useRef("");
+  const initialValidationBoundary = useRef("");
   const boundary = useRef("");
   const identityCheck = useRef(isCurrent);
   identityCheck.current = isCurrent;
@@ -522,6 +698,9 @@ function ActorHq({
   });
   const sample = trpc.managementHq.sample.useMutation();
   const checkConnection = trpc.managementHq.checkConnection.useMutation();
+  const importInitialBatch = trpc.managementHq.importInitialBatch.useMutation();
+  const validateInitialImport =
+    trpc.managementHq.validateInitialImport.useMutation();
   const statusReady =
     booted &&
     status.isFetchedAfterMount &&
@@ -556,7 +735,8 @@ function ActorHq({
     status.isFetching ||
     status.isLoading ||
     reportBusy ||
-    connectionBusy;
+    connectionBusy ||
+    !!initialBusy;
   const canRead =
     statusReady &&
     (mode === "live"
@@ -570,6 +750,32 @@ function ActorHq({
     !replaying;
   const permission = useRef(false);
   const authorityError = isAuthorityError(status.error);
+  const settingsBoundary = JSON.stringify({
+    mode,
+    liveConfigured: status.data?.liveConfigured ?? null,
+    sampleEnabled: status.data?.sampleEnabled ?? null,
+    configured: live?.configured ?? null,
+    configurationCode: live?.configurationCode ?? null,
+    syncEnabled: live?.syncEnabled ?? null,
+    readEnabled: live?.readEnabled ?? null,
+    intervalSeconds: live?.intervalSeconds ?? null,
+    freshnessSeconds: live?.freshnessSeconds ?? null,
+    freshnessTargetSeconds: live?.freshnessTargetSeconds ?? null,
+  });
+  const latestSettings = useRef(settingsBoundary);
+  latestSettings.current = settingsBoundary;
+  const initialEnabled =
+    statusReady &&
+    mode === "live" &&
+    live?.configured === true &&
+    status.data?.liveConfigured === true &&
+    live.syncEnabled === true &&
+    live.readEnabled === false &&
+    !live.configurationCode &&
+    live.lastErrorCode !== "CONFIG_INCOMPLETE" &&
+    !authorityError &&
+    !connectionAccessRevoked &&
+    !actionError;
   const currentBoundary = JSON.stringify({
     authorityError,
     statusError: !!status.error,
@@ -587,15 +793,29 @@ function ActorHq({
     freshnessSeconds: live?.freshnessSeconds ?? null,
     hasPublished: live?.hasPublished ?? null,
     lastErrorCode: live?.lastErrorCode ?? null,
+    generationId: live?.generationId ?? null,
+    sourcePublishedAt: live?.sourcePublishedAt ?? null,
+    sourceObservationAt: live?.sourceObservationAt ?? null,
+    isStale: live?.isStale ?? null,
+    sourceAgeSeconds: live?.sourceAgeSeconds ?? null,
+    lastPublishedAt: live?.lastPublishedAt ?? null,
+    route: window.location.href,
   });
   if (boundary.current !== currentBoundary) {
     boundary.current = currentBoundary;
     permission.current = false;
     epoch.current++;
     connectionAttempt.current++;
+    if (!initialRefresh.current || initialSettings.current !== settingsBoundary)
+      initialAttempt.current++;
   }
   permission.current =
     !authorityError && !!canRead && identityCheck.current(actorId);
+  const initialGate = useRef(false);
+  initialGate.current = !!initialEnabled;
+  const initialStatusError = useRef(false);
+  initialStatusError.current =
+    !!status.error || authorityError || connectionAccessRevoked;
   useEffect(() => {
     if (!alive.current) return;
     if (authorityError) {
@@ -607,7 +827,37 @@ function ActorHq({
     }
     setConnectionResult(null);
     checkConnection.reset();
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
+    // A settings/source change invalidates pending manual work immediately. A
+    // completed import's one explicit status refresh is the sole exception;
+    // it may legitimately publish a new status version, never private checks.
+    if (
+      !initialRefresh.current ||
+      initialSettings.current !== settingsBoundary ||
+      authorityError ||
+      status.error
+    ) {
+      setInitialResult(null);
+      if (initialFlight.current) {
+        initialFlight.current = null;
+        initialRefresh.current = false;
+        lock.current = false;
+        setInitialBusy(null);
+        importInitialBatch.reset();
+        validateInitialImport.reset();
+      }
+    }
   }, [currentBoundary]);
+
+  useEffect(() => {
+    // React may commit the refreshed publication after mutateAsync resolves.
+    // Retain only fixed import copy across that single owned refresh commit.
+    if (initialRefresh.current && initialResult) {
+      initialResultBoundary.current = boundary.current;
+      initialRefresh.current = false;
+    }
+  }, [initialResult]);
 
   useEffect(() => {
     alive.current = true;
@@ -633,6 +883,11 @@ function ActorHq({
       epoch.current++;
       connectionAttempt.current++;
       checkConnection.reset();
+      initialAttempt.current++;
+      initialFlight.current = null;
+      initialRefresh.current = false;
+      importInitialBatch.reset();
+      validateInitialImport.reset();
     };
   }, [actorId, utils]);
 
@@ -643,6 +898,13 @@ function ActorHq({
     connectionAttempt.current++;
     setConnectionResult(null);
     checkConnection.reset();
+    initialAttempt.current++;
+    initialRefresh.current = false;
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
+    importInitialBatch.reset();
+    validateInitialImport.reset();
     permission.current = false;
     setRefreshing(true);
     try {
@@ -685,6 +947,11 @@ function ActorHq({
     const generation = ++epoch.current;
     const route = window.location.href;
     setConnectionResult(null);
+    initialAttempt.current++;
+    initialRefresh.current = false;
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
     setConnectionBusy(true);
     const stillCurrent = () =>
       alive.current &&
@@ -723,6 +990,115 @@ function ActorHq({
     }
   }
 
+  async function runInitialAction(kind: "import" | "check") {
+    const published =
+      live?.hasPublished === true || initialResult?.hasPublished === true;
+    if (
+      lock.current ||
+      busy ||
+      !initialGate.current ||
+      !alive.current ||
+      !identityCheck.current(actorId) ||
+      (kind === "import" ? published : !published)
+    )
+      return;
+    if (
+      kind === "import" &&
+      initialResult?.status === "notdue" &&
+      initialResult.nextDueAt &&
+      Date.now() < Date.parse(initialResult.nextDueAt)
+    )
+      return;
+    lock.current = true;
+    const flight = Symbol("first import action");
+    initialFlight.current = flight;
+    const attempt = ++initialAttempt.current;
+    const generation = ++epoch.current;
+    const route = window.location.href;
+    const settings = latestSettings.current;
+    initialSettings.current = settings;
+    permission.current = false;
+    connectionAttempt.current++;
+    setConnectionResult(null);
+    checkConnection.reset();
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
+    setInitialBusy(kind);
+    const sameActorAction = () =>
+      alive.current &&
+      identityCheck.current(actorId) &&
+      initialFlight.current === flight &&
+      initialAttempt.current === attempt &&
+      window.location.href === route &&
+      latestSettings.current === settings &&
+      !initialStatusError.current;
+    const stillCurrent = () =>
+      sameActorAction() && epoch.current === generation && initialGate.current;
+    let retainedImportResult = false;
+    try {
+      if (kind === "check") {
+        const result = await validateInitialImport.mutateAsync();
+        if (!stillCurrent()) return;
+        const summary = safeInitialValidation(result);
+        initialValidationBoundary.current = boundary.current;
+        setInitialValidation(summary);
+        setInitialCheckFailed(!summary);
+      } else {
+        // One click is one bounded server batch. Never loop, poll or retry.
+        const result = safeInitialImport(
+          await importInitialBatch.mutateAsync()
+        );
+        if (!stillCurrent()) return;
+        initialRefresh.current = true;
+        await Promise.all([
+          utils.managementHq.status.cancel(),
+          utils.managementHq.report.cancel(),
+        ]);
+        if (!sameActorAction()) return;
+        const fresh = await status.refetch({ cancelRefetch: true });
+        if (!sameActorAction()) return;
+        if (fresh.error || !fresh.data) {
+          if (fresh.error) throw fresh.error;
+          throw new Error("Status unavailable");
+        }
+        initialResultBoundary.current = boundary.current;
+        retainedImportResult = true;
+        setInitialResult(result);
+      }
+    } catch (error) {
+      if (!(initialRefresh.current ? sameActorAction() : stillCurrent()))
+        return;
+      const code =
+        (error as { data?: { code?: unknown }; code?: unknown } | null)?.data
+          ?.code ?? (error as { code?: unknown } | null)?.code;
+      initialRefresh.current = false;
+      if (isAuthorityError(error) || code === "PRECONDITION_FAILED") {
+        permission.current = false;
+        epoch.current++;
+        initialAttempt.current++;
+        connectionAttempt.current++;
+        setConnectionAccessRevoked(true);
+        setConnectionResult(null);
+        setInitialResult(null);
+        setInitialValidation(null);
+        setActionError("Management HQ access could not be verified.");
+      } else if (kind === "check") {
+        setInitialCheckFailed(true);
+      } else {
+        initialResultBoundary.current = boundary.current;
+        setInitialResult(safeInitialImport(null));
+      }
+    } finally {
+      if (initialFlight.current === flight) {
+        if (!retainedImportResult) initialRefresh.current = false;
+        initialFlight.current = null;
+        lock.current = false;
+        if (alive.current) setInitialBusy(null);
+      }
+    }
+  }
+
   async function replay(scenario: Scenario) {
     if (
       lock.current ||
@@ -737,6 +1113,11 @@ function ActorHq({
     lock.current = true;
     permission.current = false;
     epoch.current++;
+    initialAttempt.current++;
+    initialRefresh.current = false;
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
     setReplaying(true);
     try {
       await sample.mutateAsync({
@@ -765,9 +1146,41 @@ function ActorHq({
     connectionAttempt.current++;
     setConnectionResult(null);
     checkConnection.reset();
+    initialAttempt.current++;
+    initialRefresh.current = false;
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
+    if (initialFlight.current) {
+      initialFlight.current = null;
+      lock.current = false;
+      setInitialBusy(null);
+      importInitialBatch.reset();
+      validateInitialImport.reset();
+    }
     setYear(nextYear);
     setMonth(nextMonth);
   }
+
+  const visibleInitialResult =
+    initialResult &&
+    initialEnabled &&
+    (initialResultBoundary.current === currentBoundary ||
+      (initialRefresh.current && initialSettings.current === settingsBoundary))
+      ? initialResult
+      : null;
+  const visibleValidation =
+    initialValidation &&
+    initialEnabled &&
+    initialValidationBoundary.current === currentBoundary
+      ? initialValidation
+      : null;
+  const initialPublished =
+    live?.hasPublished === true || visibleInitialResult?.hasPublished === true;
+  const initialWait =
+    visibleInitialResult?.status === "notdue" &&
+    visibleInitialResult.nextDueAt &&
+    Date.now() < Date.parse(visibleInitialResult.nextDueAt);
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
@@ -832,6 +1245,223 @@ function ActorHq({
           </div>
         )}
       </section>
+      {statusReady &&
+        !actionError &&
+        !connectionAccessRevoked &&
+        !authorityError &&
+        mode !== "sample" && (
+          <section
+            className={`${panel} space-y-3`}
+            aria-label="First Orbit import and checks"
+          >
+            <h2 className="font-semibold">First Orbit import and checks</h2>
+            <p className="text-sm text-muted-foreground">
+              Import the first complete reporting dataset in manual steps, then
+              check a limited yearly summary. This does not switch on HQ
+              dashboards, regular report reading or automatic updates.
+            </p>
+            {!initialEnabled ? (
+              <p role="status">
+                Awaiting approved server setup for the first import. Ask the
+                authorised administrator to confirm the reporting connection and
+                first-import approval, keeping regular HQ reading off. No
+                credentials are entered on this page.
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {!initialPublished && (
+                    <Button
+                      disabled={
+                        busy ||
+                        !!initialWait ||
+                        live?.health === "needs_attention" ||
+                        visibleInitialResult?.status === "needs_attention" ||
+                        visibleInitialResult?.status === "disabled"
+                      }
+                      onClick={() => void runInitialAction("import")}
+                    >
+                      {initialBusy === "import"
+                        ? "Importing…"
+                        : visibleInitialResult ||
+                            live?.progress ||
+                            live?.health === "progress" ||
+                            live?.health === "backoff"
+                          ? "Continue first import"
+                          : "Import Orbit figures"}
+                    </Button>
+                  )}
+                  {initialPublished && (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void runInitialAction("check")}
+                    >
+                      {initialBusy === "check"
+                        ? "Checking imported figures…"
+                        : "Check imported figures"}
+                    </Button>
+                  )}
+                </div>
+                {initialBusy && (
+                  <p role="status">
+                    {initialBusy === "import"
+                      ? "Running one import step and checking the current Portal status…"
+                      : "Checking the imported yearly figures…"}
+                  </p>
+                )}
+                {visibleInitialResult && !initialBusy && (
+                  <div
+                    role={
+                      visibleInitialResult.status === "needs_attention"
+                        ? "alert"
+                        : "status"
+                    }
+                    className="space-y-1 text-sm"
+                  >
+                    <p>{initialImportMessage(visibleInitialResult)}</p>
+                    {visibleInitialResult.progress && (
+                      <p>
+                        {visibleInitialResult.progress.pages} pages ·{" "}
+                        {visibleInitialResult.progress.recordsRead} records
+                        read. Partial progress is not a complete publication.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {initialPublished &&
+                  !initialBusy &&
+                  !visibleInitialResult &&
+                  !visibleValidation && (
+                    <p role="status">
+                      A complete import is available for checking. No further
+                      first-import action is available.
+                    </p>
+                  )}
+                {initialCheckFailed && !initialBusy && (
+                  <p role="alert">
+                    Imported figures could not be checked safely. Use Refresh
+                    before trying again. No checks have been marked as passed.
+                  </p>
+                )}
+                {visibleValidation && !initialBusy && (
+                  <div
+                    className="space-y-3"
+                    aria-label="Imported figures summary"
+                  >
+                    <p
+                      role={
+                        visibleValidation.status === "needs_attention"
+                          ? "alert"
+                          : "status"
+                      }
+                    >
+                      {visibleValidation.status === "checks_ready"
+                        ? "Imported yearly figures are ready for manual review. This is not passed live acceptance."
+                        : visibleValidation.status === "awaiting_import"
+                          ? "Awaiting a complete import before figures can be checked."
+                          : "Imported figures need attention. No checks have been marked as passed."}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Checked{" "}
+                      {new Date(visibleValidation.checkedAt).toLocaleString()} ·
+                      Source publication{" "}
+                      {visibleValidation.sourcePublishedAt
+                        ? new Date(
+                            visibleValidation.sourcePublishedAt
+                          ).toLocaleString()
+                        : "not recorded"}
+                    </p>
+                    {visibleValidation.isStale !== false && (
+                      <p
+                        role="alert"
+                        className="text-sm text-amber-600 dark:text-amber-300"
+                      >
+                        {visibleValidation.isStale
+                          ? "Stale source warning: imported figures are not current."
+                          : "Source freshness is unverified."}
+                      </p>
+                    )}
+                    {visibleValidation.status === "checks_ready" && (
+                      <div className="overflow-x-auto">
+                        <table
+                          className={tableClass}
+                          aria-label="Imported yearly figures"
+                        >
+                          <thead>
+                            <tr>
+                              {[
+                                "Year",
+                                "Active bookings",
+                                "Known gross sales · GBP",
+                                "Known gross profit · GBP",
+                                "Cancelled",
+                                "Pending",
+                                "Undated",
+                                "Unattributed",
+                              ].map(label => (
+                                <th key={label} className={cell}>
+                                  {label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleValidation.years.map(row => (
+                              <tr key={row.year}>
+                                <th className={cell}>{row.year}</th>
+                                <td className={cell}>{row.activeBookings}</td>
+                                <td className={cell}>
+                                  {formatHqMoney(row.grossSales)}
+                                  <span className="block text-xs text-muted-foreground">
+                                    {row.grossSalesMissing} missing · known
+                                    source sum only
+                                  </span>
+                                </td>
+                                <td className={cell}>
+                                  {formatHqMoney(row.grossProfit)}
+                                  <span className="block text-xs text-muted-foreground">
+                                    {row.grossProfitMissing} missing · known
+                                    source sum only
+                                  </span>
+                                </td>
+                                <td className={cell}>
+                                  {row.cancelledBookings}
+                                </td>
+                                <td className={cell}>{row.pendingBookings}</td>
+                                <td className={cell}>{row.undatedBookings}</td>
+                                <td className={cell}>
+                                  {row.unattributedBookings}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {!visibleValidation.years.length && (
+                          <p>
+                            No dated yearly figures returned. Missing values are
+                            not zero.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+            <p className="text-sm font-medium text-amber-600 dark:text-amber-300">
+              Provisional attribution is not the original seller. Manual
+              amendment checks and cancellation financial checks remain pending.
+              Live acceptance has not passed.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Each import click runs one step only. Continue manually when
+              permitted. No background import, automatic retry, polling or
+              scheduled update is started here. Orbit source GBP figures remain
+              authoritative; missing is not £0.
+            </p>
+          </section>
+        )}
       {statusReady && !actionError && live && <LiveConnection live={live} />}
       {showSample && (
         <>
@@ -943,7 +1573,12 @@ function ActorHq({
               key={label}
               variant={view === label ? "default" : "outline"}
               aria-pressed={view === label}
-              onClick={() => setView(label)}
+              disabled={!!initialBusy}
+              onClick={() => {
+                if (initialBusy || initialValidation || initialResult)
+                  changePeriod(year, month);
+                setView(label);
+              }}
             >
               {label}
             </Button>
@@ -956,7 +1591,7 @@ function ActorHq({
               aria-label="Reporting year"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={year}
-              disabled={replaying || connectionBusy}
+              disabled={replaying || connectionBusy || !!initialBusy}
               onChange={event =>
                 changePeriod(parseInt(event.target.value, 10), month)
               }
@@ -976,7 +1611,7 @@ function ActorHq({
               aria-label="Reporting month"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={month ?? "all"}
-              disabled={replaying || connectionBusy}
+              disabled={replaying || connectionBusy || !!initialBusy}
               onChange={event =>
                 changePeriod(
                   year,

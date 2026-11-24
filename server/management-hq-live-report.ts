@@ -7,20 +7,36 @@ import type { HqLiveStatusDto } from "./management-hq-live-service";
 
 /** Only a single report owns this cache. Rejections propagate; never salvage a failed merge. */
 export function memoizeHqReportDirectory(
-  directory: HqIdentityDirectory
+  directory: HqIdentityDirectory,
+  guard?: () => Promise<void>
 ): HqIdentityDirectory {
+  const guarded = <T>(work: () => Promise<T>): Promise<T> => {
+    if (!guard) return work();
+    return (async () => {
+      await guard();
+      try {
+        return await work();
+      } finally {
+        await guard();
+      }
+    })();
+  };
   const memo = (
     resolve: NonNullable<HqIdentityDirectory["resolveCurrentOwner"]>
   ) => {
     const links = new Map<string, ReturnType<typeof resolve>>();
     return (link: HqWireMemberLink) => {
       const key = JSON.stringify(link);
-      if (!links.has(key)) links.set(key, resolve(link));
+      if (!links.has(key))
+        links.set(
+          key,
+          guarded(() => resolve(link))
+        );
       return links.get(key)!;
     };
   };
   return {
-    resolve: evidence => directory.resolve(evidence),
+    resolve: evidence => guarded(() => directory.resolve(evidence)),
     ...(directory.resolveCurrentOwner
       ? {
           resolveCurrentOwner: memo(link =>
@@ -41,12 +57,13 @@ export function memoizeHqReportDirectory(
 export async function getHqLiveReport(
   state: HqImplementedState,
   db: unknown,
-  range: { year: number; month?: number }
+  range: { year: number; month?: number },
+  guard?: () => Promise<void>
 ): Promise<HqReport> {
   // The real existing-person directory is mandatory. No fixture directory in live mode.
   const report = await getHqReport(
     state,
-    memoizeHqReportDirectory(createPortalHqImplementedDirectory(db)),
+    memoizeHqReportDirectory(createPortalHqImplementedDirectory(db), guard),
     range
   );
   if (report.status !== "available") throw new Error("HQ_REPORT_UNAVAILABLE");

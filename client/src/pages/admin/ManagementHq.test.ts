@@ -33,6 +33,8 @@ const mock = vi.hoisted(() => ({
   mutationCalls: [] as { path: string; actorId: number; input: any }[],
   mutationResets: [] as { path: string; actorId: number }[],
   connectionMutateAsync: vi.fn(),
+  importMutateAsync: vi.fn(),
+  validationMutateAsync: vi.fn(),
   refetch: vi.fn(),
   cancel: vi.fn(),
   csv: vi.fn(),
@@ -121,6 +123,10 @@ vi.mock("@/lib/trpc", async () => {
                   try {
                     if (path === "managementHq.checkConnection")
                       return await mock.connectionMutateAsync(input);
+                    if (path === "managementHq.importInitialBatch")
+                      return await mock.importMutateAsync(input);
+                    if (path === "managementHq.validateInitialImport")
+                      return await mock.validationMutateAsync(input);
                     await mock.mutationWait;
                     if (mock.mutationError) throw mock.mutationError;
                     if (input === undefined) return mock.connectionResult;
@@ -425,6 +431,8 @@ beforeEach(() => {
   mock.mutationWait = undefined;
   mock.mutationError = null;
   mock.connectionMutateAsync.mockReset();
+  mock.importMutateAsync.mockReset();
+  mock.validationMutateAsync.mockReset();
   mock.connectionMutateAsync.mockImplementation(async () => {
     await mock.mutationWait;
     if (mock.mutationError) throw mock.mutationError;
@@ -1944,6 +1952,860 @@ describe("Orbit connection check dedicated lifecycle DOM regressions", () => {
       expect(button("Check Orbit connection").disabled).toBe(false);
       expect(button("Refresh").disabled).toBe(false);
       expect(currentReport()?.getAttribute("data-actor")).toBe("48");
+    }
+  );
+});
+
+function firstImportFixture(patch: Record<string, any> = {}) {
+  return liveFixture({
+    readEnabled: false,
+    hasPublished: false,
+    health: "no_data",
+    progress: null,
+    generationId: null,
+    stateVersion: null,
+    nextDueAt: null,
+    ...patch,
+  });
+}
+function importPayload(patch: Record<string, unknown> = {}) {
+  return {
+    status: "progress",
+    message: "NEVER-RENDER secret message",
+    nextDueAt: null,
+    hasPublished: false,
+    progress: { pages: 1, recordsRead: 25 },
+    errorCode: null,
+    ...patch,
+  };
+}
+function validationPayload(patch: Record<string, unknown> = {}) {
+  return {
+    status: "checks_ready",
+    message: "NEVER-RENDER message",
+    generationId: 12,
+    checkedAt: "2026-11-24T12:01:00.000Z",
+    sourcePublishedAt: "2026-11-24T12:00:00.000Z",
+    isStale: false,
+    manualChecksPending: true,
+    limitations: ["NEVER-RENDER private URL"],
+    years: [
+      {
+        year: 2026,
+        activeBookings: 4,
+        grossSales: "900719925474099312345678.1234",
+        grossSalesMissing: 2,
+        grossProfit: null,
+        grossProfitMissing: 4,
+        cancelledBookings: 2,
+        pendingBookings: 1,
+        undatedBookings: 3,
+        unattributedBookings: 4,
+      },
+    ],
+    ...patch,
+  };
+}
+function firstPanel() {
+  return container.querySelector(
+    '[aria-label="First Orbit import and checks"]'
+  );
+}
+function initialCalls(kind: "importInitialBatch" | "validateInitialImport") {
+  return mock.mutationCalls.filter(
+    call => call.path === `managementHq.${kind}`
+  );
+}
+function assertNoDashboardActivation() {
+  expect(currentReport()).toBeNull();
+  expect(mock.hooks.some(hook => hook.path === "managementHq.report")).toBe(
+    false
+  );
+  expect(mock.csv).not.toHaveBeenCalled();
+  expect(sampleMutations()).toHaveLength(0);
+  expect(mock.data["managementHq.status"].sampleEnabled).toBe(false);
+  expect(mock.data["managementHq.status"].live.readEnabled).toBe(false);
+}
+
+describe("Manual first Orbit import and validation on actual DOM", () => {
+  it.each([
+    { configured: false, configurationCode: "CONFIG_INCOMPLETE" },
+    { configurationCode: "CONFIG_INCOMPLETE" },
+    { lastErrorCode: "CONFIG_INCOMPLETE" },
+    { syncEnabled: false },
+    { readEnabled: true },
+  ])(
+    "shows setup guidance without actions unless approved live sync-only setup is present %j",
+    async patch => {
+      firstImportFixture(patch);
+      await render();
+      expect(firstPanel()?.textContent).toContain(
+        "Awaiting approved server setup"
+      );
+      expect(firstPanel()?.querySelector("button")).toBeNull();
+      expect(container.querySelector("input, textarea, form")).toBeNull();
+      expect(initialCalls("importInitialBatch")).toHaveLength(0);
+      expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    }
+  );
+
+  it("disabled production shows plain setup guidance without assuming Railway approval", async () => {
+    mock.data["managementHq.status"] = {
+      reportMode: "disabled",
+      sampleEnabled: false,
+      hasSample: false,
+      liveConfigured: false,
+      stateVersion: null,
+    };
+    await render();
+    expect(firstPanel()?.textContent).toContain(
+      "Awaiting approved server setup"
+    );
+    expect(firstPanel()?.querySelector("button")).toBeNull();
+    expect(mock.mutationCalls).toHaveLength(0);
+  });
+
+  it("never imports or validates on mount, rerender, focus, Refresh, filter changes, elapsed time or browser storage", async () => {
+    firstImportFixture();
+    const get = vi.spyOn(Storage.prototype, "getItem");
+    const set = vi.spyOn(Storage.prototype, "setItem");
+    const remove = vi.spyOn(Storage.prototype, "removeItem");
+    await render();
+    await render();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await click("Refresh");
+    await change("Reporting month", "2");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900_000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(mock.mutationCalls).toHaveLength(0);
+    expect(mock.hooks.some(hook => hook.options?.refetchInterval)).toBe(false);
+    expect(
+      mock.hooks.some(hook =>
+        /importInitialBatch|validateInitialImport/.test(hook.path)
+      )
+    ).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    assertNoDashboardActivation();
+  });
+
+  it("same-tick double click runs exactly one void batch, locks competing controls and refreshes status once", async () => {
+    firstImportFixture();
+    const pending = deferred<any>();
+    mock.importMutateAsync.mockReturnValue(pending.promise);
+    await render();
+    const start = button("Import Orbit figures");
+    await act(async () => {
+      start.click();
+      start.click();
+    });
+    expect(initialCalls("importInitialBatch")).toEqual([
+      {
+        path: "managementHq.importInitialBatch",
+        actorId: 47,
+        input: undefined,
+      },
+    ]);
+    for (const label of [
+      "Importing…",
+      "Refresh",
+      "Check Orbit connection",
+      "Executive Dashboard",
+      "Financial Performance",
+      "Agent Activity",
+    ])
+      expect(button(label).disabled).toBe(true);
+    for (const label of ["Reporting year", "Reporting month"])
+      expect(
+        container.querySelector<HTMLSelectElement>(
+          `select[aria-label="${label}"]`
+        )!.disabled
+      ).toBe(true);
+    await click("Importing…");
+    await click("Refresh");
+    await click("Check Orbit connection");
+    expect(mock.mutationCalls).toHaveLength(1);
+    await act(async () => pending.resolve(importPayload()));
+    expect(firstPanel()?.textContent).toContain("One import step completed");
+    expect(firstPanel()?.textContent).toContain("1 pages · 25 records read");
+    expect(button("Continue first import").disabled).toBe(false);
+    expect(mock.refetch.mock.calls).toEqual([
+      ["managementHq.status", { cancelRefetch: true }],
+    ]);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    expect(container.textContent).not.toContain("NEVER-RENDER");
+    assertNoDashboardActivation();
+  });
+
+  it("continues only once per explicit click and never guesses completion after 25 records", async () => {
+    firstImportFixture();
+    mock.importMutateAsync.mockResolvedValue(importPayload());
+    await render();
+    await click("Import Orbit figures");
+    await render();
+    expect(initialCalls("importInitialBatch")).toHaveLength(1);
+    expect(button("Continue first import").disabled).toBe(false);
+    await click("Continue first import");
+    expect(initialCalls("importInitialBatch")).toHaveLength(2);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    expect(firstPanel()?.textContent).not.toContain("First import complete");
+    assertNoDashboardActivation();
+  });
+
+  it("notdue shows a local wait and elapsed time never auto-continues", async () => {
+    firstImportFixture();
+    const due = new Date(Date.now() + 60_000).toISOString();
+    mock.importMutateAsync.mockResolvedValue(
+      importPayload({ status: "notdue", nextDueAt: due, progress: null })
+    );
+    await render();
+    await click("Import Orbit figures");
+    expect(firstPanel()?.textContent).toContain(
+      `Wait until ${new Date(due).toLocaleString()}, then continue`
+    );
+    expect(button("Continue first import").disabled).toBe(true);
+    await click("Continue first import");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(initialCalls("importInitialBatch")).toHaveLength(1);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    assertNoDashboardActivation();
+  });
+
+  it.each(["applied", "already_complete"])(
+    "%s disables first import, handles its own published version refresh and checks only on explicit click",
+    async status => {
+      firstImportFixture();
+      mock.importMutateAsync.mockResolvedValue(
+        importPayload({ status, hasPublished: true, progress: null })
+      );
+      mock.refetch.mockImplementation(async () => {
+        mock.data["managementHq.status"].stateVersion = 9;
+        Object.assign(mock.data["managementHq.status"].live, {
+          stateVersion: 9,
+          generationId: 12,
+          hasPublished: true,
+          health: "ready",
+          sourcePublishedAt: "2026-11-24T12:00:00Z",
+        });
+        return { data: mock.data["managementHq.status"], error: null };
+      });
+      mock.validationMutateAsync.mockResolvedValue(validationPayload());
+      await render();
+      await click("Import Orbit figures");
+      expect(firstPanel()?.textContent).toContain("First import complete");
+      expect(firstPanel()?.textContent).not.toContain("Continue first import");
+      expect(button("Check imported figures").disabled).toBe(false);
+      expect(initialCalls("validateInitialImport")).toHaveLength(0);
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      await click("Check imported figures");
+      expect(initialCalls("validateInitialImport")).toEqual([
+        {
+          path: "managementHq.validateInitialImport",
+          actorId: 47,
+          input: undefined,
+        },
+      ]);
+      const summary = firstPanel()?.querySelector(
+        '[aria-label="Imported figures summary"]'
+      );
+      expect(summary?.textContent).toContain(
+        "£900,719,925,474,099,312,345,678.1234"
+      );
+      expect(summary?.textContent).toContain(
+        "2 missing · known source sum only"
+      );
+      expect(summary?.textContent).toContain("Missing4 missing");
+      expect(firstPanel()?.textContent).toContain(
+        "Manual amendment checks and cancellation financial checks remain pending"
+      );
+      expect(firstPanel()?.textContent).toContain(
+        "This is not passed live acceptance"
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      assertNoDashboardActivation();
+    }
+  );
+
+  it("validation double clicks lock once, remove previous private summary immediately, and never automatically reread", async () => {
+    firstImportFixture({ hasPublished: true });
+    mock.validationMutateAsync.mockResolvedValue(validationPayload());
+    await render();
+    await click("Check imported figures");
+    expect(
+      firstPanel()?.querySelector('[aria-label="Imported figures summary"]')
+    ).toBeTruthy();
+    const pending = deferred<any>();
+    mock.validationMutateAsync.mockReturnValue(pending.promise);
+    const check = button("Check imported figures");
+    await act(async () => {
+      check.click();
+      check.click();
+    });
+    expect(initialCalls("validateInitialImport")).toHaveLength(2);
+    expect(
+      firstPanel()?.querySelector('[aria-label="Imported figures summary"]')
+    ).toBeNull();
+    expect(button("Checking imported figures…").disabled).toBe(true);
+    expect(button("Refresh").disabled).toBe(true);
+    await act(async () =>
+      pending.resolve(validationPayload({ isStale: true }))
+    );
+    expect(firstPanel()?.textContent).toContain("Stale source warning");
+    expect(mock.refetch).not.toHaveBeenCalled();
+    assertNoDashboardActivation();
+  });
+
+  it.each(["disabled", "busy", "needs_attention"])(
+    "%s import result has fixed staff text, not source messages",
+    async status => {
+      firstImportFixture();
+      mock.importMutateAsync.mockResolvedValue(importPayload({ status }));
+      await render();
+      await click("Import Orbit figures");
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      expect(initialCalls("validateInitialImport")).toHaveLength(0);
+      assertNoDashboardActivation();
+    }
+  );
+
+  it.each([
+    null,
+    undefined,
+    {},
+    { status: "__proto__" },
+    importPayload({ progress: { pages: "NEVER-RENDER", recordsRead: -1 } }),
+    importPayload({ status: "applied", hasPublished: false }),
+    importPayload({ nextDueAt: "NEVER-RENDER" }),
+  ])(
+    "malformed import DTO never invents completion or displays raw fields %j",
+    async payload => {
+      firstImportFixture();
+      mock.importMutateAsync.mockResolvedValue(payload);
+      await render();
+      await click("Import Orbit figures");
+      expect(firstPanel()?.textContent).toContain(
+        "first import needs attention"
+      );
+      expect(firstPanel()?.textContent).not.toContain("First import complete");
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      assertNoDashboardActivation();
+    }
+  );
+
+  it.each([
+    null,
+    undefined,
+    {},
+    validationPayload({ checkedAt: "NEVER-RENDER" }),
+    validationPayload({ manualChecksPending: false }),
+    validationPayload({ years: "NEVER-RENDER" }),
+    validationPayload({
+      years: [{ ...validationPayload().years[0], activeBookings: -1 }],
+    }),
+    validationPayload({
+      years: [{ ...validationPayload().years[0], grossSales: "NEVER-RENDER" }],
+    }),
+    validationPayload({ isStale: "NEVER-RENDER" }),
+  ])(
+    "malformed validation DTO safely withholds the entire summary %j",
+    async payload => {
+      firstImportFixture({ hasPublished: true });
+      mock.validationMutateAsync.mockResolvedValue(payload);
+      await render();
+      await click("Check imported figures");
+      expect(firstPanel()?.textContent).toContain(
+        "could not be checked safely"
+      );
+      expect(
+        firstPanel()?.querySelector('[aria-label="Imported yearly figures"]')
+      ).toBeNull();
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      assertNoDashboardActivation();
+    }
+  );
+
+  it.each(["awaiting_import", "needs_attention"])(
+    "%s validation never displays partial money rows",
+    async status => {
+      firstImportFixture({ hasPublished: true });
+      mock.validationMutateAsync.mockResolvedValue(
+        validationPayload({ status })
+      );
+      await render();
+      await click("Check imported figures");
+      expect(
+        firstPanel()?.querySelector('[aria-label="Imported yearly figures"]')
+      ).toBeNull();
+      expect(firstPanel()?.textContent).not.toContain("900,719");
+      assertNoDashboardActivation();
+    }
+  );
+});
+
+describe("First import and checks dedicated lifecycle DOM regressions", () => {
+  it.each(["import", "check"] as const)(
+    "%s stays unavailable until both fresh authority and status observers succeed",
+    async kind => {
+      firstImportFixture({ hasPublished: kind === "check" });
+      const pending = deferred();
+      mock.queryWait["managementHq.status"] = pending.promise;
+      await render();
+      expect(firstPanel()).toBeNull();
+      expect(mock.mutationCalls).toHaveLength(0);
+      await act(async () => pending.resolve());
+      expect(
+        button(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        ).disabled
+      ).toBe(false);
+    }
+  );
+
+  it.each(["import", "check"] as const)(
+    "%s cannot start with denied cached current authority",
+    async kind => {
+      firstImportFixture({ hasPublished: kind === "check" });
+      mock.data["auth.me"] = { ...mock.user, role: "admin" };
+      await render();
+      expect(firstPanel()).toBeNull();
+      expect(mock.mutationCalls).toHaveLength(0);
+    }
+  );
+
+  for (const kind of ["import", "check"] as const) {
+    it.each([
+      "actor",
+      "revoked",
+      "auth-pending",
+      "unmount",
+      "route",
+      "month",
+      "year",
+      "mode",
+      "status-error",
+      "status-pending",
+      "generation",
+      "settings",
+      "freshness-settings",
+      "sync-settings",
+      "configuration-error",
+      "live-configured",
+      "source",
+    ])(
+      `late ${kind} result is withheld after %s and cannot automatically refresh or check`,
+      async changeType => {
+        firstImportFixture({ hasPublished: kind === "check" });
+        const pending = deferred<any>();
+        (kind === "import"
+          ? mock.importMutateAsync
+          : mock.validationMutateAsync
+        ).mockReturnValue(pending.promise);
+        await render();
+        await click(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        );
+        if (changeType === "source") {
+          mock.data["managementHq.status"].live.sourcePublishedAt =
+            "2026-11-24T12:02:00Z";
+          await render();
+        } else await connectionBoundaryChange(changeType);
+        await act(async () =>
+          pending.resolve(
+            kind === "import" ? importPayload() : validationPayload()
+          )
+        );
+        expect(container.textContent).not.toContain(
+          "One import step completed"
+        );
+        expect(container.textContent).not.toContain(
+          "Imported yearly figures are ready"
+        );
+        expect(container.textContent).not.toContain("NEVER-RENDER");
+        expect(mock.refetch).not.toHaveBeenCalled();
+        expect(initialCalls("importInitialBatch")).toHaveLength(
+          kind === "import" ? 1 : 0
+        );
+        expect(initialCalls("validateInitialImport")).toHaveLength(
+          kind === "check" ? 1 : 0
+        );
+        if (
+          !["revoked", "auth-pending", "unmount", "status-pending"].includes(
+            changeType
+          )
+        )
+          expect(button("Refresh").disabled).toBe(false);
+      }
+    );
+
+    it.each(["route", "mode", "month", "settings"])(
+      `late ${kind} access rejection after %s does not revoke a different boundary`,
+      async changeType => {
+        firstImportFixture({ hasPublished: kind === "check" });
+        const pending = deferred<any>();
+        (kind === "import"
+          ? mock.importMutateAsync
+          : mock.validationMutateAsync
+        ).mockReturnValue(pending.promise);
+        await render();
+        await click(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        );
+        await connectionBoundaryChange(changeType);
+        await act(async () =>
+          pending.reject({
+            data: { code: "FORBIDDEN" },
+            message: "NEVER-RENDER",
+          })
+        );
+        expect(container.textContent).not.toContain(
+          "Management HQ access could not be verified."
+        );
+        expect(button("Refresh").disabled).toBe(false);
+        expect(mock.refetch).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each([
+      "FORBIDDEN",
+      "UNAUTHORIZED",
+      "UNAUTHENTICATED",
+      "PRECONDITION_FAILED",
+    ])(
+      `current ${kind} %s rejection suppresses all HQ actions until fresh successful Refresh`,
+      async code => {
+        firstImportFixture({ hasPublished: kind === "check" });
+        (kind === "import"
+          ? mock.importMutateAsync
+          : mock.validationMutateAsync
+        ).mockRejectedValue({ data: { code }, message: "NEVER-RENDER" });
+        await render();
+        await click(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        );
+        expect(firstPanel()).toBeNull();
+        expect(container.textContent).toContain(
+          "Management HQ access could not be verified."
+        );
+        expect(
+          container.querySelector('[aria-label="Live reporting connection"]')
+        ).toBeNull();
+        expect(button("Check Orbit connection").disabled).toBe(true);
+        expect(container.textContent).not.toContain("NEVER-RENDER");
+        mock.refetch.mockResolvedValueOnce({
+          data: undefined,
+          error: { data: { code: "FORBIDDEN" } },
+        });
+        await click("Refresh");
+        expect(firstPanel()).toBeNull();
+        await click("Refresh");
+        expect(firstPanel()).toBeTruthy();
+        expect(button("Check Orbit connection").disabled).toBe(false);
+        assertNoDashboardActivation();
+      }
+    );
+
+    it.each(["resolve", "reject"])(
+      `actor A's late ${kind} %s never resets or unlocks B's pending action`,
+      async settlement => {
+        firstImportFixture({ hasPublished: kind === "check" });
+        const actorA = deferred<any>();
+        const actorB = deferred<any>();
+        (kind === "import"
+          ? mock.importMutateAsync
+          : mock.validationMutateAsync
+        )
+          .mockImplementationOnce(() => actorA.promise)
+          .mockImplementationOnce(() => actorB.promise);
+        await render();
+        await click(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        );
+        mock.user = { ...mock.user, id: 48 };
+        await render();
+        await click(
+          kind === "import" ? "Import Orbit figures" : "Check imported figures"
+        );
+        const before = mock.mutationResets.filter(
+          reset => reset.actorId === 48
+        ).length;
+        await act(async () =>
+          settlement === "resolve"
+            ? actorA.resolve(
+                kind === "import" ? importPayload() : validationPayload()
+              )
+            : actorA.reject({
+                data: { code: "FORBIDDEN" },
+                message: "NEVER-RENDER",
+              })
+        );
+        expect(
+          mock.mutationResets.filter(reset => reset.actorId === 48)
+        ).toHaveLength(before);
+        expect(button("Refresh").disabled).toBe(true);
+        expect(
+          button(
+            kind === "import" ? "Importing…" : "Checking imported figures…"
+          ).disabled
+        ).toBe(true);
+        expect(container.textContent).not.toContain(
+          "Management HQ access could not be verified."
+        );
+        expect(mock.refetch).not.toHaveBeenCalled();
+        await act(async () =>
+          actorB.resolve(
+            kind === "import" ? importPayload() : validationPayload()
+          )
+        );
+        expect(button("Refresh").disabled).toBe(false);
+        expect(
+          initialCalls(
+            kind === "import" ? "importInitialBatch" : "validateInitialImport"
+          ).map(call => call.actorId)
+        ).toEqual([47, 48]);
+      }
+    );
+  }
+
+  it.each([
+    "actor",
+    "revoked",
+    "auth-pending",
+    "mode",
+    "status-error",
+    "status-pending",
+    "generation",
+    "settings",
+    "freshness-settings",
+    "sync-settings",
+    "configuration-error",
+    "live-configured",
+    "month",
+    "year",
+    "source",
+    "refresh",
+    "health-check",
+    "view",
+  ])(
+    "stored validation summary is invalidated on %s rather than becoming read/export authority",
+    async changeType => {
+      firstImportFixture({ hasPublished: true });
+      mock.validationMutateAsync.mockResolvedValue(validationPayload());
+      await render();
+      await click("Check imported figures");
+      expect(
+        firstPanel()?.querySelector('[aria-label="Imported yearly figures"]')
+      ).toBeTruthy();
+      if (changeType === "source") {
+        mock.data["managementHq.status"].live.sourceObservationAt =
+          "2026-11-24T12:02:00Z";
+        await render();
+      } else if (changeType === "refresh") await click("Refresh");
+      else if (changeType === "health-check")
+        await click("Check Orbit connection");
+      else if (changeType === "view") await click("Financial Performance");
+      else await connectionBoundaryChange(changeType);
+      expect(
+        firstPanel()?.querySelector('[aria-label="Imported yearly figures"]') ??
+          null
+      ).toBeNull();
+      expect(container.textContent).not.toContain("900,719");
+      expect(mock.csv).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["import", "check"] as const)(
+    "settings invalidation clears %s UI busy before settlement, and old flight cannot unlock the next action",
+    async kind => {
+      firstImportFixture({ hasPublished: kind === "check" });
+      const old = deferred<any>();
+      const next = deferred<any>();
+      (kind === "import"
+        ? mock.importMutateAsync
+        : mock.validationMutateAsync
+      ).mockReturnValue(old.promise);
+      await render();
+      await click(
+        kind === "import" ? "Import Orbit figures" : "Check imported figures"
+      );
+      await connectionBoundaryChange("settings");
+      expect(button("Refresh").disabled).toBe(false);
+      mock.connectionMutateAsync.mockReturnValue(next.promise);
+      await click("Check Orbit connection");
+      expect(button("Refresh").disabled).toBe(true);
+      await act(async () =>
+        old.resolve(kind === "import" ? importPayload() : validationPayload())
+      );
+      expect(button("Refresh").disabled).toBe(true);
+      expect(button("Checking…").disabled).toBe(true);
+      expect(mock.refetch).not.toHaveBeenCalled();
+      await act(async () => next.resolve(connectionPayload()));
+      expect(button("Refresh").disabled).toBe(false);
+    }
+  );
+
+  it("a failed status refresh after an import exposes no guessed totals and no second batch", async () => {
+    firstImportFixture();
+    mock.importMutateAsync.mockResolvedValue(importPayload());
+    mock.refetch.mockResolvedValue({
+      data: undefined,
+      error: {
+        data: { code: "INTERNAL_SERVER_ERROR" },
+        message: "NEVER-RENDER",
+      },
+    });
+    await render();
+    await click("Import Orbit figures");
+    expect(firstPanel()?.textContent).toContain("first import needs attention");
+    expect(initialCalls("importInitialBatch")).toHaveLength(1);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("NEVER-RENDER");
+    assertNoDashboardActivation();
+  });
+});
+
+describe("First import final manual-only boundary checks", () => {
+  it("a wait can be continued after its due time only by another manual click", async () => {
+    firstImportFixture();
+    const start = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const due = new Date(start + 60_000).toISOString();
+    mock.importMutateAsync
+      .mockResolvedValueOnce(
+        importPayload({ status: "notdue", nextDueAt: due, progress: null })
+      )
+      .mockResolvedValueOnce(
+        importPayload({ progress: { pages: 2, recordsRead: 50 } })
+      );
+    await render();
+    await click("Import Orbit figures");
+    expect(button("Continue first import").disabled).toBe(true);
+    now.mockReturnValue(start + 60_001);
+    await render();
+    expect(initialCalls("importInitialBatch")).toHaveLength(1);
+    expect(button("Continue first import").disabled).toBe(false);
+    await click("Continue first import");
+    expect(initialCalls("importInitialBatch")).toHaveLength(2);
+    expect(firstPanel()?.textContent).toContain("2 pages · 50 records read");
+    assertNoDashboardActivation();
+  });
+
+  it("a stored validation summary disappears when the route changes and renders again", async () => {
+    firstImportFixture({ hasPublished: true });
+    mock.validationMutateAsync.mockResolvedValue(validationPayload());
+    await render();
+    await click("Check imported figures");
+    expect(
+      firstPanel()?.querySelector('[aria-label="Imported yearly figures"]')
+    ).toBeTruthy();
+    await act(async () => window.history.replaceState({}, "", "/super-admin"));
+    await render();
+    expect(
+      firstPanel()?.querySelector('[aria-label="Imported yearly figures"]') ??
+        null
+    ).toBeNull();
+    expect(container.textContent).not.toContain("900,719");
+    expect(mock.csv).not.toHaveBeenCalled();
+  });
+
+  it("own status fetch may temporarily become pending and publish a new version without losing fixed completed-import copy", async () => {
+    firstImportFixture();
+    mock.importMutateAsync.mockResolvedValue(
+      importPayload({ status: "applied", hasPublished: true, progress: null })
+    );
+    const statusRead = deferred<any>();
+    mock.refetch.mockReturnValue(statusRead.promise);
+    await render();
+    await click("Import Orbit figures");
+    mock.fetching["managementHq.status"] = true;
+    await render();
+    expect(firstPanel()).toBeNull();
+    expect(button("Refresh").disabled).toBe(true);
+    mock.fetching["managementHq.status"] = false;
+    Object.assign(mock.data["managementHq.status"], { stateVersion: 9 });
+    Object.assign(mock.data["managementHq.status"].live, {
+      hasPublished: true,
+      stateVersion: 9,
+      generationId: 12,
+    });
+    await render();
+    await act(async () =>
+      statusRead.resolve({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+    );
+    expect(firstPanel()?.textContent).toContain("First import complete");
+    expect(button("Check imported figures").disabled).toBe(false);
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    assertNoDashboardActivation();
+  });
+
+  it("a settings change during the owned post-import status fetch clears busy and suppresses late completion", async () => {
+    firstImportFixture();
+    mock.importMutateAsync.mockResolvedValue(importPayload());
+    const statusRead = deferred<any>();
+    mock.refetch.mockReturnValue(statusRead.promise);
+    await render();
+    await click("Import Orbit figures");
+    await connectionBoundaryChange("sync-settings");
+    expect(button("Refresh").disabled).toBe(false);
+    expect(firstPanel()?.textContent).toContain(
+      "Awaiting approved server setup"
+    );
+    await act(async () =>
+      statusRead.resolve({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+    );
+    expect(firstPanel()?.textContent).not.toContain(
+      "One import step completed"
+    );
+    expect(initialCalls("importInitialBatch")).toHaveLength(1);
+    expect(initialCalls("validateInitialImport")).toHaveLength(0);
+    expect(button("Refresh").disabled).toBe(false);
+  });
+});
+
+describe("Owned post-import status refresh access failures", () => {
+  it.each(["FORBIDDEN", "PRECONDITION_FAILED"])(
+    "fresh %s status rejection suppresses first-import/check panel until successful Refresh",
+    async code => {
+      firstImportFixture();
+      mock.importMutateAsync.mockResolvedValue(importPayload());
+      mock.refetch.mockResolvedValueOnce({
+        data: undefined,
+        error: { data: { code }, message: "NEVER-RENDER" },
+      });
+      await render();
+      await click("Import Orbit figures");
+      expect(firstPanel()).toBeNull();
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      expect(container.textContent).toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      await click("Refresh");
+      expect(firstPanel()).toBeTruthy();
+      assertNoDashboardActivation();
     }
   );
 });

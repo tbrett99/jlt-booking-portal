@@ -24,6 +24,12 @@ import {
   checkHqConnection,
 } from "./management-hq-connection-check";
 import {
+  captureHqInitialImportBinding,
+  importHqInitialBatch,
+} from "./management-hq-initial-import";
+import { validateHqInitialPublication } from "./management-hq-initial-validation";
+import type { HqInitialValidationResult } from "../shared/management-hq-initial-validation";
+import {
   getHqLiveReport,
   withHqLiveReportMetadata,
 } from "./management-hq-live-report";
@@ -96,6 +102,27 @@ const range = z
   })
   .strict();
 
+function initialImportGuard(
+  db: unknown,
+  user: Parameters<typeof requireFreshHqSuperAdmin>[1],
+  start: ReturnType<typeof boundary>
+) {
+  const assertBinding = captureHqInitialImportBinding();
+  let failure: { error: unknown } | null = null;
+  return async () => {
+    try {
+      await requireFreshHqSuperAdmin(db, user);
+      assertBinding();
+      assertBoundary(start);
+    } catch (error) {
+      failure ??= { error };
+    }
+    // Keep the whole action denied after any failed guard, including when the
+    // runner/validator catches it and a later authority read happens to recover.
+    if (failure) throw failure.error;
+  };
+}
+
 async function readReport(
   db: unknown,
   user: Parameters<typeof requireFreshHqSuperAdmin>[1],
@@ -159,6 +186,100 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  importInitialBatch: procedure.input(z.void()).mutation(async ({ ctx }) => {
+    try {
+      const start = boundary();
+      const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+      const result = await importHqInitialBatch({
+        config: start.config,
+        guard,
+      });
+      await guard();
+      return result;
+    } catch (error) {
+      safeError(error);
+    }
+  }),
+  validateInitialImport: procedure.input(z.void()).mutation(async ({ ctx }) => {
+    try {
+      const start = boundary();
+      const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+      await guard();
+      if (
+        !start.configuration.configured ||
+        !start.configuration.syncEnabled ||
+        start.configuration.readEnabled
+      )
+        deny(
+          "Initial publication checks require valid sync-on/read-off settings. Dashboards and automatic updates remain off."
+        );
+      const service = createHqLiveService({ config: start.config });
+      // Guard rejected awaits as well: provider/SQL failure is not permission to
+      // release a stale result to a revoked actor or changed source binding.
+      const read = async <T>(work: () => Promise<T>): Promise<T> => {
+        await guard();
+        let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+        try {
+          outcome = { ok: true, value: await work() };
+        } catch (error) {
+          outcome = { ok: false, error };
+        }
+        await guard();
+        if (!outcome.ok) throw outcome.error;
+        return outcome.value;
+      };
+      const before = await read(() => service.getStatus());
+      let result: HqInitialValidationResult;
+      if (!before.hasPublished) {
+        result = {
+          status:
+            before.health === "needs_attention"
+              ? "needs_attention"
+              : "awaiting_import",
+          message:
+            "A complete initial reporting publication is required. Partial staging is unavailable; manual checks remain pending.",
+          generationId: null,
+          checkedAt: new Date().toISOString(),
+          sourcePublishedAt: null,
+          isStale: null,
+          years: [],
+          manualChecksPending: true,
+          limitations: [
+            "Normal reports, read access and recurring updates are not enabled or accepted by these checks.",
+          ],
+        };
+      } else {
+        const state = await read(() => service.readValidationSnapshot());
+        if (!state)
+          deny(
+            "A complete initial reporting publication could not be verified. No partial checks have been returned."
+          );
+        result = await read(() =>
+          validateHqInitialPublication(state!, ctx.hqDb, before, guard)
+        );
+      }
+      const after = await read(() => service.getStatus());
+      if (
+        after.stateVersion !== before.stateVersion ||
+        after.generationId !== before.generationId ||
+        after.hasPublished !== before.hasPublished ||
+        (result.status === "checks_ready" &&
+          (after.health !== "ready" ||
+            after.isStale !== false ||
+            after.stageStatus !== before.stageStatus ||
+            after.progress !== null ||
+            after.lastErrorCode !== null ||
+            after.recoveryGuidance !== null))
+      )
+        deny(
+          "The reporting publication changed or could not be verified during initial checks. No partial checks have been returned."
+        );
+      await guard();
+      return result;
+    } catch (error) {
+      safeError(error);
+    }
+  }),
   checkConnection: procedure.input(z.void()).mutation(async ({ ctx }) => {
     try {
       const start = boundary();

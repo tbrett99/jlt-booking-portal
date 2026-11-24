@@ -63,6 +63,7 @@ export type HqLiveInvocationStatus =
   | "busy"
   | "progress"
   | "applied"
+  | "already_complete"
   | "needs_attention";
 export interface HqLiveInvocationResult {
   status: HqLiveInvocationStatus;
@@ -208,6 +209,10 @@ export interface HqLiveServiceOptions {
   now?: () => number;
   maxSourceMethods?: number;
   methodStartDeadlineMs?: number;
+  /** Server-only manual first-import fence; native trigger defaults remain unchanged. */
+  onlyInitialPublication?: boolean;
+  /** Fresh authority/settings guard for the manual first import, never RPC input. */
+  initialImportGuard?: () => Promise<void>;
 }
 export interface HqLiveService {
   configurationStatus(): HqLiveConfigurationStatus;
@@ -216,6 +221,8 @@ export interface HqLiveService {
   invoke(): Promise<HqLiveInvocationResult>;
   /** Parent must apply its fresh Super Admin access gate before these reads. */
   readPublished(): Promise<HqImplementedState | null>;
+  /** Server-only acceptance snapshot; only configured sync-on/read-off is permitted. */
+  readValidationSnapshot(): Promise<HqImplementedState | null>;
   getStatus(): Promise<HqLiveStatusDto>;
 }
 /** Native HTTP invocation core; no scheduling, activation, background loop or operational writes. */
@@ -227,6 +234,21 @@ export function createHqLiveService(
   const maxMethods = options.maxSourceMethods ?? HQ_LIVE_MAX_SOURCE_METHODS;
   const deadlineMs =
     options.methodStartDeadlineMs ?? HQ_LIVE_METHOD_START_DEADLINE_MS;
+  const guard = options.onlyInitialPublication
+    ? options.initialImportGuard
+    : undefined;
+  const guarded = async <T>(work: () => Promise<T>): Promise<T> => {
+    await guard?.();
+    let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+    try {
+      outcome = { ok: true, value: await work() };
+    } catch (error) {
+      outcome = { ok: false, error };
+    }
+    await guard?.();
+    if (!outcome.ok) throw outcome.error;
+    return outcome.value;
+  };
   if (
     !Number.isSafeInteger(maxMethods) ||
     maxMethods < 3 ||
@@ -284,11 +306,17 @@ export function createHqLiveService(
               : "CONFIG_INVALID",
         };
       if (!configuration.syncEnabled) return { status: "disabled" };
+      if (options.onlyInitialPublication && configuration.readEnabled)
+        return { status: "disabled" };
       let store: HqLiveStore;
       let lease: Awaited<ReturnType<HqLiveStore["acquire"]>>;
       try {
-        store = await getStore();
-        lease = await store.acquire();
+        store = await guarded(getStore);
+        if (options.onlyInitialPublication) {
+          const before = await guarded(() => store.readSnapshot());
+          if (before.sync?.published) return { status: "already_complete" };
+        }
+        lease = await guarded(() => store.acquire());
       } catch (error) {
         return {
           status: "needs_attention",
@@ -300,13 +328,33 @@ export function createHqLiveService(
       let methods = 0,
         retryAfter = 0;
       try {
+        if (options.onlyInitialPublication) {
+          // Renew proves the acquired fence before checking the published checkpoint.
+          // No second generation may start if another worker published during acquire.
+          await guarded(() => store.renew(lease.lease));
+          const acquired = await guarded(() => store.readSnapshot());
+          if (acquired.sync?.published) {
+            // There is intentionally no unfenced release/reset or forced next-due write.
+            // Existing crash-expiry releases this contended lease within 30 seconds.
+            return { status: "already_complete" };
+          }
+        }
         const source = options.createReader
           ? options.createReader(config)
           : config.createReader();
         // Capture only the bounded delay hint; never provider errors/messages/records in the result.
         const call = async <T>(work: () => Promise<T>): Promise<T> => {
           try {
-            return await work();
+            return await guarded(() => {
+              // The manual pre-GET authority await also consumes the existing
+              // start budget. Native callback behavior is unchanged.
+              if (
+                options.onlyInitialPublication &&
+                now() - started >= deadlineMs
+              )
+                throw new HqLiveError("TIMEOUT");
+              return work();
+            });
           } catch (error) {
             const hint = (error as { safeRetryAfter?: unknown })
               ?.safeRetryAfter;
@@ -328,14 +376,21 @@ export function createHqLiveService(
           catalogue: (type, q) => call(() => source.catalogue(type, q)),
           changes: (cursor, limit) => call(() => source.changes(cursor, limit)),
         };
+        const fenced = store.fencedSyncStore(lease.lease);
         const engine = createHqImplementedEngine(
           reader,
-          store.fencedSyncStore(lease.lease),
+          guard
+            ? {
+                readSync: () => guarded(() => fenced.readSync()),
+                compareAndSwapSync: (expected, next) =>
+                  guarded(() => fenced.compareAndSwapSync(expected, next)),
+              }
+            : fenced,
           {
             shouldContinue: async () => {
               if (methods >= maxMethods || now() - started >= deadlineMs)
                 return false;
-              await store.renew(lease.lease);
+              await guarded(() => store.renew(lease.lease));
               if (now() - started >= deadlineMs) return false;
               methods++;
               return true;
@@ -344,50 +399,60 @@ export function createHqLiveService(
         );
         const result = await engine.sync();
         if (result.status === "applied") {
-          await store.complete(lease.lease, {
-            status: "applied",
-            delaySeconds: configuration.intervalSeconds,
-          });
+          await guarded(() =>
+            store.complete(lease.lease, {
+              status: "applied",
+              delaySeconds: configuration.intervalSeconds,
+            })
+          );
           return { status: "applied" };
         }
         if (result.status === "yielded") {
-          await store.complete(lease.lease, {
-            status: "progress",
-            delaySeconds: HQ_LIVE_PROGRESS_DELAY_SECONDS,
-          });
+          await guarded(() =>
+            store.complete(lease.lease, {
+              status: "progress",
+              delaySeconds: HQ_LIVE_PROGRESS_DELAY_SECONDS,
+            })
+          );
           return { status: "progress" };
         }
         const code = safeHqLiveErrorCode(result.code);
         if (transient.has(code)) {
-          const snapshot = await store.readSnapshot();
+          const snapshot = await guarded(() => store.readSnapshot());
           const failures = snapshot.control?.consecutiveFailures ?? 0;
           const delay = Math.min(
             3600,
             Math.max(retryAfter, 60 * 2 ** Math.min(failures, 6))
           );
-          await store.complete(lease.lease, {
-            status: "backoff",
-            delaySeconds: delay,
-            errorCode: code,
-          });
+          await guarded(() =>
+            store.complete(lease.lease, {
+              status: "backoff",
+              delaySeconds: delay,
+              errorCode: code,
+            })
+          );
           return { status: "progress", errorCode: code };
         }
-        await store.complete(lease.lease, {
-          status: "needs_attention",
-          delaySeconds: 3600,
-          errorCode: code,
-        });
+        await guarded(() =>
+          store.complete(lease.lease, {
+            status: "needs_attention",
+            delaySeconds: 3600,
+            errorCode: code,
+          })
+        );
         return { status: "needs_attention", errorCode: code };
       } catch (error) {
         const code = safeHqLiveErrorCode((error as HqLiveError)?.code);
         // A lost holder cannot release or clobber its successor. Other errors get guarded attention if possible.
         if (code !== "LEASE_LOST" && code !== "SOURCE_BINDING_CHANGED") {
           try {
-            await store.complete(lease.lease, {
-              status: "needs_attention",
-              delaySeconds: 3600,
-              errorCode: code,
-            });
+            await guarded(() =>
+              store.complete(lease.lease, {
+                status: "needs_attention",
+                delaySeconds: 3600,
+                errorCode: code,
+              })
+            );
           } catch {
             /* crash expiry remains safe */
           }
@@ -399,6 +464,20 @@ export function createHqLiveService(
       const configuration = config.status();
       if (!configuration.readEnabled) return null;
       if (!configuration.configured)
+        throw new HqLiveError(
+          configuration.configurationCode === "CONFIG_INCOMPLETE"
+            ? "CONFIG_INCOMPLETE"
+            : "CONFIG_INVALID"
+        );
+      return (await getStore()).readPublished();
+    },
+    async readValidationSnapshot() {
+      const configuration = config.status();
+      if (
+        !configuration.configured ||
+        !configuration.syncEnabled ||
+        configuration.readEnabled
+      )
         throw new HqLiveError(
           configuration.configurationCode === "CONFIG_INCOMPLETE"
             ? "CONFIG_INCOMPLETE"
