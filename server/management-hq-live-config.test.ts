@@ -50,8 +50,66 @@ describe("opaque server-only live configuration", () => {
     expect(config.status()).toMatchObject({
       configured: false,
       configurationCode: "CONFIG_INCOMPLETE",
+      missingSettings: [field],
     });
     expect(() => config.createReader()).toThrow();
+  });
+  it.each([
+    "HQ_ORBIT_REPORTING_BASE_URL",
+    "HQ_ORBIT_REPORTING_API_KEY",
+    "HQ_PORTAL_SYNC_TOKEN",
+  ])(
+    "empty %s exposes only its fixed name without secrets or a reader",
+    field => {
+      const config = createHqLiveConfig({ ...env, [field]: "" });
+      expect(config.status().missingSettings).toEqual([field]);
+      expect(config.authorizeTrigger(env.HQ_PORTAL_SYNC_TOKEN)).toBe(false);
+      expect(() => config.createReader()).toThrow();
+      const output = JSON.stringify(config.status());
+      for (const secret of Object.values(env))
+        if (secret.length > 10) expect(output).not.toContain(secret);
+    }
+  );
+  it("all required missing names are ordered, bounded and ignore arbitrary secret-looking environment names", () => {
+    const config = createHqLiveConfig({
+      HQ_LIVE_SYNC_ENABLED: "true",
+      HQ_LIVE_READ_ENABLED: "false",
+      HQ_ORBIT_REPORTING_KEY: "private-decoy-key",
+      ARBITRARY_SECRET: "private-decoy-value",
+    });
+    expect(config.status().missingSettings).toEqual([
+      "HQ_ORBIT_REPORTING_BASE_URL",
+      "HQ_ORBIT_REPORTING_API_KEY",
+      "HQ_PORTAL_SYNC_TOKEN",
+    ]);
+    expect(JSON.stringify(config.status())).not.toMatch(
+      /private-decoy|ARBITRARY|HQ_ORBIT_REPORTING_KEY/
+    );
+  });
+  it("read-only diagnostics never require a Portal sync token", () => {
+    const config = createHqLiveConfig({
+      ...env,
+      HQ_LIVE_SYNC_ENABLED: "false",
+      HQ_PORTAL_SYNC_TOKEN: undefined,
+      HQ_ORBIT_REPORTING_API_KEY: undefined,
+    });
+    expect(config.status().missingSettings).toEqual([
+      "HQ_ORBIT_REPORTING_API_KEY",
+    ]);
+  });
+  it("diagnostic status cannot mutate captured configuration and is absent when ready, disabled or invalid", () => {
+    const config = createHqLiveConfig({
+      ...env,
+      HQ_PORTAL_SYNC_TOKEN: undefined,
+    });
+    expect(() =>
+      (config.status().missingSettings as string[]).push("private value")
+    ).toThrow();
+    expect(config.status().missingSettings).toEqual(["HQ_PORTAL_SYNC_TOKEN"]);
+    for (const input of [env, {}, { ...env, HQ_LIVE_SYNC_ENABLED: "TRUE" }])
+      expect(createHqLiveConfig(input).status()).not.toHaveProperty(
+        "missingSettings"
+      );
   });
   it.each([
     "http://reporting.orbittravel.co.uk",

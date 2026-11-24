@@ -478,6 +478,15 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
   const stamp = (value: string | null) =>
     safeStamp(value) ? new Date(value).toLocaleString() : "Not yet recorded";
   const attention = live.health === "needs_attention";
+  const missing = Array.isArray(live.missingSettings)
+    ? (
+        [
+          "HQ_ORBIT_REPORTING_BASE_URL",
+          "HQ_ORBIT_REPORTING_API_KEY",
+          "HQ_PORTAL_SYNC_TOKEN",
+        ] as const
+      ).filter(name => live.missingSettings?.includes(name))
+    : [];
   return (
     <section
       className={`${panel} space-y-3`}
@@ -517,6 +526,13 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
         </p>
       ) : (
         <p role="status">Last complete Orbit publication is available.</p>
+      )}
+      {live.configurationCode === "CONFIG_INCOMPLETE" && missing.length > 0 && (
+        <p role="alert">
+          Portal cannot see a value for: {missing.join(", ")}. Check these exact
+          variable names in the Portal service, save and deploy the changes. Do
+          not share the values here.
+        </p>
       )}
       {!live.syncEnabled && (
         <p className="text-sm">

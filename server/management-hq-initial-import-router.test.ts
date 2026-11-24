@@ -266,6 +266,36 @@ describe("actual protected tRPC first-import procedures", () => {
     expect(m.store!.acquire).not.toHaveBeenCalled();
     expect(m.readerFactory).not.toHaveBeenCalled();
   });
+  it.each([
+    "HQ_ORBIT_REPORTING_BASE_URL",
+    "HQ_ORBIT_REPORTING_API_KEY",
+    "HQ_PORTAL_SYNC_TOKEN",
+  ])(
+    "protected status identifies missing %s without store/source work or secret values",
+    async field => {
+      vi.stubEnv(field, undefined);
+      const result = await caller().status();
+      expect(result.live).toMatchObject({
+        configured: false,
+        configurationCode: "CONFIG_INCOMPLETE",
+        syncEnabled: true,
+        readEnabled: false,
+        missingSettings: [field],
+        hasPublished: false,
+      });
+      expect(m.store!.readSnapshot).not.toHaveBeenCalled();
+      expect(m.store!.acquire).not.toHaveBeenCalled();
+      expect(m.readerFactory).not.toHaveBeenCalled();
+      const output = JSON.stringify(result);
+      expect(output).not.toMatch(
+        /SYNTHETIC-|https:|leaseToken|sourceFingerprint/
+      );
+      m.getDb.mockClear();
+      await denied(caller(null).status(), "UNAUTHORIZED");
+      expect(m.getDb).not.toHaveBeenCalled();
+      await denied(caller({ ...fresh, role: "agent" }).status());
+    }
+  );
   it("one protected click invokes one bounded first-only service with actual strict config and keeps reports/export off", async () => {
     const result = await caller().importInitialBatch();
     expect(result).toMatchObject({ status: "applied", hasPublished: true });

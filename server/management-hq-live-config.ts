@@ -8,6 +8,10 @@ export type HqLiveConfigurationCode =
   | "CONFIG_INVALID"
   | "CONFIG_INCOMPLETE"
   | null;
+export type HqLiveMissingSetting =
+  | "HQ_ORBIT_REPORTING_BASE_URL"
+  | "HQ_ORBIT_REPORTING_API_KEY"
+  | "HQ_PORTAL_SYNC_TOKEN";
 export interface HqLiveConfigurationStatus {
   syncEnabled: boolean;
   readEnabled: boolean;
@@ -15,6 +19,8 @@ export interface HqLiveConfigurationStatus {
   configurationCode: HqLiveConfigurationCode;
   intervalSeconds: number;
   freshnessSeconds: number;
+  /** Fixed missing names only, available through the protected status; never values. */
+  missingSettings?: readonly HqLiveMissingSetting[];
 }
 /** Opaque, server-only capability: no URL, key or trigger token is exposed as data. */
 export interface HqLiveConfig {
@@ -89,6 +95,12 @@ export function createHqLiveConfig(
       code = "CONFIG_INVALID";
     }
   }
+  const missingSettings: HqLiveMissingSetting[] = [];
+  if (code === "CONFIG_INCOMPLETE") {
+    if (!baseUrl) missingSettings.push("HQ_ORBIT_REPORTING_BASE_URL");
+    if (!apiKey) missingSettings.push("HQ_ORBIT_REPORTING_API_KEY");
+    if (sync && !triggerToken) missingSettings.push("HQ_PORTAL_SYNC_TOKEN");
+  }
   const configured = code === null;
   const projection: HqLiveConfigurationStatus = Object.freeze({
     syncEnabled: sync === true,
@@ -97,6 +109,9 @@ export function createHqLiveConfig(
     configurationCode: code,
     intervalSeconds: interval ?? 300,
     freshnessSeconds: freshness ?? 900,
+    ...(code === "CONFIG_INCOMPLETE"
+      ? { missingSettings: Object.freeze(missingSettings) }
+      : {}),
   });
   return Object.freeze({
     status: () => ({ ...projection }),

@@ -2029,6 +2029,79 @@ function assertNoDashboardActivation() {
 
 describe("Manual first Orbit import and validation on actual DOM", () => {
   it.each([
+    ["HQ_ORBIT_REPORTING_BASE_URL"],
+    ["HQ_ORBIT_REPORTING_API_KEY"],
+    ["HQ_PORTAL_SYNC_TOKEN"],
+    [
+      "HQ_ORBIT_REPORTING_BASE_URL",
+      "HQ_ORBIT_REPORTING_API_KEY",
+      "HQ_PORTAL_SYNC_TOKEN",
+    ],
+  ])(
+    "shows only exact missing setting names in safe setup guidance %j",
+    (...missingSettings) => {
+      return (async () => {
+        firstImportFixture({
+          configured: false,
+          configurationCode: "CONFIG_INCOMPLETE",
+          missingSettings,
+        });
+        await render();
+        const connection = container.querySelector(
+          '[aria-label="Live reporting connection"]'
+        );
+        expect(connection?.textContent).toContain(
+          "Portal cannot see a value for:"
+        );
+        for (const name of missingSettings)
+          expect(connection?.textContent).toContain(name);
+        expect(connection?.textContent).toContain(
+          "Do not share the values here."
+        );
+        expect(firstPanel()?.querySelector("button")).toBeNull();
+        expect(mock.mutationCalls).toHaveLength(0);
+        assertNoDashboardActivation();
+      })();
+    }
+  );
+  it.each([
+    { missingSettings: undefined },
+    { missingSettings: null },
+    { missingSettings: "private-secret" },
+    { missingSettings: ["private-secret", "https://private.test?key=secret"] },
+    {
+      missingSettings: [
+        "HQ_PORTAL_SYNC_TOKEN",
+        "private-secret",
+        "HQ_PORTAL_SYNC_TOKEN",
+      ],
+    },
+  ])(
+    "missing-setting diagnostic never renders arbitrary values or duplicate names %j",
+    async ({ missingSettings }) => {
+      firstImportFixture({
+        configured: false,
+        configurationCode: "CONFIG_INCOMPLETE",
+        missingSettings,
+      });
+      await render();
+      expect(container.textContent).not.toMatch(/private-secret|private\.test/);
+      const connection = container.querySelector(
+        '[aria-label="Live reporting connection"]'
+      );
+      expect(
+        (connection?.textContent?.match(/HQ_PORTAL_SYNC_TOKEN/g) ?? []).length
+      ).toBe(
+        Array.isArray(missingSettings) &&
+          missingSettings.includes("HQ_PORTAL_SYNC_TOKEN")
+          ? 1
+          : 0
+      );
+      expect(mock.mutationCalls).toHaveLength(0);
+      assertNoDashboardActivation();
+    }
+  );
+  it.each([
     { configured: false, configurationCode: "CONFIG_INCOMPLETE" },
     { configurationCode: "CONFIG_INCOMPLETE" },
     { lastErrorCode: "CONFIG_INCOMPLETE" },
