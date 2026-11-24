@@ -188,7 +188,7 @@ describe("manual first-import helper with real live runner and real fenced store
     expect(s.createReader).toHaveBeenCalledOnce();
     expect(await s.store.readPublished()).toEqual(published);
   });
-  it("imports pending source-financial eligibility without adding active sales or enabling reads", async () => {
+  it("imports unregistered pending source-financial eligibility without adding active sales or enabling reads", async () => {
     const base = createHqImplementedSampleReader("initial");
     const s = setup({
       ...base,
@@ -228,6 +228,55 @@ describe("manual first-import helper with real live runner and real fenced store
     )!.entity.payload as any;
     expect(retained.financials.headlineEligible).toBe(true);
     expect(retained.eligibility.activeSalesHeadline).toBe(false);
+  });
+  it("imports registered pending bookings as active sales without enabling reads or relabelling source status", async () => {
+    const base = createHqImplementedSampleReader("initial");
+    const s = setup({
+      ...base,
+      bookings: async query => {
+        const page = clone(await base.bookings(query));
+        const payload = page.items[0].payload as any;
+        payload.status = "pending";
+        payload.eligibility.pending = true;
+        payload.eligibility.activeSalesHeadline = false;
+        payload.dates.portalRegisteredAt = "2026-01-10T12:00:00Z";
+        payload.dates.dateSource = "portal_registered_at";
+        payload.financials.bookingStatus = "pending";
+        payload.financials.headlineEligible = true;
+        return page;
+      },
+    });
+    const result = await s.click();
+    expect(result.status).toBe("applied");
+    expect(result.hasPublished).toBe(true);
+    safe(result);
+    expect(await s.services[0].readPublished()).toBeNull();
+    const published = await s.services[0].readValidationSnapshot();
+    expect(published).not.toBeNull();
+    const report = await getHqReport(
+      published!,
+      createHqImplementedSampleDirectory(),
+      { year: 2026 }
+    );
+    expect(report.status).not.toBe("unavailable");
+    expect(report.cohorts.pendingCount).toBe(1);
+    expect(report.totals.bookingCount).toBe(1);
+    expect(report.totals.grossSales).toMatchObject({
+      eligibleCount: 1,
+      coveredCount: 1,
+      knownSum: "10000.00",
+    });
+    expect(report.totals.grossProfit.eligibleCount).toBe(0);
+    expect(report.totals.grossProfit.knownSum).toBeNull();
+    expect(report.totals.settledJltIncome.knownSum).toBeNull();
+    expect(s.config.status().readEnabled).toBe(false);
+    const retained = Object.values(published!.entities).find(
+      row => row.entity.entityType === "booking"
+    )!.entity.payload as any;
+    expect(retained.status).toBe("pending");
+    expect(retained.financials.headlineEligible).toBe(true);
+    expect(retained.eligibility.activeSalesHeadline).toBe(false);
+    expect(retained.dates.portalRegisteredAt).toBe("2026-01-10T12:00:00Z");
   });
   it("one click starts at most 25 source methods, preserves staging and honors next due", async () => {
     const base = createHqImplementedSampleReader("initial"),

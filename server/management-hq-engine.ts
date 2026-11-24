@@ -237,9 +237,15 @@ function metric(bookings: HqBooking[], select: (b: HqBooking) => HqAmount, gate:
   }
   return { knownSum: coveredCount ? hqDecimal(sum) : null, coveredCount, eligibleCount: bookings.length, missingCount, notApplicableCount, estimatedCount, actualRecordedCount };
 }
-function headline(b: HqBooking) { return b.status === 'confirmed' && b.eligibility.headlineCount === true; }
+// Implemented projections set local eligibility only after validated registration.
+// Preserve the legacy proposed-contract population and raw pending source status.
+function activeStatus(b: HqBooking) { return b.status === 'confirmed' || (b.projectionSource === 'implemented_wire' && b.status === 'pending'); }
+function headline(b: HqBooking) { return activeStatus(b) && b.eligibility.headlineCount === true; }
 function totals(bookings: HqBooking[]): HqReportTotals {
   const counts = bookings.filter(headline);
+  const salesEligible = bookings.filter(b => activeStatus(b) && b.eligibility.headlineGrossSales === true);
+  // Active booked gross is not confirmation of earned economics or settled cash.
+  // Keep existing confirmed finance/margin coverage rather than diluting it.
   const grossEligible = bookings.filter(b => b.status === 'confirmed' && b.eligibility.headlineGrossSales === true);
   let profit = BigInt(0), gross = BigInt(0), covered = 0;
   for (const b of grossEligible) {
@@ -256,7 +262,7 @@ function totals(bookings: HqBooking[]): HqReportTotals {
     bookingCount: counts.length,
     passengerCount: counts.reduce((sum, b) => sum + (b.passengerCount ?? 0), 0),
     unknownPassengerCount: counts.filter(b => b.passengerCount === null).length,
-    grossSales: metric(fin, b => b.financials.grossBookingValue),
+    grossSales: metric(salesEligible, b => b.financials.grossBookingValue),
     supplierNetCost: metric(fin, b => b.financials.supplierNetCost, b => b.financials.completeGrossAndCost),
     knownSupplierNetSubtotal: metric(fin, b => b.financials.knownSupplierNetSubtotal),
     grossProfit: metric(fin, b => b.financials.grossBookingProfit, b => b.financials.completeGrossAndCost),
@@ -304,7 +310,7 @@ export async function getHqReport(state: HqState | HqImplementedState, directory
     filters: { year: filters.year, month: filters.month ?? null }, currency: 'GBP', totals: totals([]),
     cohorts: { pendingCount: 0, cancelledCount: 0, exceptionCount: 0, undatedCount: 0, unmatchedBusinessCount: 0, unattributedCount: 0, excludedDemoCount: 0, tombstoneCount: 0, unsupportedCurrencyCount: 0 },
     monthly: [], agents: [], bookings: [], undatedExceptions: [], exportComplete: true,
-    limitations: implemented ? ['Implemented 1.0.0 source projection; offline local examples only, no verified live deployment.', 'Current restated booking values, not an amendment/event ledger.', 'Current-owner groups are provisional current membership, never verified original selling agents.', 'Assigned staff is current membership, not evidence of a processing administrator.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'Baseline VAT/estimated PTS commission is source passthrough; all-fees entitlement, actual fees, custom terms and settled cash remain unknown.', 'Source observation is per-page, not a run-wide source snapshot.', 'Membership history/join dates and quote/conversion reporting are unavailable.'] : ['Proposed contract; no verified live deployment or approved identity namespace.', 'Current restated booking values, not an amendment/event ledger.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'GBP totals only on validated GBP basis; native/unverified currencies excluded from monetary sums.', 'Baseline commission is source passthrough, not policy-complete entitlement or settled cash.', 'Business mapping is not evidence of seller ownership; verified original seller with agent role required.', 'Quotes and independent business-mapping change events are unsupported; activity means booking cohort counts only.', ...legacy!.envelope.coverage.limitations],
+    limitations: implemented ? ['Implemented 1.0.0 source projection; offline local examples only, no verified live deployment.', 'Current restated booking values, not an amendment/event ledger.', 'Current-owner groups are provisional current membership, never verified original selling agents.', 'Assigned staff is current membership, not evidence of a processing administrator.', 'Registered pending bookings count as active and contribute known GBP gross sales; unregistered pending and cancelled bookings do not. Pending status counts overlap active counts, not an extra population to add.', 'An explicit source-financial gross-sales exclusion is preserved; registered pending bookings with known excluded gross are flagged for review, not silently overridden.', 'Profit, margin, fee and commission totals retain confirmed source-eligible coverage; active sales are not earned commission or settled cash.', 'Baseline VAT/estimated PTS commission is source passthrough; all-fees entitlement, actual fees, custom terms and settled cash remain unknown.', 'Source observation is per-page, not a run-wide source snapshot.', 'Membership history/join dates and quote/conversion reporting are unavailable.'] : ['Proposed contract; no verified live deployment or approved identity namespace.', 'Current restated booking values, not an amendment/event ledger.', 'Pending excluded until approval; cancellations retained in their selected cohort.', 'GBP totals only on validated GBP basis; native/unverified currencies excluded from monetary sums.', 'Baseline commission is source passthrough, not policy-complete entitlement or settled cash.', 'Business mapping is not evidence of seller ownership; verified original seller with agent role required.', 'Quotes and independent business-mapping change events are unsupported; activity means booking cohort counts only.', ...legacy!.envelope.coverage.limitations],
     ...(implemented ? { sourceContract: 'implemented_1.0.0' as const, generationId: metadata!.generationId, sourceObservationWindow: { from: metadata!.sourceObservationWindow.from, to: metadata!.sourceObservationWindow.to }, publishedAt: metadata!.publishedAt, sourceAgeSeconds: metadata!.sourceAgeSeconds, freshnessTargetSeconds: metadata!.freshnessTargetSeconds, stale: metadata!.stale } : {}),
   };
   const unavailable = (reason: string) => ({ ...result, status: 'unavailable' as const, unavailableReason: reason, totals: totals([]), monthly: [], agents: [], bookings: [], undatedExceptions: [], exportComplete: false });

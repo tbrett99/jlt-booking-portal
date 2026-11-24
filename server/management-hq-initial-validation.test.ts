@@ -609,7 +609,7 @@ describe("actual source-selected years, amendments and cancellation structure", 
       "without an Orbit reference"
     );
   });
-  it("pending bookings and undated exceptions do not become active totals", async () => {
+  it("unregistered pending bookings and undated exceptions do not become active totals", async () => {
     const state = publication();
     changeBooking(state, p => {
       p.status = "pending";
@@ -636,6 +636,64 @@ describe("actual source-selected years, amendments and cancellation structure", 
       undatedBookings: 1,
       grossSales: null,
     });
+  });
+  it("counts registered pending bookings as active with known sales without manufacturing profit or settlement", async () => {
+    const state = publication();
+    changeBooking(state, p => {
+      p.status = "pending";
+      p.eligibility.pending = true;
+      p.eligibility.activeSalesHeadline = false;
+      p.dates.portalRegisteredAt = "2026-01-10T12:00:00Z";
+      p.dates.dateSource = "portal_registered_at";
+      p.financials.bookingStatus = "pending";
+      p.financials.headlineEligible = true;
+    });
+    const result = await validateHqInitialPublication(
+      state,
+      offlineDb(),
+      status(state)
+    );
+    expect(result.status).toBe("checks_ready");
+    expect(result.years[0]).toMatchObject({
+      activeBookings: 1,
+      pendingBookings: 1,
+      grossSales: "10000.00",
+      grossSalesMissing: 0,
+      grossProfit: null,
+      grossProfitMissing: 0,
+    });
+    expect(result.manualChecksPending).toBe(true);
+  });
+  it("rejects invalid registered pending evidence before directory/report work without falling back to bookedOn", async () => {
+    const edits: ((p: HqWireBookingPayload) => void)[] = [
+      p => (p.dates.portalRegisteredAt = "not-a-date"),
+      p => (p.dates.portalRegisteredAt = "2026-02-30T12:00:00Z"),
+      p => (p.dates.managementDate = "2026-01-11"),
+      p => (p.dates.dateSource = "booked_on"),
+      p => (p.dates.month = "2026-02"),
+    ];
+    for (const edit of edits) {
+      const state = publication();
+      changeBooking(state, p => {
+        p.status = "pending";
+        p.eligibility.pending = true;
+        p.eligibility.activeSalesHeadline = false;
+        p.dates.portalRegisteredAt = "2026-01-10T12:00:00Z";
+        p.dates.dateSource = "portal_registered_at";
+        p.financials.bookingStatus = "pending";
+        p.financials.headlineEligible = true;
+        edit(p);
+      });
+      const db = offlineDb(matchingRows());
+      const result = await validateHqInitialPublication(
+        state,
+        db,
+        status(state)
+      );
+      expect(result.status).toBe("needs_attention");
+      expect(result.years).toEqual([]);
+      expect(db.select).not.toHaveBeenCalled();
+    }
   });
   it("undated-only publication uses one current-year exception row", async () => {
     const state = publication();

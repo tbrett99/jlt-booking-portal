@@ -357,6 +357,25 @@ export function projectHqWireBooking(
     wg !== null &&
     wg >= 0;
   const gross = amount(f.grossBookingValue, currency);
+  // Wire validation already enforces the actual nested registration timestamp,
+  // selected London date, date source and month. Registration, not a bookedOn
+  // fallback or optional top-level diagnostic, makes pending locally active.
+  const dated = !p.eligibility.undated && p.dates.managementDate !== null;
+  const registeredPending =
+    p.status === "pending" &&
+    p.eligibility.pending === true &&
+    p.eligibility.cancelled === false &&
+    dated &&
+    typeof p.dates.portalRegisteredAt === "string" &&
+    Number.isFinite(Date.parse(p.dates.portalRegisteredAt)) &&
+    p.dates.dateSource === "portal_registered_at";
+  const activeHeadline =
+    !p.eligibility.cancelled &&
+    dated &&
+    ((p.status === "confirmed" && p.eligibility.activeSalesHeadline === true) ||
+      registeredPending);
+  const salesEligibilityConflict =
+    registeredPending && f.headlineEligible === false && gross.amount !== null;
   const supplierNet = amount(
     completeNet ? f.totalNetCost : null,
     currency,
@@ -391,17 +410,15 @@ export function projectHqWireBooking(
       warnings: [],
     },
     eligibility: {
-      headlineCount:
-        p.status === "confirmed" && p.eligibility.activeSalesHeadline === true,
-      headlineGrossSales:
-        p.status === "confirmed" &&
-        p.eligibility.activeSalesHeadline === true &&
-        f.headlineEligible !== false,
+      headlineCount: activeHeadline,
+      headlineGrossSales: activeHeadline && f.headlineEligible !== false,
       cancelledCohort: p.status === "cancelled",
       pendingCohort: p.status === "pending",
-      dated: !p.eligibility.undated && p.dates.managementDate !== null,
+      dated,
       statusRuleVersion: "",
-      reason: null,
+      reason: salesEligibilityConflict
+        ? "REGISTERED_PENDING_SALES_ELIGIBILITY_CONFLICT"
+        : null,
     },
     currency,
     currencyBasis: currency === "GBP" ? "validated_GBP" : "unverified",
@@ -479,7 +496,9 @@ export function projectHqWireBooking(
     products: [],
     payments: [],
     childMembershipComplete: true,
-    qualityIssues: [],
+    qualityIssues: salesEligibilityConflict
+      ? ["REGISTERED_PENDING_SALES_ELIGIBILITY_CONFLICT"]
+      : [],
     projectionSource: "implemented_wire",
     currentOwnerLink,
     assignedStaffLink,
