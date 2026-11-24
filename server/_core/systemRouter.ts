@@ -47,6 +47,7 @@ export const systemRouter = router({
       academyFirstClassLargeResourceConversion: 1,
       crmMembershipMultiFilters: 1,
       managementHqProductionWiring: 1,
+      managementHqConnectionCheck: 1,
     })),
 
   notifyOwner: adminProcedure

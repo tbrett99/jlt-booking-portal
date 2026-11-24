@@ -5,6 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import type { HqLiveStatusDto } from "../../../../server/management-hq-live-service";
+import type { HqConnectionCheckResult } from "@shared/management-hq-connection-check";
 import type {
   HqBookingDrilldown,
   HqMoneyCoverage,
@@ -60,6 +61,62 @@ function activeSuperAdmin(user: unknown): user is Actor {
     actor.isActive === true &&
     actor.portalStatus === "active"
   );
+}
+
+function isAuthorityError(error: unknown): boolean {
+  const value = error as {
+    data?: { code?: unknown };
+    code?: unknown;
+    message?: unknown;
+  } | null;
+  const code = value?.data?.code ?? value?.code;
+  return (
+    ["FORBIDDEN", "UNAUTHORIZED", "UNAUTHENTICATED"].includes(code as string) ||
+    value?.message === "Management HQ access could not be verified." ||
+    value?.message ===
+      "Management HQ data or access could not be verified. Values are unavailable, not zero. No partial totals have been returned."
+  );
+}
+
+const CONNECTION_MESSAGES: Record<HqConnectionCheckResult["outcome"], string> =
+  {
+    ready:
+      "Portal can connect to Orbit. No bookings have been imported or HQ switched on.",
+    stale: "Orbit is connected, but its latest reporting data is out of date.",
+    not_ready:
+      "Orbit’s reporting data is not ready yet. No bookings have been imported.",
+    missing_key: "Orbit connection is not configured on the server.",
+    invalid_settings:
+      "Orbit connection settings are invalid. No bookings have been imported.",
+    key_rejected: "Orbit reporting key was rejected.",
+    unavailable:
+      "Portal could not complete the Orbit connection check. No bookings have been imported.",
+  };
+
+/** Outcome-only staff wording: neither source payloads nor arbitrary RPC messages are UI copy. */
+function safeConnectionResult(value: unknown): HqConnectionCheckResult {
+  const result = value as Partial<HqConnectionCheckResult> | null;
+  const outcome =
+    typeof result?.outcome === "string" &&
+    Object.prototype.hasOwnProperty.call(CONNECTION_MESSAGES, result.outcome)
+      ? result.outcome
+      : "unavailable";
+  const checkedAt =
+    typeof result?.checkedAt === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      result.checkedAt
+    ) &&
+    Number.isFinite(Date.parse(result.checkedAt))
+      ? result.checkedAt
+      : new Date().toISOString();
+  return {
+    outcome,
+    message: CONNECTION_MESSAGES[outcome],
+    checkedAt,
+    generationId: null,
+    sourcePublishedAt: null,
+    sourceObservationAt: null,
+  };
 }
 
 /** Group decimal strings without passing money through IEEE-754 or rounding source precision. */
@@ -447,9 +504,16 @@ function ActorHq({
   const [replaying, setReplaying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
+  const [connectionBusy, setConnectionBusy] = useState(false);
+  const [connectionAccessRevoked, setConnectionAccessRevoked] = useState(false);
+  const [connectionResult, setConnectionResult] =
+    useState<HqConnectionCheckResult | null>(null);
   const alive = useRef(true);
   const lock = useRef(false);
   const epoch = useRef(0);
+  const connectionAttempt = useRef(0);
+  const connectionFlight = useRef<symbol | null>(null);
+  const boundary = useRef("");
   const identityCheck = useRef(isCurrent);
   identityCheck.current = isCurrent;
   const status = trpc.managementHq.status.useQuery(undefined, {
@@ -457,6 +521,7 @@ function ActorHq({
     enabled: booted,
   });
   const sample = trpc.managementHq.sample.useMutation();
+  const checkConnection = trpc.managementHq.checkConnection.useMutation();
   const statusReady =
     booted &&
     status.isFetchedAfterMount &&
@@ -490,7 +555,8 @@ function ActorHq({
     sample.isPending ||
     status.isFetching ||
     status.isLoading ||
-    reportBusy;
+    reportBusy ||
+    connectionBusy;
   const canRead =
     statusReady &&
     (mode === "live"
@@ -499,10 +565,49 @@ function ActorHq({
         status.data?.sampleEnabled &&
         status.data.hasSample) &&
     !actionError &&
+    !connectionAccessRevoked &&
     !refreshing &&
     !replaying;
   const permission = useRef(false);
-  permission.current = !!canRead && identityCheck.current(actorId);
+  const authorityError = isAuthorityError(status.error);
+  const currentBoundary = JSON.stringify({
+    authorityError,
+    statusError: !!status.error,
+    statusReady,
+    mode,
+    stateVersion: status.data?.stateVersion ?? null,
+    liveConfigured: status.data?.liveConfigured ?? null,
+    sampleEnabled: status.data?.sampleEnabled ?? null,
+    hasSample: status.data?.hasSample ?? null,
+    configured: live?.configured ?? null,
+    configurationCode: live?.configurationCode ?? null,
+    syncEnabled: live?.syncEnabled ?? null,
+    readEnabled: live?.readEnabled ?? null,
+    intervalSeconds: live?.intervalSeconds ?? null,
+    freshnessSeconds: live?.freshnessSeconds ?? null,
+    hasPublished: live?.hasPublished ?? null,
+    lastErrorCode: live?.lastErrorCode ?? null,
+  });
+  if (boundary.current !== currentBoundary) {
+    boundary.current = currentBoundary;
+    permission.current = false;
+    epoch.current++;
+    connectionAttempt.current++;
+  }
+  permission.current =
+    !authorityError && !!canRead && identityCheck.current(actorId);
+  useEffect(() => {
+    if (!alive.current) return;
+    if (authorityError) {
+      permission.current = false;
+      setConnectionAccessRevoked(true);
+      setActionError(
+        "Current Management HQ access is no longer available. Use Refresh to retry."
+      );
+    }
+    setConnectionResult(null);
+    checkConnection.reset();
+  }, [currentBoundary]);
 
   useEffect(() => {
     alive.current = true;
@@ -526,6 +631,8 @@ function ActorHq({
       alive.current = false;
       permission.current = false;
       epoch.current++;
+      connectionAttempt.current++;
+      checkConnection.reset();
     };
   }, [actorId, utils]);
 
@@ -533,6 +640,9 @@ function ActorHq({
     if (lock.current || !identityCheck.current(actorId)) return;
     lock.current = true;
     epoch.current++;
+    connectionAttempt.current++;
+    setConnectionResult(null);
+    checkConnection.reset();
     permission.current = false;
     setRefreshing(true);
     try {
@@ -545,6 +655,7 @@ function ActorHq({
       if (result.error || !result.data) throw new Error("Status unavailable");
       setBooted(true);
       setActionError(null);
+      setConnectionAccessRevoked(false);
       // Report remounts only after this status read, and always fetches anew.
     } catch {
       if (alive.current && identityCheck.current(actorId))
@@ -554,6 +665,61 @@ function ActorHq({
     } finally {
       lock.current = false;
       if (alive.current) setRefreshing(false);
+    }
+  }
+
+  async function checkOrbitConnection() {
+    if (
+      lock.current ||
+      connectionBusy ||
+      connectionAccessRevoked ||
+      authorityError ||
+      !alive.current ||
+      !identityCheck.current(actorId)
+    )
+      return;
+    lock.current = true;
+    const flight = Symbol("connection flight");
+    connectionFlight.current = flight;
+    const attempt = ++connectionAttempt.current;
+    const generation = ++epoch.current;
+    const route = window.location.href;
+    setConnectionResult(null);
+    setConnectionBusy(true);
+    const stillCurrent = () =>
+      alive.current &&
+      identityCheck.current(actorId) &&
+      !isAuthorityError(status.error) &&
+      connectionAttempt.current === attempt &&
+      epoch.current === generation &&
+      window.location.href === route;
+    try {
+      const result = await checkConnection.mutateAsync();
+      if (stillCurrent()) setConnectionResult(safeConnectionResult(result));
+    } catch (error) {
+      if (!stillCurrent()) return;
+      const code =
+        (error as { data?: { code?: unknown }; code?: unknown } | null)?.data
+          ?.code ?? (error as { code?: unknown } | null)?.code;
+      if (isAuthorityError(error) || code === "PRECONDITION_FAILED") {
+        // A failed fresh access/configuration gate is not an ordinary source outage.
+        permission.current = false;
+        epoch.current++;
+        connectionAttempt.current++;
+        setConnectionAccessRevoked(true);
+        setConnectionResult(null);
+        setActionError("Management HQ access could not be verified.");
+      } else {
+        setConnectionResult(safeConnectionResult(null));
+      }
+    } finally {
+      // Display invalidation does not own the operation lock. Only this flight may
+      // settle its busy state; an old actor/attempt cannot unlock a newer flight.
+      if (connectionFlight.current === flight) {
+        connectionFlight.current = null;
+        lock.current = false;
+        if (alive.current) setConnectionBusy(false);
+      }
     }
   }
 
@@ -596,6 +762,9 @@ function ActorHq({
   function changePeriod(nextYear: number, nextMonth: number | undefined) {
     permission.current = false;
     epoch.current++;
+    connectionAttempt.current++;
+    setConnectionResult(null);
+    checkConnection.reset();
     setYear(nextYear);
     setMonth(nextMonth);
   }
@@ -624,6 +793,45 @@ function ActorHq({
           Refresh
         </Button>
       </header>
+      <section
+        className={`${panel} space-y-3`}
+        aria-label="Orbit connection check"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Check Orbit connection</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Check the current server connection without changing HQ or
+              importing data.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={
+              busy || !booted || authorityError || connectionAccessRevoked
+            }
+            onClick={() => void checkOrbitConnection()}
+          >
+            {connectionBusy ? "Checking…" : "Check Orbit connection"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          This checks the connection only. It does not import bookings or switch
+          HQ on.
+        </p>
+        {connectionBusy && <p role="status">Checking the Orbit connection…</p>}
+        {connectionResult && !connectionBusy && (
+          <div
+            role={connectionResult.outcome === "ready" ? "status" : "alert"}
+            className="space-y-1 text-sm"
+          >
+            <p>{connectionResult.message}</p>
+            <p className="text-xs text-muted-foreground">
+              Checked {new Date(connectionResult.checkedAt).toLocaleString()}
+            </p>
+          </div>
+        )}
+      </section>
       {statusReady && !actionError && live && <LiveConnection live={live} />}
       {showSample && (
         <>
@@ -748,7 +956,7 @@ function ActorHq({
               aria-label="Reporting year"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={year}
-              disabled={replaying}
+              disabled={replaying || connectionBusy}
               onChange={event =>
                 changePeriod(parseInt(event.target.value, 10), month)
               }
@@ -768,7 +976,7 @@ function ActorHq({
               aria-label="Reporting month"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={month ?? "all"}
-              disabled={replaying}
+              disabled={replaying || connectionBusy}
               onChange={event =>
                 changePeriod(
                   year,

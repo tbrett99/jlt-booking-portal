@@ -26,9 +26,13 @@ const mock = vi.hoisted(() => ({
   queryWait: {} as Record<string, Promise<void>>,
   mutationWait: undefined as Promise<void> | undefined,
   mutationError: null as any,
+  connectionResult: undefined as any,
   autoFilters: true,
   hooks: [] as { path: string; input: any; options: any }[],
   mutations: [] as any[],
+  mutationCalls: [] as { path: string; actorId: number; input: any }[],
+  mutationResets: [] as { path: string; actorId: number }[],
+  connectionMutateAsync: vi.fn(),
   refetch: vi.fn(),
   cancel: vi.fn(),
   csv: vi.fn(),
@@ -101,14 +105,25 @@ vi.mock("@/lib/trpc", async () => {
           if (key === "useMutation")
             return () => {
               const [isPending, setPending] = react.useState(false);
+              const actorId = react.useRef(mock.user.id).current;
+              const reset = react.useRef(() => {
+                mock.mutationResets.push({ path, actorId });
+                setPending(false);
+              }).current;
               return {
                 isPending,
-                mutateAsync: async (input: any) => {
-                  mock.mutations.push(structuredClone(input));
+                mutateAsync: async (input?: any) => {
+                  mock.mutationCalls.push({ path, actorId, input });
+                  mock.mutations.push(
+                    input === undefined ? undefined : structuredClone(input)
+                  );
                   setPending(true);
                   try {
+                    if (path === "managementHq.checkConnection")
+                      return await mock.connectionMutateAsync(input);
                     await mock.mutationWait;
                     if (mock.mutationError) throw mock.mutationError;
+                    if (input === undefined) return mock.connectionResult;
                     mock.data["managementHq.status"] = {
                       ...mock.data["managementHq.status"],
                       hasSample: true,
@@ -119,6 +134,7 @@ vi.mock("@/lib/trpc", async () => {
                     setPending(false);
                   }
                 },
+                reset,
               };
             };
           return node(path ? `${path}.${key}` : key);
@@ -404,8 +420,25 @@ beforeEach(() => {
   mock.queryWait = {};
   mock.hooks = [];
   mock.mutations = [];
+  mock.mutationCalls = [];
+  mock.mutationResets = [];
   mock.mutationWait = undefined;
   mock.mutationError = null;
+  mock.connectionMutateAsync.mockReset();
+  mock.connectionMutateAsync.mockImplementation(async () => {
+    await mock.mutationWait;
+    if (mock.mutationError) throw mock.mutationError;
+    return mock.connectionResult;
+  });
+  mock.connectionResult = {
+    outcome: "ready",
+    message:
+      "Portal can connect to Orbit. No bookings have been imported or HQ switched on.",
+    checkedAt: "2026-11-24T12:00:00.000Z",
+    generationId: 12,
+    sourcePublishedAt: null,
+    sourceObservationAt: null,
+  };
   mock.autoFilters = true;
   mock.data = {
     "managementHq.status": {
@@ -939,6 +972,43 @@ describe("Management HQ on actual DOM", () => {
     expect(container.textContent).toContain("Report or export access failed");
     expect(downloads).toHaveLength(0);
   });
+  it("checks Orbit only after a click, sends no input, and renders a safe ready result", async () => {
+    await render();
+    expect(mock.mutations).toHaveLength(0);
+    expect(button("Check Orbit connection").disabled).toBe(false);
+    await click("Check Orbit connection");
+    expect(mock.mutations).toEqual([undefined]);
+    expect(container.textContent).toContain("Portal can connect to Orbit.");
+    expect(container.textContent).not.toContain("source health only");
+    expect(container.textContent).not.toContain("HQ_ORBIT");
+    expect(container.textContent).not.toContain("https://");
+    expect(currentReport()).toBeTruthy();
+  });
+  it("locks duplicate connection clicks and shows plain missing-key failure", async () => {
+    const pending = deferred<any>();
+    mock.mutationWait = pending.promise;
+    await render();
+    await click("Check Orbit connection");
+    expect(mock.mutations).toEqual([undefined]);
+    expect(button("Checking…").disabled).toBe(true);
+    await click("Checking…");
+    expect(mock.mutations).toHaveLength(1);
+    mock.mutationWait = undefined;
+    mock.connectionResult = {
+      outcome: "missing_key",
+      message: "Orbit connection is not configured on the server.",
+      checkedAt: "2026-11-24T12:01:00.000Z",
+      generationId: null,
+      sourcePublishedAt: null,
+      sourceObservationAt: null,
+    };
+    await act(async () => pending.resolve());
+    expect(container.textContent).toContain(
+      "Orbit connection is not configured"
+    );
+    expect(container.textContent).not.toContain("secret");
+    expect(container.textContent).not.toContain("https://");
+  });
   it("renders huge and precise source money strings without Number coercion", () => {
     expect(formatHqMoney("900719925474099312345678.12")).toBe(
       "£900,719,925,474,099,312,345,678.12"
@@ -1282,4 +1352,598 @@ describe("Management HQ production wiring on actual DOM", () => {
     expect([...select.options].map(option => option.value)).toContain("2000");
     expect([...select.options].map(option => option.value)).toContain("2100");
   });
+});
+
+const READY_CONNECTION_TEXT =
+  "Portal can connect to Orbit. No bookings have been imported or HQ switched on.";
+function connectionPanel() {
+  return container.querySelector('[aria-label="Orbit connection check"]')!;
+}
+function connectionChecks() {
+  return mock.mutationCalls.filter(
+    call => call.path === "managementHq.checkConnection"
+  );
+}
+function sampleMutations() {
+  return mock.mutationCalls.filter(call => call.path === "managementHq.sample");
+}
+function connectionPayload(patch: Record<string, unknown> = {}) {
+  return {
+    outcome: "ready",
+    message: READY_CONNECTION_TEXT,
+    checkedAt: "2026-11-24T12:01:00.000Z",
+    generationId: 12,
+    sourcePublishedAt: "2026-11-24T12:00:00.000Z",
+    sourceObservationAt: "2026-11-24T11:59:00.000Z",
+    ...patch,
+  };
+}
+async function connectionBoundaryChange(changeType: string) {
+  if (changeType === "actor") mock.user = { ...mock.user, id: 48 };
+  if (changeType === "revoked") mock.user = { ...mock.user, isActive: false };
+  if (changeType === "auth-pending") mock.fetching["auth.me"] = true;
+  if (changeType === "mode")
+    mock.data["managementHq.status"].reportMode = "disabled";
+  if (changeType === "status-error")
+    mock.errors["managementHq.status"] = {
+      data: { code: "INTERNAL_SERVER_ERROR" },
+      message: "NEVER-RENDER raw SQL bearer https://private.invalid",
+    };
+  if (changeType === "status-pending")
+    mock.fetching["managementHq.status"] = true;
+  if (changeType === "generation")
+    mock.data["managementHq.status"].stateVersion++;
+  if (changeType === "read-off")
+    mock.data["managementHq.status"].live.readEnabled = false;
+  if (changeType === "settings")
+    mock.data["managementHq.status"].live.intervalSeconds = 600;
+  if (changeType === "freshness-settings")
+    mock.data["managementHq.status"].live.freshnessSeconds = 1800;
+  if (changeType === "sync-settings")
+    mock.data["managementHq.status"].live.syncEnabled = false;
+  if (changeType === "configuration-error")
+    mock.data["managementHq.status"].live.configurationCode = "CONFIG_INVALID";
+  if (changeType === "live-configured")
+    mock.data["managementHq.status"].liveConfigured = false;
+  if (changeType === "unmount") {
+    await act(async () => root.render(null));
+    return;
+  }
+  if (changeType === "route") {
+    await act(async () => window.history.replaceState({}, "", "/super-admin"));
+    return;
+  }
+  // A queued change event can arrive after the controls have been disabled.
+  // Dispatch the real DOM event to exercise request-period invalidation too.
+  if (changeType === "month") {
+    await change("Reporting month", "2");
+    return;
+  }
+  if (changeType === "year") {
+    await change("Reporting year", "2027");
+    return;
+  }
+  await render();
+}
+
+describe("Orbit connection check dedicated lifecycle DOM regressions", () => {
+  it("never checks on mount, rerender, focus, Refresh, period change, polling time or storage", async () => {
+    const storageGet = vi.spyOn(Storage.prototype, "getItem");
+    const storageSet = vi.spyOn(Storage.prototype, "setItem");
+    const storageRemove = vi.spyOn(Storage.prototype, "removeItem");
+    await render();
+    await render();
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await click("Refresh");
+    await change("Reporting month", "2");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600_000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(connectionChecks()).toHaveLength(0);
+    expect(mock.connectionMutateAsync).not.toHaveBeenCalled();
+    expect(
+      mock.hooks.some(hook => hook.path === "managementHq.checkConnection")
+    ).toBe(false);
+    expect(mock.hooks.some(hook => hook.options?.refetchInterval)).toBe(false);
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(storageSet).not.toHaveBeenCalled();
+    expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it("is usable with HQ disabled, and a ready result enables neither report reads nor sample imports", async () => {
+    mock.data["managementHq.status"] = {
+      reportMode: "disabled",
+      sampleEnabled: false,
+      hasSample: false,
+      stateVersion: null,
+      liveConfigured: false,
+    };
+    await render();
+    expect(button("Check Orbit connection").disabled).toBe(false);
+    const before = structuredClone(mock.data["managementHq.status"]);
+    await click("Check Orbit connection");
+    expect(connectionChecks()).toEqual([
+      { path: "managementHq.checkConnection", actorId: 47, input: undefined },
+    ]);
+    expect(mock.data["managementHq.status"]).toEqual(before);
+    expect(connectionPanel().textContent).toContain(READY_CONNECTION_TEXT);
+    expect(currentReport()).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Sample scenarios"]')
+    ).toBeNull();
+    expect(mock.hooks.some(hook => hook.path === "managementHq.report")).toBe(
+      false
+    );
+    expect(sampleMutations()).toHaveLength(0);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    expect(mock.csv).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { readEnabled: false },
+    { hasPublished: false },
+    { configured: false },
+  ])(
+    "a ready health result does not override live approval/publication/configuration %j",
+    async patch => {
+      liveFixture(patch);
+      await render();
+      await click("Check Orbit connection");
+      expect(connectionPanel().textContent).toContain(READY_CONNECTION_TEXT);
+      expect(currentReport()).toBeNull();
+      expect(mock.hooks.some(hook => hook.path === "managementHq.report")).toBe(
+        false
+      );
+      expect(sampleMutations()).toHaveLength(0);
+      expect(mock.refetch).not.toHaveBeenCalled();
+    }
+  );
+
+  it("locks same-tick duplicate clicks plus Refresh, every sample action and both period controls during its flight", async () => {
+    const pending = deferred<any>();
+    mock.connectionMutateAsync.mockReturnValue(pending.promise);
+    await render();
+    const check = button("Check Orbit connection");
+    await act(async () => {
+      check.click();
+      check.click();
+    });
+    expect(connectionChecks()).toHaveLength(1);
+    expect(mock.connectionMutateAsync.mock.calls).toEqual([[undefined]]);
+    for (const label of [
+      "Checking…",
+      "Refresh",
+      "Load initial sample",
+      "Replay value amendment",
+      "Replay sample cancellation",
+      "Replay later registration",
+    ]) {
+      expect(button(label).disabled).toBe(true);
+      await click(label);
+    }
+    for (const label of ["Reporting year", "Reporting month"])
+      expect(
+        container.querySelector<HTMLSelectElement>(
+          `select[aria-label="${label}"]`
+        )!.disabled
+      ).toBe(true);
+    expect(sampleMutations()).toHaveLength(0);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(connectionPayload()));
+    expect(button("Check Orbit connection").disabled).toBe(false);
+    expect(button("Refresh").disabled).toBe(false);
+    expect(button("Replay value amendment").disabled).toBe(false);
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        'select[aria-label="Reporting month"]'
+      )!.disabled
+    ).toBe(false);
+  });
+
+  it("clears its prior result immediately on a new attempt and leaves existing sample authority unchanged", async () => {
+    await render();
+    await click("Check Orbit connection");
+    expect(connectionPanel().textContent).toContain(READY_CONNECTION_TEXT);
+    const before = structuredClone(mock.data["managementHq.status"]);
+    const pending = deferred<any>();
+    mock.connectionMutateAsync.mockReturnValue(pending.promise);
+    await click("Check Orbit connection");
+    expect(connectionPanel().textContent).not.toContain(READY_CONNECTION_TEXT);
+    expect(connectionPanel().textContent).not.toContain("Checked ");
+    expect(connectionPanel().textContent).toContain(
+      "Checking the Orbit connection…"
+    );
+    await act(async () =>
+      pending.resolve(connectionPayload({ outcome: "missing_key" }))
+    );
+    expect(connectionPanel().textContent).toContain(
+      "Orbit connection is not configured on the server."
+    );
+    expect(connectionPanel().textContent).not.toContain(READY_CONNECTION_TEXT);
+    expect(mock.data["managementHq.status"]).toEqual(before);
+    expect(currentReport()).toBeTruthy();
+    expect(sampleMutations()).toHaveLength(0);
+    expect(mock.refetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ready", READY_CONNECTION_TEXT],
+    [
+      "stale",
+      "Orbit is connected, but its latest reporting data is out of date.",
+    ],
+    ["not_ready", "Orbit’s reporting data is not ready yet."],
+    ["missing_key", "Orbit connection is not configured on the server."],
+    ["invalid_settings", "Orbit connection settings are invalid."],
+    ["key_rejected", "Orbit reporting key was rejected."],
+    ["unavailable", "Portal could not complete the Orbit connection check."],
+  ])(
+    "renders only fixed staff wording for %s, never response messages or source payload",
+    async (outcome, expected) => {
+      mock.connectionMutateAsync.mockResolvedValue(
+        connectionPayload({
+          outcome,
+          message:
+            "NEVER-RENDER SQL secret Bearer https://private.invalid HQ_ORBIT_REPORTING_API_KEY",
+          generationId: "NEVER-RENDER generation",
+          sourcePublishedAt: "NEVER-RENDER timestamp",
+          sourceObservationAt: "NEVER-RENDER observation",
+          checkedAt: "NEVER-RENDER bad date",
+          source: { customer: "NEVER-RENDER", apiKey: "NEVER-RENDER" },
+        })
+      );
+      await render();
+      await click("Check Orbit connection");
+      expect(connectionPanel().textContent).toContain(expected);
+      expect(
+        connectionPanel().querySelector(
+          outcome === "ready" ? '[role="status"]' : '[role="alert"]'
+        )
+      ).toBeTruthy();
+      expect(connectionPanel().textContent).toContain("Checked ");
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(container.textContent).not.toContain("Invalid Date");
+      expect(container.textContent).not.toContain("HQ_ORBIT");
+      expect(currentReport()).toBeTruthy();
+      expect(sampleMutations()).toHaveLength(0);
+    }
+  );
+
+  it.each([
+    null,
+    undefined,
+    {},
+    { outcome: "__proto__", message: "NEVER-RENDER" },
+  ])(
+    "handles a malformed result safely without invented readiness %j",
+    async payload => {
+      mock.connectionMutateAsync.mockResolvedValue(payload);
+      await render();
+      await click("Check Orbit connection");
+      expect(connectionPanel().textContent).toContain(
+        "Portal could not complete the Orbit connection check."
+      );
+      expect(connectionPanel().textContent).not.toContain(
+        READY_CONNECTION_TEXT
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(button("Check Orbit connection").disabled).toBe(false);
+    }
+  );
+
+  it.each([
+    new Error("NEVER-RENDER SQL Bearer https://private.invalid"),
+    {
+      data: { code: "INTERNAL_SERVER_ERROR" },
+      message: "NEVER-RENDER SQL credentials",
+    },
+    { code: "TIMEOUT", message: "NEVER-RENDER provider detail" },
+  ])(
+    "sanitizes ordinary rejected promises without changing existing mutation guards %j",
+    async error => {
+      mock.connectionMutateAsync.mockRejectedValue(error);
+      await render();
+      await click("Check Orbit connection");
+      expect(connectionPanel().textContent).toContain(
+        "Portal could not complete the Orbit connection check."
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(currentReport()).toBeTruthy();
+      expect(button("Replay value amendment").disabled).toBe(false);
+      expect(sampleMutations()).toHaveLength(0);
+      expect(button("Check Orbit connection").disabled).toBe(false);
+    }
+  );
+
+  it.each([
+    "actor",
+    "revoked",
+    "auth-pending",
+    "unmount",
+    "route",
+    "month",
+    "year",
+    "mode",
+    "status-error",
+    "status-pending",
+    "generation",
+    "read-off",
+    "settings",
+  ])(
+    "withholds a late ready result after %s, and settles its own flight despite display invalidation",
+    async changeType => {
+      liveFixture();
+      const pending = deferred<any>();
+      mock.connectionMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Check Orbit connection");
+      await connectionBoundaryChange(changeType);
+      await act(async () => pending.resolve(connectionPayload()));
+      expect(container.textContent).not.toContain(READY_CONNECTION_TEXT);
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(container.textContent).not.toContain(
+        "Checking the Orbit connection…"
+      );
+      expect(
+        container.querySelector(
+          '[aria-label="Orbit connection check"] [role="alert"]'
+        )
+      ).toBeNull();
+      if (changeType === "status-pending") {
+        expect(button("Refresh").disabled).toBe(true);
+        mock.fetching["managementHq.status"] = false;
+        await render();
+      }
+      if (!["revoked", "auth-pending", "unmount"].includes(changeType)) {
+        expect(button("Refresh").disabled).toBe(false);
+        expect(button("Check Orbit connection").disabled).toBe(false);
+        mock.connectionMutateAsync.mockResolvedValue(connectionPayload());
+        await click("Check Orbit connection");
+        expect(connectionChecks()).toHaveLength(2);
+        expect(connectionPanel().textContent).toContain(READY_CONNECTION_TEXT);
+      }
+    }
+  );
+
+  it.each(["route", "mode", "status-error", "month"])(
+    "withholds even a late authorization rejection after %s instead of revoking a different boundary",
+    async changeType => {
+      const pending = deferred<any>();
+      mock.connectionMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Check Orbit connection");
+      await connectionBoundaryChange(changeType);
+      await act(async () =>
+        pending.reject({
+          data: { code: "FORBIDDEN" },
+          message: "NEVER-RENDER stale actor",
+        })
+      );
+      expect(container.textContent).not.toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(button("Refresh").disabled).toBe(false);
+    }
+  );
+
+  it.each([
+    "actor",
+    "revoked",
+    "auth-pending",
+    "mode",
+    "status-error",
+    "status-pending",
+    "generation",
+    "read-off",
+    "settings",
+    "freshness-settings",
+    "sync-settings",
+    "configuration-error",
+    "live-configured",
+    "month",
+    "year",
+  ])(
+    "clears a stored result when the %s authority/mode/settings/status/period boundary changes",
+    async changeType => {
+      liveFixture();
+      await render();
+      await click("Check Orbit connection");
+      expect(connectionPanel().textContent).toContain(READY_CONNECTION_TEXT);
+      await connectionBoundaryChange(changeType);
+      expect(container.textContent).not.toContain(READY_CONNECTION_TEXT);
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+    }
+  );
+
+  it("clears stored health evidence on Refresh and on a sample state mutation", async () => {
+    await render();
+    await click("Check Orbit connection");
+    await click("Refresh");
+    expect(connectionPanel().textContent).not.toContain(READY_CONNECTION_TEXT);
+    await click("Check Orbit connection");
+    await click("Replay value amendment");
+    expect(connectionPanel().textContent).not.toContain(READY_CONNECTION_TEXT);
+    expect(sampleMutations()).toHaveLength(1);
+  });
+
+  it.each([
+    { data: { code: "FORBIDDEN" }, message: "NEVER-RENDER revoked actor" },
+    { data: { code: "UNAUTHORIZED" }, message: "NEVER-RENDER expired session" },
+    { code: "UNAUTHENTICATED", message: "NEVER-RENDER expired cookie" },
+    {
+      data: { code: "PRECONDITION_FAILED" },
+      message: "Management HQ access could not be verified.",
+    },
+    {
+      data: { code: "PRECONDITION_FAILED" },
+      message:
+        "Management HQ data or access could not be verified. Values are unavailable, not zero. No partial totals have been returned.",
+    },
+    {
+      data: { code: "PRECONDITION_FAILED" },
+      message: "NEVER-RENDER arbitrary provider/SQL message",
+    },
+    {
+      data: { code: "INTERNAL_SERVER_ERROR" },
+      message: "Management HQ access could not be verified.",
+    },
+  ])(
+    "revokes cached report/export permission on a current access-gate rejection until a fresh successful Refresh %j",
+    async error => {
+      liveFixture();
+      const csv = deferred<any>();
+      const check = deferred<any>();
+      mock.csv.mockReturnValue(csv.promise);
+      mock.connectionMutateAsync.mockReturnValue(check.promise);
+      await render();
+      await click("Check Orbit connection");
+      // The CSV starts in this check's epoch, so discarding it proves revoked
+      // report permission, rather than just check-start epoch invalidation.
+      await click("Export all filtered records");
+      await act(async () => check.reject(error));
+      expect(container.textContent).toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(currentReport()).toBeNull();
+      expect(container.textContent).not.toContain("OFFLINE-LIVE-FIXTURE");
+      expect(
+        container.querySelector('[aria-label="Live reporting connection"]')
+      ).toBeNull();
+      expect(connectionPanel().textContent).not.toContain(
+        "Portal could not complete"
+      );
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      await act(async () =>
+        csv.resolve({
+          csv: "Must not download",
+          filename: "management-hq-LIVE-2026.csv",
+        })
+      );
+      expect(downloads).toHaveLength(0);
+      expect(createUrl).not.toHaveBeenCalled();
+      await render();
+      expect(currentReport()).toBeNull();
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      const fresh = deferred<any>();
+      mock.refetch.mockReturnValue(fresh.promise);
+      await click("Refresh");
+      expect(currentReport()).toBeNull();
+      await act(async () =>
+        fresh.resolve({ data: mock.data["managementHq.status"], error: null })
+      );
+      expect(currentReport()).toBeTruthy();
+      expect(button("Check Orbit connection").disabled).toBe(false);
+      expect(sampleMutations()).toHaveLength(0);
+    }
+  );
+
+  it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+    "a %s status denial keeps health checks and existing sample mutations locked until Refresh",
+    async code => {
+      await render();
+      mock.errors["managementHq.status"] = {
+        data: { code },
+        message: "NEVER-RENDER raw",
+      };
+      await render();
+      expect(currentReport()).toBeNull();
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Sample scenarios"]')
+      ).toBeNull();
+      mock.errors["managementHq.status"] = null;
+      await render();
+      expect(currentReport()).toBeNull();
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      expect(button("Replay value amendment").disabled).toBe(true);
+      await click("Check Orbit connection");
+      await click("Replay value amendment");
+      expect(mock.mutations).toHaveLength(0);
+      await click("Refresh");
+      expect(currentReport()).toBeTruthy();
+      expect(button("Check Orbit connection").disabled).toBe(false);
+      expect(button("Replay value amendment").disabled).toBe(false);
+    }
+  );
+
+  it("a failed Refresh does not clear a connection access revocation", async () => {
+    await render();
+    mock.connectionMutateAsync.mockRejectedValue({
+      data: { code: "FORBIDDEN" },
+    });
+    await click("Check Orbit connection");
+    mock.refetch.mockResolvedValue({
+      data: undefined,
+      error: { data: { code: "UNAUTHORIZED" } },
+    });
+    await click("Refresh");
+    expect(currentReport()).toBeNull();
+    expect(button("Check Orbit connection").disabled).toBe(true);
+    expect(button("Replay value amendment").disabled).toBe(true);
+    expect(sampleMutations()).toHaveLength(0);
+  });
+
+  it.each(["resolve", "reject"])(
+    "actor A's late %s cannot reset actor B's hook or unlock B's independent in-flight operation",
+    async settlement => {
+      const actorA = deferred<any>();
+      const actorB = deferred<any>();
+      mock.connectionMutateAsync
+        .mockImplementationOnce(() => actorA.promise)
+        .mockImplementationOnce(() => actorB.promise);
+      await render();
+      await click("Check Orbit connection");
+      mock.user = { ...mock.user, id: 48 };
+      await render();
+      await click("Check Orbit connection");
+      const resetsBefore = mock.mutationResets.filter(
+        reset => reset.actorId === 48
+      ).length;
+      expect(connectionChecks().map(call => call.actorId)).toEqual([47, 48]);
+      await act(async () => {
+        if (settlement === "resolve") actorA.resolve(connectionPayload());
+        else
+          actorA.reject({
+            data: { code: "FORBIDDEN" },
+            message: "NEVER-RENDER old actor",
+          });
+      });
+      expect(
+        mock.mutationResets.filter(reset => reset.actorId === 48)
+      ).toHaveLength(resetsBefore);
+      expect(connectionPanel().textContent).not.toContain(
+        READY_CONNECTION_TEXT
+      );
+      expect(container.textContent).not.toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(button("Checking…").disabled).toBe(true);
+      expect(button("Refresh").disabled).toBe(true);
+      expect(button("Replay value amendment").disabled).toBe(true);
+      await click("Checking…");
+      await click("Refresh");
+      await click("Replay value amendment");
+      expect(connectionChecks()).toHaveLength(2);
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(sampleMutations()).toHaveLength(0);
+      await act(async () =>
+        actorB.resolve(connectionPayload({ outcome: "missing_key" }))
+      );
+      expect(connectionPanel().textContent).toContain(
+        "Orbit connection is not configured on the server."
+      );
+      expect(button("Check Orbit connection").disabled).toBe(false);
+      expect(button("Refresh").disabled).toBe(false);
+      expect(currentReport()?.getAttribute("data-actor")).toBe("48");
+    }
+  );
 });

@@ -20,6 +20,10 @@ import {
 } from "./management-hq-live-config";
 import { createHqLiveService } from "./management-hq-live-service";
 import {
+  captureHqConnectionBinding,
+  checkHqConnection,
+} from "./management-hq-connection-check";
+import {
   getHqLiveReport,
   withHqLiveReportMetadata,
 } from "./management-hq-live-report";
@@ -155,6 +159,25 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  checkConnection: procedure.input(z.void()).mutation(async ({ ctx }) => {
+    try {
+      const start = boundary();
+      const assertSourceBinding = captureHqConnectionBinding();
+      const result = await checkHqConnection({
+        beforeRequest: async () => {
+          await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+          assertBoundary(start);
+        },
+      });
+      assertSourceBinding();
+      await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+      assertSourceBinding();
+      assertBoundary(start);
+      return result;
+    } catch (error) {
+      safeError(error);
+    }
+  }),
   status: procedure.query(async ({ ctx }) => {
     try {
       const start = boundary();
