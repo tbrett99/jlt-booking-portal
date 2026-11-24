@@ -19,6 +19,40 @@ import { createHash } from "node:crypto";
 
 const SCOPE = "company_all_real_and_unattributed" as const;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+/** Exact canonical equality for JSON values, without allocating whole-state strings. */
+function sameCanonicalJson(left: unknown, right: unknown): boolean {
+  const leftObject = left !== null && typeof left === "object";
+  const rightObject = right !== null && typeof right === "object";
+  if (!leftObject || !rightObject)
+    return (
+      leftObject === rightObject &&
+      canonicalHqJson(left) === canonicalHqJson(right)
+    );
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (
+      !Array.isArray(left) ||
+      !Array.isArray(right) ||
+      left.length !== right.length
+    )
+      return false;
+    for (let index = 0; index < left.length; index++)
+      if (!sameCanonicalJson(left[index], right[index])) return false;
+    return true;
+  }
+  const a = Object.keys(left as object).sort();
+  const b = Object.keys(right as object).sort();
+  return (
+    a.length === b.length &&
+    a.every(
+      (name, index) =>
+        name === b[index] &&
+        sameCanonicalJson(
+          (left as Record<string, unknown>)[name],
+          (right as Record<string, unknown>)[name]
+        )
+    )
+  );
+}
 type EntityType = "booking" | "business";
 type Phase =
   | "bookings"
@@ -91,6 +125,8 @@ export interface HqImplementedOptions {
   maxPages?: number;
   maxRecords?: number;
   maxStateBytes?: number;
+  /** Server-owned storage profile; counts exact UTF-8 JSON bytes without another giant string. */
+  measureStateBytes?: (value: unknown, maximum: number) => number;
   /** Invocation budget, checked before EACH source method; generation caps remain cumulative. */
   shouldContinue?: () => boolean | Promise<boolean>;
 }
@@ -240,8 +276,7 @@ function validContainer(value: HqImplementedSyncState | null) {
         canonicalHqJson({ booking: [], business: [] }) ||
       canonicalHqJson(stage.catalogueKeys) !==
         canonicalHqJson({ booking: [], business: [] }) ||
-      canonicalHqJson(stage.entities) !==
-        canonicalHqJson(value.published?.entities ?? {}) ||
+      !sameCanonicalJson(stage.entities, value.published?.entities ?? {}) ||
       canonicalHqJson(stage.seqProofs) !== "{}"
     )
       fail("INVALID_STAGED_PROGRESS");
@@ -339,7 +374,7 @@ export function validateHqImplementedSyncState(
   value: unknown,
   options: Pick<
     HqImplementedOptions,
-    "maxPages" | "maxRecords" | "maxStateBytes"
+    "maxPages" | "maxRecords" | "maxStateBytes" | "measureStateBytes"
   > = {}
 ): asserts value is HqImplementedSyncState | null {
   try {
@@ -352,7 +387,10 @@ export function validateHqImplementedSyncState(
       )
     )
       fail("INVALID_PERSISTED_STATE");
-    if (Buffer.byteLength(JSON.stringify(value)) > maxBytes)
+    const bytes = options.measureStateBytes
+      ? options.measureStateBytes(value, maxBytes)
+      : Buffer.byteLength(JSON.stringify(value));
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > maxBytes)
       fail("INVALID_PERSISTED_STATE");
     if (value === null) return;
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -420,7 +458,15 @@ export function createHqImplementedEngine(
       maxRecords
     )
       fail("REPLAY_PROOF_CAP_EXCEEDED");
-    if (Buffer.byteLength(JSON.stringify(next)) > maxStateBytes)
+    let bytes: number;
+    try {
+      bytes = options.measureStateBytes
+        ? options.measureStateBytes(next, maxStateBytes)
+        : Buffer.byteLength(JSON.stringify(next));
+    } catch {
+      return fail("STATE_BYTE_CAP_EXCEEDED");
+    }
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > maxStateBytes)
       fail("STATE_BYTE_CAP_EXCEEDED");
   }
   async function write(
@@ -647,8 +693,10 @@ export function createHqImplementedEngine(
       };
       const unchanged =
         published !== null &&
-        canonicalHqJson({ ...published, version: 0 }) ===
-          canonicalHqJson({ ...nextPublished, version: 0 });
+        sameCanonicalJson(
+          { ...published, version: 0 },
+          { ...nextPublished, version: 0 }
+        );
       if (unchanged) nextPublished.version = published!.version;
       const done: HqImplementedSyncState = {
         version: current!.version + 1,

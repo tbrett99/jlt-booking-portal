@@ -7,6 +7,7 @@ import {
 } from "./management-hq-ingestion";
 import { getHqLiveReport } from "./management-hq-live-report";
 import type { HqLiveStatusDto } from "./management-hq-live-service";
+import { HQ_LIVE_V2_VALIDATION_OPTIONS } from "./management-hq-storage-v2";
 
 const LIMITATIONS = [
   "Scope: company_all_real_and_unattributed; no operational financial tables are used.",
@@ -184,11 +185,14 @@ export async function validateHqInitialPublication(
       }
       return unavailable(checkedAt);
     }
-    validateHqImplementedSyncState({
-      version: state.version,
-      published: state,
-      stage: null,
-    });
+    validateHqImplementedSyncState(
+      {
+        version: state.version,
+        published: state,
+        stage: null,
+      },
+      HQ_LIVE_V2_VALIDATION_OPTIONS
+    );
     if (!integer(safeStatus.stateVersion, 1)) return unavailable(checkedAt);
     const pin = {
       generationId: state.metadata.generationId,

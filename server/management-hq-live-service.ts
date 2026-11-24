@@ -19,6 +19,7 @@ import {
   type HqLiveSnapshot,
   type HqLiveStore,
 } from "./management-hq-live-store";
+import { HQ_LIVE_V2_VALIDATION_OPTIONS } from "./management-hq-storage-v2";
 
 // One lazy process-wide pool, not one per HTTP request. No raw DB URI is retained in exported data.
 // A runtime DB binding change requires process restart rather than silently mixing stores/pools.
@@ -118,7 +119,11 @@ export function buildHqLiveStatus(
   nowMs = Date.now(),
   errorCode: HqLiveErrorCode | null = null
 ): HqLiveStatusDto {
-  if (snapshot) validateHqImplementedSyncState(snapshot.sync);
+  if (snapshot)
+    validateHqImplementedSyncState(
+      snapshot.sync,
+      HQ_LIVE_V2_VALIDATION_OPTIONS
+    );
   const published = snapshot?.sync?.published,
     stage = snapshot?.sync?.stage,
     control = snapshot?.control;
@@ -435,6 +440,7 @@ export function createHqLiveService(
               }
             : fenced,
           {
+            ...HQ_LIVE_V2_VALIDATION_OPTIONS,
             shouldContinue: async () => {
               if (methods >= maxMethods || now() - started >= deadlineMs)
                 return false;

@@ -17,6 +17,7 @@ import {
   HQ_LIVE_SYNC_DATASET_ID,
 } from "./management-hq-live-store";
 import { HqOrbitClient } from "./management-hq-orbit-client";
+import { HQ_LIVE_V2_VALIDATION_OPTIONS } from "./management-hq-storage-v2";
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 function liveConfig(overrides: Record<string, string> = {}) {
   return createHqLiveConfig({
@@ -719,7 +720,10 @@ describe("safe live status source freshness projection", () => {
           { control: null, sync, databaseNowMs: now },
           now
         );
-        expect(validator).toHaveBeenCalledWith(sync);
+        expect(validator).toHaveBeenCalledWith(
+          sync,
+          HQ_LIVE_V2_VALIDATION_OPTIONS
+        );
         expect(status).toMatchObject({
           sourceAgeSeconds: age,
           freshnessTargetSeconds: target,

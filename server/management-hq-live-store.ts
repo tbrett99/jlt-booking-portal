@@ -12,6 +12,18 @@ import {
   type HqImplementedSyncState,
 } from "./management-hq-ingestion";
 import type { HqLiveConfig } from "./management-hq-live-config";
+import {
+  decodeHqLiveV2Sync,
+  encodeHqLiveV2Sync,
+  hqJsonUtf8Bytes,
+  manifestChunkRefs,
+  validateHqV2Chunk,
+  validateHqV2Manifest,
+  HQ_LIVE_V2_CHUNK_ROW_BYTES,
+  HQ_LIVE_V2_ROOT_BYTES,
+  type HqV2Manifest,
+  type HqV2ChunkRef,
+} from "./management-hq-storage-v2";
 
 /** Reserved service namespace; ownerUserId=0 creates no user and has no FK. Never caller-selected. */
 export const HQ_LIVE_SYNC_DATASET_ID = "live:company:orbit:v1:sync";
@@ -21,6 +33,9 @@ export const HQ_LIVE_LEASE_SECONDS = 30;
 export const HQ_LIVE_MAX_LEASE_SECONDS = 95;
 const MAX_VERSION = 2_147_483_646;
 const MAX_BYTES = 16 * 1024 * 1024;
+const V1_WRITE_BYTES = 8 * 1024 * 1024;
+// At most four bounded rows per response, even if a hostile row uses its full row cap.
+const CHUNK_READ_BATCH_COUNT = 4;
 export const HQ_LIVE_ERROR_CODES = [
   "CONFIG_INVALID",
   "CONFIG_INCOMPLETE",
@@ -331,15 +346,94 @@ export function createHqLiveStore(
     assertBinding(f, control.sourceFingerprint);
     return control;
   }
+  function chunkText(row: RowDataPacket, ref: HqV2ChunkRef, f: string): string {
+    parseRow(row, ref.id, HQ_LIVE_V2_CHUNK_ROW_BYTES);
+    if (Number(row.stateVersion) !== 1) fail("INVALID_PERSISTED_STATE");
+    const text =
+      typeof row.state === "string" ? row.state : JSON.stringify(row.state);
+    try {
+      validateHqV2Chunk(text, ref, f);
+    } catch {
+      fail("INVALID_PERSISTED_STATE");
+    }
+    return text;
+  }
+  async function chunkRows(
+    c: PoolConnection,
+    refs: readonly HqV2ChunkRef[],
+    f: string,
+    allowMissing = false
+  ): Promise<Map<string, string>> {
+    const chunks = new Map<string, string>();
+    for (
+      let offset = 0;
+      offset < refs.length;
+      offset += CHUNK_READ_BATCH_COUNT
+    ) {
+      const batch = refs.slice(offset, offset + CHUNK_READ_BATCH_COUNT);
+      const expected = new Map(batch.map(ref => [ref.id, ref]));
+      const [result] = await c.execute<RowDataPacket[]>(
+        `SELECT datasetId,mode,ownerUserId,stateVersion,state,updatedAt FROM management_hq_datasets WHERE datasetId IN (${batch.map(() => "?").join(",")}) FOR UPDATE`,
+        batch.map(ref => ref.id)
+      );
+      if (result.length > batch.length) fail("INVALID_PERSISTED_STATE");
+      for (const row of result) {
+        const ref = expected.get(row.datasetId);
+        if (!ref || chunks.has(row.datasetId)) fail("INVALID_PERSISTED_STATE");
+        chunks.set(ref.id, chunkText(row, ref, f));
+      }
+      if (!allowMissing && batch.some(ref => !chunks.has(ref.id)))
+        fail("INVALID_PERSISTED_STATE");
+    }
+    return chunks;
+  }
+  async function fullSync(
+    c: PoolConnection,
+    f: string
+  ): Promise<{
+    state: HqImplementedSyncState | null;
+    manifest: HqV2Manifest | null;
+    chunks: Map<string, string>;
+  }> {
+    const result = await rows(c, HQ_LIVE_SYNC_DATASET_ID);
+    if (!result.length) {
+      assertBinding(f, binding());
+      return { state: null, manifest: null, chunks: new Map() };
+    }
+    const root = parseRow(
+      result[0],
+      HQ_LIVE_SYNC_DATASET_ID,
+      HQ_LIVE_V2_ROOT_BYTES
+    ) as HqV2Manifest;
+    if (root?.format !== "hq-live-sync-manifest-v2") {
+      const envelope = syncRow(result[0]);
+      assertBinding(f, envelope.sourceFingerprint);
+      assertBinding(f, binding());
+      return { state: envelope.sync, manifest: null, chunks: new Map() };
+    }
+    if (hash(root.sourceFingerprint)) assertBinding(f, root.sourceFingerprint);
+    let refs: HqV2ChunkRef[];
+    try {
+      validateHqV2Manifest(root, Number(result[0].stateVersion), f);
+      refs = manifestChunkRefs(root);
+    } catch {
+      fail("INVALID_PERSISTED_STATE");
+    }
+    const chunks = await chunkRows(c, refs!, f);
+    let state: HqImplementedSyncState;
+    try {
+      state = decodeHqLiveV2Sync(root, chunks, f);
+    } catch {
+      fail("INVALID_PERSISTED_STATE");
+    }
+    assertBinding(f, binding()); // no state exposure after an awaited binding drift
+    return { state: state!, manifest: root, chunks };
+  }
   async function sync(
     c: PoolConnection,
     f: string
   ): Promise<HqImplementedSyncState | null> {
-    const result = await rows(c, HQ_LIVE_SYNC_DATASET_ID);
-    if (!result.length) return null;
-    const envelope = syncRow(result[0]);
-    assertBinding(f, envelope.sourceFingerprint);
-    return envelope.sync;
+    return (await fullSync(c, f)).state;
   }
   async function saveControl(
     c: PoolConnection,
@@ -367,6 +461,7 @@ export function createHqLiveStore(
     assertBinding(f, lease.sourceFingerprint);
     const control = await locked(c, f);
     const now = await dbNow(c); // clock AFTER the row lock, not before its wait
+    assertBinding(f, binding(true)); // refresh configuration after both awaited reads
     if (
       !control ||
       control.leaseToken !== lease.token ||
@@ -485,7 +580,9 @@ export function createHqLiveStore(
         const control = await locked(c, f);
         const state = await sync(c, f);
         if (!control && state) fail("INVALID_PERSISTED_STATE");
-        return { control, sync: state, databaseNowMs: await dbNow(c) };
+        const databaseNowMs = await dbNow(c);
+        assertBinding(f, binding());
+        return { control, sync: state, databaseNowMs };
       });
     },
     async readPublished() {
@@ -561,29 +658,101 @@ export function createHqLiveStore(
           return (await store.readSnapshot()).sync;
         },
         async compareAndSwapSync(expected, next) {
-          binding(true);
-          try {
-            validateHqImplementedSyncState(next);
-          } catch {
-            fail("INVALID_PERSISTED_STATE");
-          }
+          assertBinding(lease.sourceFingerprint, binding(true));
           if (
             !integer(next.version, 1, MAX_VERSION) ||
             next.version !== (expected ?? 0) + 1
           )
             fail("INVALID_PERSISTED_STATE");
+          // All encoding and bounded validation happens outside the transaction.
+          // Prepare both representations because a small next state must stay v2
+          // when its current root has already migrated.
+          let encoded: ReturnType<typeof encodeHqLiveV2Sync>;
+          let legacy: string | null = null;
           const envelope: HqLiveSyncEnvelope = {
             format: "hq-live-sync-v1",
             sourceFingerprint: lease.sourceFingerprint,
             sync: next,
           };
-          const serialized = JSON.stringify(envelope);
-          if (Buffer.byteLength(serialized) > MAX_BYTES)
+          try {
+            encoded = encodeHqLiveV2Sync(next, lease.sourceFingerprint);
+            if (hqJsonUtf8Bytes(envelope) < V1_WRITE_BYTES)
+              legacy = JSON.stringify(envelope);
+          } catch {
             fail("INVALID_PERSISTED_STATE");
+          }
+          const manifestSerialized = JSON.stringify(encoded!.manifest);
+          if (Buffer.byteLength(manifestSerialized) > HQ_LIVE_V2_ROOT_BYTES)
+            fail("INVALID_PERSISTED_STATE");
+          const newRefs = manifestChunkRefs(encoded!.manifest);
+          const preparedChunks = new Map(
+            encoded!.chunks.map(chunk => [chunk.id, chunk.serialized])
+          );
           return transaction(async c => {
             await guard(c, lease); // control lock before sync row; never a transaction around HTTP
-            const current = await sync(c, lease.sourceFingerprint);
+            const loaded = await fullSync(c, lease.sourceFingerprint);
+            const current = loaded.state;
             if ((current?.version ?? null) !== expected) return false;
+            const useV2 = loaded.manifest !== null || legacy === null;
+            const serialized = useV2 ? manifestSerialized : legacy!;
+            const oldRefs = loaded.manifest
+              ? manifestChunkRefs(loaded.manifest)
+              : [];
+            if (useV2) {
+              const unheld = newRefs.filter(ref => !loaded.chunks.has(ref.id));
+              // Exact locked lookups only, including collisions not referenced by the old root.
+              const existing = await chunkRows(
+                c,
+                unheld,
+                lease.sourceFingerprint,
+                true
+              );
+              for (const ref of newRefs) {
+                const text = preparedChunks.get(ref.id);
+                if (!text) fail("INVALID_PERSISTED_STATE");
+                const reused =
+                  loaded.chunks.get(ref.id) ?? existing.get(ref.id);
+                if (reused !== undefined) {
+                  try {
+                    if (
+                      !validateHqV2Chunk(
+                        reused,
+                        ref,
+                        lease.sourceFingerprint
+                      ).equals(
+                        validateHqV2Chunk(text, ref, lease.sourceFingerprint)
+                      )
+                    )
+                      fail("INVALID_PERSISTED_STATE");
+                  } catch {
+                    fail("INVALID_PERSISTED_STATE");
+                  }
+                  continue;
+                }
+                await guard(c, lease);
+                const [inserted] = await c.execute<ResultSetHeader>(
+                  "INSERT IGNORE INTO management_hq_datasets (datasetId,mode,ownerUserId,stateVersion,state,updatedAt) VALUES (?,'live',0,1,?,UTC_TIMESTAMP(3))",
+                  [ref.id, text]
+                );
+                await guard(c, lease);
+                if (inserted.affectedRows !== 1) {
+                  if (inserted.affectedRows !== 0)
+                    fail("INVALID_PERSISTED_STATE");
+                  const collided = await rows(c, ref.id, true);
+                  if (collided.length !== 1) fail("INVALID_PERSISTED_STATE");
+                  if (
+                    !validateHqV2Chunk(
+                      chunkText(collided[0], ref, lease.sourceFingerprint),
+                      ref,
+                      lease.sourceFingerprint
+                    ).equals(
+                      validateHqV2Chunk(text, ref, lease.sourceFingerprint)
+                    )
+                  )
+                    fail("INVALID_PERSISTED_STATE");
+                }
+              }
+            }
             // Recheck DB clock/binding/fence immediately before EVERY sync CAS (including publication/410).
             const { control, now } = await guard(c, lease);
             let r: ResultSetHeader;
@@ -597,9 +766,24 @@ export function createHqLiveStore(
                 "UPDATE management_hq_datasets SET stateVersion = ?,state = ?,updatedAt = UTC_TIMESTAMP(3) WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = ?",
                 [next.version, serialized, HQ_LIVE_SYNC_DATASET_ID, expected]
               );
-            if (r.affectedRows !== 1) return false;
+            // Once chunks may have been inserted, a false return would commit
+            // orphan mutations. Any failed root CAS is therefore a rollback.
+            if (r.affectedRows !== 1) fail("LEASE_LOST");
             // A sync write can itself cross expiry: staging, 410 intent/cleanup and publication all roll back.
             await guard(c, lease);
+            if (useV2) {
+              const retained = new Set(newRefs.map(ref => ref.id));
+              for (const ref of oldRefs) {
+                if (retained.has(ref.id)) continue;
+                await guard(c, lease);
+                const [deleted] = await c.execute<ResultSetHeader>(
+                  "DELETE FROM management_hq_datasets WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = 1",
+                  [ref.id]
+                );
+                await guard(c, lease);
+                if (deleted.affectedRows !== 1) fail("INVALID_PERSISTED_STATE");
+              }
+            }
             if (
               next.stage === null &&
               next.published &&
@@ -608,7 +792,9 @@ export function createHqLiveStore(
               control.lastPublishAtMs = now;
               await guard(c, lease); // final success/control update is guarded too
               await saveControl(c, control);
+              await guard(c, lease);
             }
+            await guard(c, lease); // fresh configuration/fence/database clock before commit
             return true;
           });
         },
