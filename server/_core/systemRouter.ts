@@ -53,6 +53,7 @@ export const systemRouter = router({
       managementHqFinancialHeadlineEligibility: 1,
       managementHqRegisteredPendingActive: 1,
       managementHqFirstPageCheck: 1,
+      managementHqInitialRecovery: 1,
     })),
 
   notifyOwner: adminProcedure

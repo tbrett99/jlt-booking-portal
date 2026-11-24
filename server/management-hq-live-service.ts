@@ -219,6 +219,10 @@ export interface HqLiveService {
   authorizeTrigger(token: unknown): boolean;
   /** No body, actor ID, URL, source scope or cursor input. Caller protects external trigger. */
   invoke(): Promise<HqLiveInvocationResult>;
+  /** Server-only protected recovery; never starts an import or constructs a source reader. */
+  recoverEmptyInitialImport?(): Promise<
+    "recovered" | "notdue" | "busy" | "not_recoverable"
+  >;
   /** Parent must apply its fresh Super Admin access gate before these reads. */
   readPublished(): Promise<HqImplementedState | null>;
   /** Server-only acceptance snapshot; only configured sync-on/read-off is permitted. */
@@ -290,6 +294,50 @@ export function createHqLiveService(
   const service: HqLiveService = {
     configurationStatus: () => config.status(),
     authorizeTrigger: token => config.authorizeTrigger(token),
+    async recoverEmptyInitialImport() {
+      if (
+        options.onlyInitialPublication !== true ||
+        typeof options.initialImportGuard !== "function"
+      )
+        throw new HqLiveError("CONFIG_INVALID");
+      const configuration = config.status();
+      if (
+        configuration.configured !== true ||
+        configuration.configurationCode !== null ||
+        configuration.syncEnabled !== true ||
+        configuration.readEnabled !== false
+      )
+        throw new HqLiveError(
+          configuration.configurationCode === "CONFIG_INCOMPLETE"
+            ? "CONFIG_INCOMPLETE"
+            : "CONFIG_INVALID"
+        );
+      const store = await guarded(getStore);
+      const snapshot = await guarded(() => store.readSnapshot());
+      const control = snapshot.control;
+      if (
+        !control ||
+        snapshot.sync !== null ||
+        control.stageStatus !== "needs_attention" ||
+        control.lastErrorCode !== "INVALID_SEMANTICS" ||
+        control.consecutiveFailures !== 1 ||
+        control.lastSuccessAtMs !== null ||
+        control.lastPublishAtMs !== null ||
+        typeof store.recoverEmptyInitialImport !== "function"
+      )
+        return "not_recoverable";
+      // The store rechecks the exact version/binding/empty state under its transaction.
+      // Mandatory fresh authority is also awaited there immediately before its write.
+      const status = await guarded(() =>
+        store.recoverEmptyInitialImport!(
+          control.version,
+          options.initialImportGuard!
+        )
+      );
+      return status === "recovered" || status === "notdue" || status === "busy"
+        ? status
+        : "not_recoverable";
+    },
     async invoke() {
       const configuration = config.status();
       if (

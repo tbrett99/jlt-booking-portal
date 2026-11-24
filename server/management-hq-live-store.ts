@@ -100,6 +100,18 @@ export type HqLiveStageStatus =
   | "applied"
   | "backoff"
   | "needs_attention";
+export interface HqLiveInitialRecovery {
+  format: "empty-initial-recovery-v1";
+  atMs: number;
+  fromControlVersion: number;
+  previousErrorCode: "INVALID_SEMANTICS";
+  previousAttemptAtMs: number;
+}
+export type HqLiveInitialRecoveryResult =
+  | "recovered"
+  | "notdue"
+  | "busy"
+  | "not_recoverable";
 export interface HqLiveControl {
   format: "hq-live-control-v1";
   version: number;
@@ -115,6 +127,7 @@ export interface HqLiveControl {
   lastPublishAtMs: number | null;
   lastErrorCode: HqLiveErrorCode | null;
   stageStatus: HqLiveStageStatus;
+  initialRecovery?: HqLiveInitialRecovery;
 }
 export interface HqLiveLease {
   token: string;
@@ -206,6 +219,21 @@ function controlRow(row: RowDataPacket): HqLiveControl {
           HQ_LIVE_MAX_LEASE_SECONDS * 1000))
   )
     fail("INVALID_PERSISTED_STATE");
+  if (Object.prototype.hasOwnProperty.call(c, "initialRecovery")) {
+    const recovery = c.initialRecovery;
+    if (
+      !recovery ||
+      typeof recovery !== "object" ||
+      Array.isArray(recovery) ||
+      recovery.format !== "empty-initial-recovery-v1" ||
+      !integer(recovery.atMs, 1) ||
+      !integer(recovery.fromControlVersion, 1, MAX_VERSION) ||
+      recovery.fromControlVersion >= c.version ||
+      recovery.previousErrorCode !== "INVALID_SEMANTICS" ||
+      !integer(recovery.previousAttemptAtMs, 1)
+    )
+      fail("INVALID_PERSISTED_STATE");
+  }
   return c;
 }
 function syncRow(row: RowDataPacket): HqLiveSyncEnvelope {
@@ -351,6 +379,106 @@ export function createHqLiveStore(
     return { control, now };
   }
   const store: HqLiveStore = {
+    async recoverEmptyInitialImport(expectedVersion, authority) {
+      // This capability is protected independently of ordinary lease acquisition.
+      // In particular, a missing authority must fail before even opening SQL.
+      if (typeof authority !== "function") fail("AUTH_DENIED");
+      let originalBinding: string | undefined;
+      function recoveryBinding(): string {
+        const status = config.status();
+        const fingerprint = config.sourceFingerprint();
+        if (
+          status.configured !== true ||
+          status.configurationCode !== null ||
+          status.syncEnabled !== true ||
+          status.readEnabled !== false ||
+          !hash(fingerprint)
+        )
+          fail("CONFIG_INVALID");
+        if (originalBinding) assertBinding(originalBinding, fingerprint!);
+        return fingerprint!;
+      }
+      async function verifyAuthority(): Promise<void> {
+        let before: string | undefined;
+        let denial: HqLiveError | undefined;
+        try {
+          before = recoveryBinding();
+        } catch (error) {
+          denial =
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        // Always refresh the parent-provided, latched seven-setting guard,
+        // even if the store's own configuration check has already failed.
+        try {
+          await authority();
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("AUTH_DENIED");
+        }
+        try {
+          const after = recoveryBinding();
+          if (before) assertBinding(before, after);
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        if (denial) throw denial;
+        originalBinding ??= before!;
+      }
+      await verifyAuthority();
+      if (!integer(expectedVersion, 1, MAX_VERSION)) return "not_recoverable";
+      return transaction(async c => {
+        await verifyAuthority(); // recheck connection/transaction awaits
+        const controlRows = await rows(c, HQ_LIVE_CONTROL_DATASET_ID, true);
+        await verifyAuthority(); // fresh authority AFTER the control lock wait
+        if (!controlRows.length) return "not_recoverable"; // never initialize
+        const control = controlRow(controlRows[0]);
+        assertBinding(originalBinding!, control.sourceFingerprint);
+        const now = await dbNow(c); // the database clock is sampled AFTER lock
+        await verifyAuthority();
+        if (control.version !== expectedVersion) return "not_recoverable";
+        if (control.leaseToken !== null)
+          return control.leaseExpiresAtMs! > now ? "busy" : "not_recoverable";
+        if (
+          control.stageStatus !== "needs_attention" ||
+          control.lastErrorCode !== "INVALID_SEMANTICS" ||
+          control.consecutiveFailures !== 1 ||
+          control.lastAttemptAtMs === null ||
+          control.lastSuccessAtMs !== null ||
+          control.lastPublishAtMs !== null ||
+          control.initialRecovery !== undefined
+        )
+          return "not_recoverable";
+        // Physical absence, not an empty parsed envelope: never clear, overwrite,
+        // or accept even an otherwise empty/staged/foreign/corrupt sync row.
+        const syncRows = await rows(c, HQ_LIVE_SYNC_DATASET_ID);
+        await verifyAuthority();
+        if (syncRows.length) return "not_recoverable";
+        if (control.nextDueAtMs > now) return "notdue";
+        if (control.fencingNumber >= MAX_VERSION) fail("VERSION_EXHAUSTED");
+        control.initialRecovery = {
+          format: "empty-initial-recovery-v1",
+          atMs: now,
+          fromControlVersion: control.version,
+          previousErrorCode: "INVALID_SEMANTICS",
+          previousAttemptAtMs: control.lastAttemptAtMs,
+        };
+        control.fencingNumber++;
+        control.stageStatus = "idle";
+        control.lastErrorCode = null;
+        control.nextDueAtMs = now;
+        await verifyAuthority(); // immediately before the existing version CAS
+        await saveControl(c, control);
+        await verifyAuthority(); // post-UPDATE denial rolls back, before commit
+        return "recovered";
+      });
+    },
     async readSnapshot() {
       const f = binding();
       return transaction(async c => {
@@ -529,6 +657,10 @@ export function createHqLiveStore(
 export interface HqLiveStore {
   readSnapshot(): Promise<HqLiveSnapshot>;
   readPublished(): Promise<HqImplementedState | null>;
+  recoverEmptyInitialImport?(
+    expectedVersion: number,
+    authority: () => Promise<void>
+  ): Promise<HqLiveInitialRecoveryResult>;
   acquire(): Promise<HqLiveAcquireResult>;
   renew(lease: HqLiveLease): Promise<void>;
   fencedSyncStore(lease: HqLiveLease): HqImplementedStore;
