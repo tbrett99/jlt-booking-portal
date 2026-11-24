@@ -228,6 +228,10 @@ export interface HqLiveService {
   recoverEmptyInitialImport?(): Promise<
     "recovered" | "notdue" | "busy" | "not_recoverable"
   >;
+  /** Protected staged Resume only; no source requests, import or stage rewrite. */
+  resumeStagedInitialImport?(): Promise<
+    "resumed" | "notdue" | "busy" | "not_resumable"
+  >;
   /** Parent must apply its fresh Super Admin access gate before these reads. */
   readPublished(): Promise<HqImplementedState | null>;
   /** Server-only acceptance snapshot; only configured sync-on/read-off is permitted. */
@@ -342,6 +346,63 @@ export function createHqLiveService(
       return status === "recovered" || status === "notdue" || status === "busy"
         ? status
         : "not_recoverable";
+    },
+    async resumeStagedInitialImport() {
+      if (
+        options.onlyInitialPublication !== true ||
+        typeof options.initialImportGuard !== "function"
+      )
+        throw new HqLiveError("CONFIG_INVALID");
+      await guard!();
+      const configuration = config.status();
+      if (
+        configuration.configured !== true ||
+        configuration.configurationCode !== null ||
+        configuration.syncEnabled !== true ||
+        configuration.readEnabled !== false
+      )
+        throw new HqLiveError(
+          configuration.configurationCode === "CONFIG_INCOMPLETE"
+            ? "CONFIG_INCOMPLETE"
+            : "CONFIG_INVALID"
+        );
+      const store = await guarded(getStore);
+      const snapshot = await guarded(() => store.readSnapshot());
+      const control = snapshot.control;
+      const sync = snapshot.sync;
+      const stage = sync?.stage;
+      if (
+        !control ||
+        !sync ||
+        sync.published !== null ||
+        !stage ||
+        stage.kind !== "backfill" ||
+        stage.basePublishedVersion !== null ||
+        !stage.metadata ||
+        stage.pages < 1 ||
+        stage.recordsRead < 1 ||
+        control.stageStatus !== "needs_attention" ||
+        control.lastErrorCode !== "STATE_BYTE_CAP_EXCEEDED" ||
+        control.consecutiveFailures < 1 ||
+        control.lastAttemptAtMs === null ||
+        control.lastSuccessAtMs !== null ||
+        control.lastPublishAtMs !== null ||
+        control.initialStagedResume !== undefined ||
+        typeof store.resumeStagedInitialImport !== "function"
+      )
+        return "not_resumable";
+      // Recheck both observed versions under the store's control lock. Resume
+      // updates control only, never this saved stage or its immutable chunks.
+      const status = await guarded(() =>
+        store.resumeStagedInitialImport!(
+          control.version,
+          sync.version,
+          options.initialImportGuard!
+        )
+      );
+      return status === "resumed" || status === "notdue" || status === "busy"
+        ? status
+        : "not_resumable";
     },
     async invoke() {
       const configuration = config.status();

@@ -127,6 +127,22 @@ export type HqLiveInitialRecoveryResult =
   | "notdue"
   | "busy"
   | "not_recoverable";
+export interface HqLiveInitialStagedResume {
+  format: "staged-initial-resume-v1";
+  atMs: number;
+  fromControlVersion: number;
+  syncVersion: number;
+  previousErrorCode: "STATE_BYTE_CAP_EXCEEDED";
+  previousAttemptAtMs: number;
+  previousConsecutiveFailures: number;
+  pages: number;
+  recordsRead: number;
+}
+export type HqLiveStagedResumeResult =
+  | "resumed"
+  | "notdue"
+  | "busy"
+  | "not_resumable";
 export interface HqLiveControl {
   format: "hq-live-control-v1";
   version: number;
@@ -143,6 +159,7 @@ export interface HqLiveControl {
   lastErrorCode: HqLiveErrorCode | null;
   stageStatus: HqLiveStageStatus;
   initialRecovery?: HqLiveInitialRecovery;
+  initialStagedResume?: HqLiveInitialStagedResume;
 }
 export interface HqLiveLease {
   token: string;
@@ -249,6 +266,38 @@ function controlRow(row: RowDataPacket): HqLiveControl {
     )
       fail("INVALID_PERSISTED_STATE");
   }
+  if (Object.prototype.hasOwnProperty.call(c, "initialStagedResume")) {
+    const resume = c.initialStagedResume;
+    const keys = [
+      "format",
+      "atMs",
+      "fromControlVersion",
+      "syncVersion",
+      "previousErrorCode",
+      "previousAttemptAtMs",
+      "previousConsecutiveFailures",
+      "pages",
+      "recordsRead",
+    ];
+    if (
+      !resume ||
+      typeof resume !== "object" ||
+      Array.isArray(resume) ||
+      Object.keys(resume).length !== keys.length ||
+      keys.some(key => !Object.prototype.hasOwnProperty.call(resume, key)) ||
+      resume.format !== "staged-initial-resume-v1" ||
+      !integer(resume.atMs, 1) ||
+      !integer(resume.fromControlVersion, 1, MAX_VERSION) ||
+      resume.fromControlVersion >= c.version ||
+      !integer(resume.syncVersion, 1, MAX_VERSION) ||
+      resume.previousErrorCode !== "STATE_BYTE_CAP_EXCEEDED" ||
+      !integer(resume.previousAttemptAtMs, 1) ||
+      !integer(resume.previousConsecutiveFailures, 1, 1000000) ||
+      !integer(resume.pages, 1, 1000) ||
+      !integer(resume.recordsRead, 1, 100000)
+    )
+      fail("INVALID_PERSISTED_STATE");
+  }
   return c;
 }
 function syncRow(row: RowDataPacket): HqLiveSyncEnvelope {
@@ -291,12 +340,23 @@ export function createHqLiveStore(
     return f;
   }
   async function transaction<T>(
-    work: (c: PoolConnection) => Promise<T>
+    work: (c: PoolConnection) => Promise<T>,
+    openingAuthority?: () => Promise<void>
   ): Promise<T> {
     let c: PoolConnection | undefined;
     try {
-      c = await pool.getConnection();
-      await c.beginTransaction();
+      if (openingAuthority) await openingAuthority();
+      try {
+        c = await pool.getConnection();
+      } finally {
+        if (openingAuthority) await openingAuthority();
+      }
+      if (openingAuthority) await openingAuthority();
+      try {
+        await c.beginTransaction();
+      } finally {
+        if (openingAuthority) await openingAuthority();
+      }
       const result = await work(c);
       await c.commit();
       return result;
@@ -574,6 +634,149 @@ export function createHqLiveStore(
         return "recovered";
       });
     },
+    async resumeStagedInitialImport(
+      expectedControlVersion,
+      expectedSyncVersion,
+      authority
+    ) {
+      // Separate protected capability: never acquire, initialize or migrate state.
+      if (typeof authority !== "function") fail("AUTH_DENIED");
+      let originalBinding: string | undefined;
+      let denial: HqLiveError | undefined;
+      function resumeBinding(): string {
+        const status = config.status();
+        const fingerprint = config.sourceFingerprint();
+        if (
+          status.configured !== true ||
+          status.configurationCode !== null ||
+          status.syncEnabled !== true ||
+          status.readEnabled !== false ||
+          !hash(fingerprint)
+        )
+          fail("CONFIG_INVALID");
+        if (originalBinding) assertBinding(originalBinding, fingerprint!);
+        return fingerprint!;
+      }
+      async function verifyAuthority(): Promise<void> {
+        let before: string | undefined;
+        try {
+          before = resumeBinding();
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        // Always refresh the mandatory parent-provided seven-setting guard,
+        // including on configuration failure. First denial is permanent.
+        try {
+          await authority();
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("AUTH_DENIED");
+        }
+        try {
+          const after = resumeBinding();
+          if (before) assertBinding(before, after);
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        if (denial) throw denial;
+        originalBinding ??= before!;
+      }
+      await verifyAuthority();
+      if (
+        !integer(expectedControlVersion, 1, MAX_VERSION) ||
+        !integer(expectedSyncVersion, 1, MAX_VERSION)
+      )
+        return "not_resumable";
+      return transaction(async c => {
+        await verifyAuthority(); // connection and transaction waits
+        // Guard every individual SQL await (including a rejected read), not just
+        // fullSync as a whole: a later chunk batch cannot conceal a restoration.
+        // The wrapper is local to Resume; all existing storage paths are unchanged.
+        const guarded = new Proxy(c, {
+          get(target, property) {
+            if (property === "execute")
+              return async (...args: unknown[]) => {
+                await verifyAuthority();
+                try {
+                  return await (
+                    target.execute as (...args: unknown[]) => Promise<unknown>
+                  ).apply(target, args);
+                } finally {
+                  await verifyAuthority();
+                }
+              };
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        const controlRows = await rows(
+          guarded,
+          HQ_LIVE_CONTROL_DATASET_ID,
+          true
+        );
+        if (!controlRows.length) return "not_resumable";
+        const control = controlRow(controlRows[0]);
+        assertBinding(originalBinding!, control.sourceFingerprint);
+        const lockedNow = await dbNow(guarded); // clock AFTER control lock
+        if (control.version !== expectedControlVersion) return "not_resumable";
+        if (control.leaseToken !== null)
+          return control.leaseExpiresAtMs! > lockedNow
+            ? "busy"
+            : "not_resumable";
+        if (
+          control.stageStatus !== "needs_attention" ||
+          control.lastErrorCode !== "STATE_BYTE_CAP_EXCEEDED" ||
+          control.consecutiveFailures < 1 ||
+          control.lastAttemptAtMs === null ||
+          control.lastSuccessAtMs !== null ||
+          control.lastPublishAtMs !== null ||
+          control.initialStagedResume !== undefined
+        )
+          return "not_resumable";
+        const loaded = await fullSync(guarded, originalBinding!);
+        const state = loaded.state;
+        if (
+          !state ||
+          state.version !== expectedSyncVersion ||
+          state.published !== null ||
+          !state.stage ||
+          state.stage.kind !== "backfill" ||
+          state.stage.basePublishedVersion !== null ||
+          state.stage.metadata === null ||
+          !integer(state.stage.pages, 1, 1000) ||
+          !integer(state.stage.recordsRead, 1, 100000)
+        )
+          return "not_resumable";
+        const now = await dbNow(guarded); // fresh AFTER the entire validated read
+        if (control.nextDueAtMs > now) return "notdue";
+        if (control.fencingNumber >= MAX_VERSION) fail("VERSION_EXHAUSTED");
+        control.initialStagedResume = {
+          format: "staged-initial-resume-v1",
+          atMs: now,
+          fromControlVersion: control.version,
+          syncVersion: state.version,
+          previousErrorCode: "STATE_BYTE_CAP_EXCEEDED",
+          previousAttemptAtMs: control.lastAttemptAtMs,
+          previousConsecutiveFailures: control.consecutiveFailures,
+          pages: state.stage.pages,
+          recordsRead: state.stage.recordsRead,
+        };
+        control.fencingNumber++;
+        control.stageStatus = "progress";
+        control.lastErrorCode = null;
+        // All history, leases and original nextDueAtMs are preserved exactly.
+        await saveControl(guarded, control); // pre/post authority; one fenced CAS
+        return "resumed";
+      }, verifyAuthority);
+    },
     async readSnapshot() {
       const f = binding();
       return transaction(async c => {
@@ -847,6 +1050,11 @@ export interface HqLiveStore {
     expectedVersion: number,
     authority: () => Promise<void>
   ): Promise<HqLiveInitialRecoveryResult>;
+  resumeStagedInitialImport?(
+    expectedControlVersion: number,
+    expectedSyncVersion: number,
+    authority: () => Promise<void>
+  ): Promise<HqLiveStagedResumeResult>;
   acquire(): Promise<HqLiveAcquireResult>;
   renew(lease: HqLiveLease): Promise<void>;
   fencedSyncStore(lease: HqLiveLease): HqImplementedStore;

@@ -31,6 +31,7 @@ import { validateHqInitialPublication } from "./management-hq-initial-validation
 import type { HqInitialValidationResult } from "../shared/management-hq-initial-validation";
 import { checkHqFirstPage } from "./management-hq-first-page-check";
 import { recoverHqEmptyInitialImport } from "./management-hq-initial-recovery";
+import { resumeHqStagedInitialImport } from "./management-hq-staged-resume";
 import {
   getHqLiveReport,
   withHqLiveReportMetadata,
@@ -198,6 +199,20 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  resumeInitialImport: procedure.input(z.void()).mutation(async ({ ctx }) => {
+    try {
+      const start = boundary();
+      const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+      const result = await resumeHqStagedInitialImport({
+        config: start.config,
+        guard,
+      });
+      await guard();
+      return result;
+    } catch (error) {
+      safeError(error);
+    }
+  }),
   recoverInitialImport: procedure.input(z.void()).mutation(async ({ ctx }) => {
     try {
       const start = boundary();

@@ -55,6 +55,7 @@ export const systemRouter = router({
       managementHqFirstPageCheck: 1,
       managementHqInitialRecovery: 1,
       managementHqChunkedStorageV2: 1,
+      managementHqStagedInitialResume: 1,
     })),
 
   notifyOwner: adminProcedure
