@@ -14,10 +14,76 @@ import {
   requireFreshHqSuperAdmin,
   requireHqSampleEnabled,
 } from "./management-hq-store";
+import {
+  createHqLiveConfig,
+  type HqLiveConfigurationStatus,
+} from "./management-hq-live-config";
+import { createHqLiveService } from "./management-hq-live-service";
+import {
+  getHqLiveReport,
+  withHqLiveReportMetadata,
+} from "./management-hq-live-report";
+
+type ReportMode = "live" | "sample" | "disabled";
+function reportMode(configuration: HqLiveConfigurationStatus): ReportMode {
+  // Malformed/requested live flags must never silently fall back to synthetic samples.
+  if (
+    configuration.syncEnabled ||
+    configuration.readEnabled ||
+    configuration.configurationCode !== "CONFIG_DISABLED"
+  )
+    return "live";
+  return hqSampleEnabled() ? "sample" : "disabled";
+}
+function boundary() {
+  const config = createHqLiveConfig();
+  const configuration = config.status();
+  return {
+    config,
+    configuration,
+    mode: reportMode(configuration),
+    fingerprint: config.sourceFingerprint(),
+  };
+}
+class HqBoundaryError extends TRPCError {}
+function deny(message: string): never {
+  throw new HqBoundaryError({ code: "PRECONDITION_FAILED", message });
+}
+function assertBoundary(original: ReturnType<typeof boundary>) {
+  const current = boundary();
+  if (
+    current.mode !== original.mode ||
+    current.fingerprint !== original.fingerprint ||
+    JSON.stringify(current.configuration) !==
+      JSON.stringify(original.configuration)
+  )
+    deny(
+      "Management HQ configuration changed. Refresh to check current access; values are unavailable, not zero."
+    );
+}
+function safeError(error: unknown): never {
+  // Only our fixed authorization/configuration messages are safe. Never forward arbitrary SQL/provider TRPCErrors.
+  if (
+    error instanceof HqBoundaryError ||
+    (error instanceof TRPCError &&
+      (error.message === "Active Super Admin access required." ||
+        error.message === "Management HQ access could not be verified."))
+  )
+    throw error;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message:
+      "Management HQ data or access could not be verified. Values are unavailable, not zero. No partial totals have been returned.",
+  });
+}
 const procedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const db = await getDb();
-  await requireFreshHqSuperAdmin(db, ctx.user);
-  return next({ ctx: { ...ctx, hqDb: db! } });
+  try {
+    const db = await getDb();
+    await requireFreshHqSuperAdmin(db, ctx.user);
+    return next({ ctx: { ...ctx, hqDb: db! } });
+  } catch (error) {
+    safeError(error);
+  }
 });
 const range = z
   .object({
@@ -25,28 +91,96 @@ const range = z
     month: z.number().int().min(1).max(12).optional(),
   })
   .strict();
-function safeError(error: unknown): never {
-  if (error instanceof TRPCError) throw error;
-  throw new TRPCError({
-    code: "PRECONDITION_FAILED",
-    message:
-      "Management HQ sample data could not be verified. No partial totals or live changes have been applied.",
-  });
+
+async function readReport(
+  db: unknown,
+  user: Parameters<typeof requireFreshHqSuperAdmin>[1],
+  input: z.infer<typeof range>
+) {
+  const start = boundary();
+  if (start.mode === "disabled")
+    deny(
+      "Management HQ reports are disabled. Values are unavailable, not zero."
+    );
+  if (start.mode === "live") {
+    if (!start.configuration.configured || !start.configuration.readEnabled)
+      deny(
+        "Management HQ live reporting is awaiting connection or read approval. Values are unavailable, not zero."
+      );
+    const service = createHqLiveService({ config: start.config });
+    const before = await service.getStatus();
+    if (!before.hasPublished)
+      deny(
+        "Management HQ live reporting is awaiting a verified publication. Values are unavailable, not zero."
+      );
+    const state = await service.readPublished();
+    if (!state)
+      deny(
+        "Management HQ live reporting is awaiting a verified publication. Values are unavailable, not zero."
+      );
+    const report = await getHqLiveReport(state, db, input);
+    const after = await service.getStatus();
+    if (after.stateVersion !== before.stateVersion)
+      throw new Error("HQ_STATE_CHANGED");
+    const result = withHqLiveReportMetadata(report, state, after);
+    // Revalidate source binding/settings and current authority after every store/directory read.
+    assertBoundary(start);
+    await requireFreshHqSuperAdmin(db, user);
+    assertBoundary(start);
+    return { report: result, boundary: start };
+  }
+  requireHqSampleEnabled();
+  const stored = await createHqSampleStore<HqImplementedState>(
+    await getRawDbPool(),
+    user
+  ).read();
+  if (!stored)
+    deny("Load the synthetic sample to begin. No live values are available.");
+  if (stored.state.wireVersion !== "1.0.0")
+    deny(
+      "Reload the implemented-contract synthetic sample. The previous draft sample is not a live checkpoint."
+    );
+  const report = await getHqReport(
+    stored.state,
+    createHqImplementedSampleDirectory(),
+    input
+  );
+  await requireFreshHqSuperAdmin(db, user);
+  assertBoundary(start);
+  requireHqSampleEnabled();
+  return {
+    report: { ...report, sourceMode: "sample" as const },
+    boundary: start,
+  };
 }
+
 export const managementHqRouter = router({
   status: procedure.query(async ({ ctx }) => {
     try {
-      const enabled = hqSampleEnabled();
-      const stored = enabled
-        ? await createHqSampleStore(await getRawDbPool(), ctx.user).read()
-        : null;
+      const start = boundary();
+      const live = await createHqLiveService({
+        config: start.config,
+      }).getStatus();
+      const stored =
+        start.mode === "sample"
+          ? await createHqSampleStore(await getRawDbPool(), ctx.user).read()
+          : null;
       await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+      assertBoundary(start);
       return {
-        sampleEnabled: enabled,
-        liveConfigured: false as const,
+        sampleEnabled: start.mode === "sample",
+        liveConfigured: start.configuration.configured,
         hasSample: !!stored,
-        stateVersion: stored?.stateVersion ?? null,
-        updatedAt: stored?.updatedAt ?? null,
+        stateVersion:
+          start.mode === "live"
+            ? live.stateVersion
+            : (stored?.stateVersion ?? null),
+        updatedAt:
+          start.mode === "live"
+            ? live.lastPublishedAt
+            : (stored?.updatedAt ?? null),
+        reportMode: start.mode,
+        live,
       };
     } catch (error) {
       safeError(error);
@@ -62,85 +196,49 @@ export const managementHqRouter = router({
         .strict()
     )
     .mutation(async ({ ctx, input }) => {
-      requireHqSampleEnabled();
       try {
+        const start = boundary();
+        if (start.mode !== "sample")
+          deny(
+            "Sample scenarios are unavailable while live reporting is selected or reporting is disabled."
+          );
+        requireHqSampleEnabled();
         const state = await runHqImplementedSampleScenario(input.scenario);
+        assertBoundary(start);
         const store = createHqSampleStore<HqImplementedState>(
           await getRawDbPool(),
           ctx.user
         );
         if (!(await store.publish(input.expectedVersion, state)))
-          throw new TRPCError({
+          throw new HqBoundaryError({
             code: "CONFLICT",
             message:
               "The sample changed in another request. Refresh before trying again.",
           });
         await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+        assertBoundary(start);
         return { stateVersion: (input.expectedVersion ?? 0) + 1 };
       } catch (error) {
         safeError(error);
       }
     }),
   report: procedure.input(range).query(async ({ ctx, input }) => {
-    requireHqSampleEnabled();
     try {
-      const stored = await createHqSampleStore<HqImplementedState>(
-        await getRawDbPool(),
-        ctx.user
-      ).read();
-      if (!stored)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "Load the synthetic sample to begin. No live Orbit connection is configured.",
-        });
-      if (stored.state.wireVersion !== "1.0.0")
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "Reload the implemented-contract synthetic sample. The previous draft sample is not a live checkpoint.",
-        });
-      const report = await getHqReport(
-        stored.state,
-        createHqImplementedSampleDirectory(),
-        input
-      );
-      await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
-      requireHqSampleEnabled();
-      return report;
+      return (await readReport(ctx.hqDb, ctx.user, input)).report;
     } catch (error) {
       safeError(error);
     }
   }),
   exportCsv: procedure.input(range).query(async ({ ctx, input }) => {
-    requireHqSampleEnabled();
     try {
-      const stored = await createHqSampleStore<HqImplementedState>(
-        await getRawDbPool(),
-        ctx.user
-      ).read();
-      if (!stored)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Load the synthetic sample to begin.",
-        });
-      if (stored.state.wireVersion !== "1.0.0")
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "Reload the implemented-contract synthetic sample before exporting.",
-        });
-      const report = await getHqReport(
-        stored.state,
-        createHqImplementedSampleDirectory(),
-        input
-      );
-      const csv = exportHqReportCsv(report);
+      const result = await readReport(ctx.hqDb, ctx.user, input);
+      const csv = exportHqReportCsv(result.report);
+      // CSV generation is bounded but still sits inside the final authority/configuration gate.
       await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
-      requireHqSampleEnabled();
+      assertBoundary(result.boundary);
       return {
         csv,
-        filename: `management-hq-SAMPLE-${input.year}${input.month ? `-${String(input.month).padStart(2, "0")}` : ""}.csv`,
+        filename: `management-hq-${result.boundary.mode === "live" ? "LIVE" : "SAMPLE"}-${input.year}${input.month ? `-${String(input.month).padStart(2, "0")}` : ""}.csv`,
       };
     } catch (error) {
       safeError(error);

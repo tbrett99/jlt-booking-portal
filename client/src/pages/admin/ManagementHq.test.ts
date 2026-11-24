@@ -278,6 +278,7 @@ function report(): HqReport {
     status: "available",
     unavailableReason: null,
     liveReady: false,
+    sourceMode: "sample",
     scopeId: "sample-only",
     watermark: "sample-watermark",
     snapshotId: "sample-r2",
@@ -626,6 +627,7 @@ describe("Management HQ on actual DOM", () => {
         createHqImplementedSampleDirectory(),
         { year: 2026 }
       );
+      mock.data["managementHq.report"].sourceMode = "sample";
       await render();
       const table = container.querySelector(
         '[aria-label="Booking drilldown"]'
@@ -946,5 +948,338 @@ describe("Management HQ on actual DOM", () => {
     expect(formatHqMoney("0")).toBe("£0.00");
     expect(formatHqMoney(null)).toBe("Missing");
     expect(formatHqMoney("Infinity")).toBe("Unavailable");
+  });
+});
+
+function liveFixture(patch: Record<string, any> = {}) {
+  const live = {
+    syncEnabled: true,
+    readEnabled: true,
+    configured: true,
+    configurationCode: null,
+    intervalSeconds: 300,
+    freshnessSeconds: 900,
+    freshnessTargetSeconds: 900,
+    health: "ready",
+    hasPublished: true,
+    stateVersion: 8,
+    generationId: 12,
+    lastAttemptAt: "2026-11-24T12:01:00Z",
+    lastSuccessfulCheckAt: "2026-11-24T12:00:00Z",
+    lastPublishedAt: "2026-11-24T11:00:00Z",
+    nextDueAt: "2026-11-24T12:05:00Z",
+    lastErrorCode: null,
+    recoveryGuidance: null,
+    stageStatus: "applied",
+    progress: null,
+    sourceObservationAt: "2026-11-24T11:59:50Z",
+    sourcePublishedAt: "2026-11-24T11:59:51Z",
+    sourceAgeSeconds: 10,
+    isStale: false,
+    ...patch,
+  };
+  mock.data["managementHq.status"] = {
+    sampleEnabled: false,
+    liveConfigured: live.configured,
+    hasSample: false,
+    stateVersion: live.stateVersion,
+    updatedAt: live.lastPublishedAt,
+    reportMode: "live",
+    live,
+  };
+  const data = report();
+  data.sourceMode = "live";
+  data.stateVersion = live.stateVersion;
+  data.stale = live.isStale;
+  data.sourceAgeSeconds = live.sourceAgeSeconds;
+  data.limitations = [
+    "Orbit reporting import; semantic acceptance not yet verified",
+  ];
+  data.bookings = [
+    {
+      ...booking(),
+      bookingRef: "OFFLINE-LIVE-FIXTURE",
+      seller: null,
+      processor: null,
+      attributionState: "provisional_current_owner",
+    },
+  ];
+  data.undatedExceptions = [];
+  data.agents = [];
+  mock.data["managementHq.report"] = data;
+  mock.csv.mockResolvedValue({
+    csv: "Reference,Status\nOFFLINE-LIVE-FIXTURE,confirmed\n",
+    filename: "management-hq-LIVE-2026.csv",
+  });
+  return live;
+}
+function assertNoSampleControls() {
+  expect(
+    container.querySelector('[aria-label="Sample data warning"]')
+  ).toBeNull();
+  expect(container.querySelector('[aria-label="Sample scenarios"]')).toBeNull();
+  expect(container.textContent).not.toContain("Load initial sample");
+  expect(container.textContent).not.toContain("Replay value amendment");
+  expect(mock.mutations).toHaveLength(0);
+}
+describe("Management HQ production wiring on actual DOM", () => {
+  it.each([
+    {
+      configured: false,
+      health: "needs_attention",
+      hasPublished: false,
+      configurationCode: "CONFIG_INCOMPLETE",
+    },
+    {
+      configured: false,
+      health: "needs_attention",
+      hasPublished: false,
+      configurationCode: "CONFIG_INVALID",
+    },
+    {
+      hasPublished: false,
+      health: "no_data",
+      generationId: null,
+      stateVersion: null,
+      sourceAgeSeconds: null,
+    },
+    { readEnabled: false, hasPublished: false, health: "progress" },
+  ])(
+    "awaiting connection/import/read approval is unavailable, never zero %j",
+    async patch => {
+      liveFixture(patch);
+      await render();
+      assertNoSampleControls();
+      expect(currentReport()).toBeNull();
+      expect(container.textContent).toContain("unavailable, not zero");
+      expect(
+        container.querySelector('[aria-label="Executive KPIs"]')
+      ).toBeNull();
+      expect(mock.csv).not.toHaveBeenCalled();
+    }
+  );
+  it("disabled production hides sample controls and cached financial values", async () => {
+    mock.data["managementHq.status"] = {
+      reportMode: "disabled",
+      sampleEnabled: false,
+      hasSample: false,
+      stateVersion: null,
+      liveConfigured: false,
+    };
+    await render();
+    assertNoSampleControls();
+    expect(container.textContent).toContain(
+      "disabled pending connection and acceptance"
+    );
+    expect(currentReport()).toBeNull();
+  });
+  it("partial import without publication shows progress, not a zero report", async () => {
+    liveFixture({
+      health: "progress",
+      hasPublished: false,
+      progress: {
+        kind: "backfill",
+        phase: "business",
+        pages: 3,
+        recordsRead: 210,
+      },
+    });
+    await render();
+    assertNoSampleControls();
+    expect(container.textContent).toContain("3 pages · 210 records read");
+    expect(container.textContent).toContain(
+      "Partial records are not published"
+    );
+    expect(currentReport()).toBeNull();
+  });
+  it.each(["progress", "backoff", "stale", "needs_attention"])(
+    "last-good %s remains clearly qualified and source errors use safe staff wording",
+    async health => {
+      liveFixture({
+        health,
+        isStale: true,
+        sourceAgeSeconds: 1800,
+        lastErrorCode:
+          health === "needs_attention"
+            ? "AUTH_DENIED"
+            : health === "backoff"
+              ? "TIMEOUT"
+              : null,
+        progress:
+          health === "progress"
+            ? { kind: "catchup", phase: "changes", pages: 2, recordsRead: 60 }
+            : null,
+      });
+      await render();
+      assertNoSampleControls();
+      expect(currentReport()).toBeTruthy();
+      expect(container.textContent).toContain("last-good complete publication");
+      expect(container.textContent).toContain("Stale source warning");
+      expect(container.textContent).not.toContain("AUTH_DENIED");
+      expect(container.textContent).not.toContain("TIMEOUT");
+      expect(container.textContent).toContain("Last successful check");
+      expect(container.textContent).toContain("Portal report publication");
+      expect(container.textContent).toContain("1800 seconds");
+      expect(container.textContent).not.toContain("Latest restated sample");
+      if (health === "backoff")
+        expect(container.textContent).toContain("Bounded retry");
+      if (health === "needs_attention")
+        expect(container.textContent).toContain("protected investigation");
+    }
+  );
+  it.each([
+    "STORE_UNAVAILABLE",
+    "INVALID_PERSISTED_STATE",
+    "SOURCE_BINDING_CHANGED",
+    "CONFIG_INVALID",
+    "SOURCE_OR_STORE_UNAVAILABLE",
+  ])("%s suppresses all cached report and exportability", async code => {
+    liveFixture();
+    await render();
+    expect(currentReport()).toBeTruthy();
+    mock.data["managementHq.status"].live.lastErrorCode = code;
+    mock.data["managementHq.status"].live.health = "needs_attention";
+    await render();
+    assertNoSampleControls();
+    expect(currentReport()).toBeNull();
+    expect(container.textContent).not.toContain("OFFLINE-LIVE-FIXTURE");
+    expect(container.textContent).not.toContain(code);
+    expect(mock.csv).not.toHaveBeenCalled();
+  });
+  it("all three views remain available in live mode without source writes", async () => {
+    liveFixture();
+    await render();
+    assertNoSampleControls();
+    expect(
+      container.querySelector('[aria-label="Executive KPIs"]')
+    ).toBeTruthy();
+    await click("Financial Performance");
+    expect(
+      container.querySelector('[aria-label="Financial performance"]')
+    ).toBeTruthy();
+    await click("Agent Activity");
+    expect(
+      container.querySelector('[aria-label="Agent activity"]')
+    ).toBeTruthy();
+    expect(container.textContent).toContain(
+      "not evidence of the original seller"
+    );
+    await click("Refresh");
+    expect(mock.refetch).toHaveBeenCalledWith("managementHq.status", {
+      cancelRefetch: true,
+    });
+    expect(mock.mutations).toHaveLength(0);
+    expect(mock.hooks.some(hook => hook.options?.refetchInterval)).toBe(false);
+  });
+  it("live UI refuses cached sample report and sample UI refuses cached live report", async () => {
+    const sample = report();
+    liveFixture();
+    mock.data["managementHq.report"] = sample;
+    await render();
+    assertNoSampleControls();
+    expect(currentReport()).toBeNull();
+    const live = { ...report(), sourceMode: "live", stateVersion: 8 };
+    mock.data["managementHq.status"] = {
+      reportMode: "sample",
+      sampleEnabled: true,
+      hasSample: true,
+      stateVersion: 8,
+    };
+    mock.data["managementHq.report"] = live;
+    await render();
+    expect(currentReport()).toBeNull();
+    expect(container.textContent).not.toContain("£6,000.00");
+  });
+  it("mode/state-version remount blocks previous generation until matching fresh report", async () => {
+    liveFixture();
+    await render();
+    expect(currentReport()).toBeTruthy();
+    mock.data["managementHq.status"].stateVersion = 9;
+    await render();
+    expect(currentReport()).toBeNull();
+    mock.data["managementHq.report"].stateVersion = 9;
+    await render();
+    expect(currentReport()).toBeTruthy();
+  });
+  it("LIVE CSV download is click-only and labelled LIVE", async () => {
+    liveFixture();
+    await render();
+    expect(mock.csv).not.toHaveBeenCalled();
+    await click("Export all filtered records");
+    expect(downloads.map(download => download.filename)).toEqual([
+      "management-hq-LIVE-2026.csv",
+    ]);
+    expect(mock.csv.mock.calls).toEqual([[{ year: 2026 }]]);
+  });
+  it("live CSV result with SAMPLE filename is rejected and clears report", async () => {
+    liveFixture();
+    mock.csv.mockResolvedValue({
+      csv: "wrong mode",
+      filename: "management-hq-SAMPLE-2026.csv",
+    });
+    await render();
+    await click("Export all filtered records");
+    expect(downloads).toHaveLength(0);
+    expect(currentReport()).toBeNull();
+  });
+  it.each([
+    "actor",
+    "route",
+    "filter",
+    "mode",
+    "status-error",
+    "read-off",
+    "generation",
+  ])("late LIVE CSV cannot download after %s changes", async changeType => {
+    liveFixture();
+    await render();
+    const pending = deferred<any>();
+    mock.csv.mockReturnValue(pending.promise);
+    await click("Export all filtered records");
+    if (changeType === "actor") {
+      mock.user = { ...mock.user, id: 48 };
+      await render();
+    }
+    if (changeType === "route")
+      await act(async () =>
+        window.history.replaceState({}, "", "/super-admin")
+      );
+    if (changeType === "filter") await change("Reporting month", "2");
+    if (changeType === "mode") {
+      mock.data["managementHq.status"].reportMode = "sample";
+      mock.data["managementHq.status"].sampleEnabled = true;
+      mock.data["managementHq.status"].hasSample = true;
+      await render();
+    }
+    if (changeType === "status-error") {
+      mock.errors["managementHq.status"] = { message: "secret source error" };
+      await render();
+    }
+    if (changeType === "read-off") {
+      mock.data["managementHq.status"].live.readEnabled = false;
+      await render();
+    }
+    if (changeType === "generation") {
+      mock.data["managementHq.status"].stateVersion = 9;
+      await render();
+    }
+    await act(async () =>
+      pending.resolve({
+        csv: "stale private result",
+        filename: "management-hq-LIVE-2026.csv",
+      })
+    );
+    expect(downloads).toHaveLength(0);
+    expect(createUrl).not.toHaveBeenCalled();
+  });
+  it("current UTC year defaults dynamically with a broad history selector", async () => {
+    liveFixture();
+    await render();
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Reporting year"]'
+    )!;
+    expect(select.value).toBe(String(new Date().getUTCFullYear()));
+    expect([...select.options].map(option => option.value)).toContain("2000");
+    expect([...select.options].map(option => option.value)).toContain("2100");
   });
 });

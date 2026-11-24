@@ -13,6 +13,7 @@ import { registerStaffHandbookDownloadRoutes } from "../staff-handbook-download-
 import { registerMembershipPaymentRoutes } from "../membership-payment-routes";
 import { handleStaffCallsWebhook } from "../staff-calls-service";
 import { registerStaffCallsSyncRoute } from "../staff-calls-sync-route";
+import { registerManagementHqSyncRoute } from "../management-hq-sync-route";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -246,6 +247,8 @@ async function startServer() {
   });
 
   // Configure body parser with larger size limit for file uploads
+  // HQ callback owns its strict raw-byte bound and ignores body fields.
+  registerManagementHqSyncRoute(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Production responses are currently served directly by Railway. Compress API

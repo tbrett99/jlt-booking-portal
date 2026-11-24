@@ -4,6 +4,7 @@ import { Download, RefreshCw } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import type { HqLiveStatusDto } from "../../../../server/management-hq-live-service";
 import type {
   HqBookingDrilldown,
   HqMoneyCoverage,
@@ -259,6 +260,129 @@ function Pagination({
   );
 }
 
+function LiveConnection({ live }: { live: HqLiveStatusDto }) {
+  const stamp = (value: string | null) =>
+    value
+      ? `${value.replace("T", " ").replace(".000Z", " UTC")}`
+      : "Not yet recorded";
+  const attention = live.health === "needs_attention";
+  return (
+    <section
+      className={`${panel} space-y-3`}
+      aria-label="Live reporting connection"
+    >
+      <h2 className="font-semibold">
+        Orbit reporting import · production wiring
+      </h2>
+      <p className="text-sm">
+        Live semantic acceptance is not yet verified. Orbit financials remain
+        authoritative; missing values are not zero.
+      </p>
+      {!live.configured ? (
+        <p role="status">
+          Awaiting connection approval or valid server settings. No verified
+          live dataset is available.
+        </p>
+      ) : attention ? (
+        <p role="alert">
+          Import stopped and needs protected investigation before recovery. No
+          automatic reset is performed.
+        </p>
+      ) : live.health === "backoff" ? (
+        <p role="status">
+          Source check delayed. Bounded retry is waiting until{" "}
+          {stamp(live.nextDueAt)}.
+        </p>
+      ) : live.health === "progress" ? (
+        <p role="status">
+          Import in progress. Partial records are not published as report
+          totals.
+        </p>
+      ) : !live.hasPublished ? (
+        <p role="status">
+          Awaiting the first complete, verified Orbit import. No dataset yet;
+          values are unavailable, not zero.
+        </p>
+      ) : (
+        <p role="status">Last complete Orbit publication is available.</p>
+      )}
+      {!live.syncEnabled && (
+        <p className="text-sm">
+          Automatic import is disabled. Refresh does not restart it.
+        </p>
+      )}
+      {!live.readEnabled && (
+        <p className="text-sm">
+          Report reading is disabled pending approval. Import monitoring does
+          not enable report access.
+        </p>
+      )}
+      {live.progress && (
+        <p className="text-sm">
+          Partial import:{" "}
+          {live.progress.kind === "backfill"
+            ? "historical import"
+            : "change catch-up"}{" "}
+          · {live.progress.pages} pages · {live.progress.recordsRead} records
+          read. Incomplete progress is separate from the last-good report.
+        </p>
+      )}
+      {live.hasPublished && (
+        <p className="text-sm">
+          Showing only the last-good complete publication; incomplete imports
+          and failed checks never replace it.
+        </p>
+      )}
+      {live.isStale && (
+        <p
+          role="alert"
+          className="text-sm font-medium text-amber-600 dark:text-amber-300"
+        >
+          Stale source warning: last-good data may be viewed, but it is not a
+          current source check.
+        </p>
+      )}
+      <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <dt>Last successful check</dt>
+          <dd>{stamp(live.lastSuccessfulCheckAt)}</dd>
+        </div>
+        <div>
+          <dt>Portal report publication</dt>
+          <dd>{stamp(live.lastPublishedAt)}</dd>
+        </div>
+        <div>
+          <dt>Source generation</dt>
+          <dd>{live.generationId ?? "No published generation"}</dd>
+        </div>
+        <div>
+          <dt>Source observation</dt>
+          <dd>{stamp(live.sourceObservationAt)}</dd>
+        </div>
+        <div>
+          <dt>Source observation age</dt>
+          <dd>
+            {live.sourceAgeSeconds === null
+              ? "Unknown"
+              : `${live.sourceAgeSeconds} seconds`}
+          </dd>
+        </div>
+        <div>
+          <dt>Portal freshness ceiling</dt>
+          <dd>
+            {live.freshnessTargetSeconds} seconds · stricter source policy also
+            applies
+          </dd>
+        </div>
+      </dl>
+      <p className="text-xs text-muted-foreground">
+        Refresh rereads Portal status and reports only; it does not contact
+        Orbit or write data. No sync-now action is available.
+      </p>
+    </section>
+  );
+}
+
 /** The parent layout owns navigation/chrome. This page owns only HQ's authority boundary. */
 export default function ManagementHq() {
   const auth = useAuth();
@@ -316,7 +440,7 @@ function ActorHq({
 }) {
   const utils = trpc.useUtils();
   const [booted, setBooted] = useState(false);
-  const [year, setYear] = useState(2026);
+  const [year, setYear] = useState(() => new Date().getUTCFullYear());
   const [month, setMonth] = useState<number | undefined>();
   const [view, setView] = useState<View>(VIEWS[0]);
   const [refreshing, setRefreshing] = useState(false);
@@ -340,6 +464,25 @@ function ActorHq({
     !status.error &&
     !status.isLoading &&
     !status.isFetching;
+  const mode =
+    status.data?.reportMode ??
+    (status.data?.sampleEnabled ? "sample" : "disabled");
+  const live = mode === "live" ? status.data?.live : undefined;
+  const unsafeLive =
+    !!live &&
+    (!live.configured ||
+      !live.readEnabled ||
+      !live.hasPublished ||
+      [
+        "STORE_UNAVAILABLE",
+        "INVALID_PERSISTED_STATE",
+        "SOURCE_BINDING_CHANGED",
+        "CONFIG_INVALID",
+        "CONFIG_INCOMPLETE",
+        "SOURCE_OR_STORE_UNAVAILABLE",
+      ].includes(live.lastErrorCode ?? ""));
+  const showSample =
+    statusReady && (mode === "sample" || status.data?.reportMode === undefined);
   const busy =
     !booted ||
     refreshing ||
@@ -350,8 +493,11 @@ function ActorHq({
     reportBusy;
   const canRead =
     statusReady &&
-    status.data?.sampleEnabled &&
-    status.data.hasSample &&
+    (mode === "live"
+      ? !!live && !unsafeLive
+      : mode === "sample" &&
+        status.data?.sampleEnabled &&
+        status.data.hasSample) &&
     !actionError &&
     !refreshing &&
     !replaying;
@@ -418,6 +564,7 @@ function ActorHq({
       !statusReady ||
       actionError ||
       !status.data?.sampleEnabled ||
+      mode !== "sample" ||
       !identityCheck.current(actorId)
     )
       return;
@@ -477,97 +624,106 @@ function ActorHq({
           Refresh
         </Button>
       </header>
-      <section
-        className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4"
-        aria-label="Sample data warning"
-      >
-        <h2 className="font-semibold text-emerald-700 dark:text-emerald-200">
-          Sample data — not live Orbit
-        </h2>
-        <p className="mt-1 text-sm">
-          Live Orbit is not configured. These isolated scenarios do not change
-          live bookings. Refresh rereads HQ status and reports only; it does not
-          contact Orbit.
-        </p>
-      </section>
-      <section className={`${panel} space-y-3`} aria-label="Sample scenarios">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Controlled sample scenarios</h2>
-          <span className="text-xs text-muted-foreground">
-            {statusReady
-              ? `State version: ${status.data!.stateVersion ?? "not loaded"}`
-              : "Current sample state unavailable"}
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          A January booking changes from £10,000 to £11,000: the amendment
-          restates January, not the observation month. The sample cancellation
-          removes that file from headlines but retains its cancelled record in
-          the drilldown and export. Later registration moves the retained record
-          to February.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={
-              busy ||
-              !statusReady ||
-              !status.data?.sampleEnabled ||
-              !!actionError
-            }
-            onClick={() => void replay("initial")}
+      {statusReady && !actionError && live && <LiveConnection live={live} />}
+      {showSample && (
+        <>
+          <section
+            className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4"
+            aria-label="Sample data warning"
           >
-            Load initial sample
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              busy ||
-              !statusReady ||
-              !status.data?.sampleEnabled ||
-              !status.data.hasSample ||
-              !!actionError
-            }
-            onClick={() => void replay("amended")}
+            <h2 className="font-semibold text-emerald-700 dark:text-emerald-200">
+              Sample data — not live Orbit
+            </h2>
+            <p className="mt-1 text-sm">
+              Live Orbit is not configured. These isolated scenarios do not
+              change live bookings. Refresh rereads HQ status and reports only;
+              it does not contact Orbit.
+            </p>
+          </section>
+          <section
+            className={`${panel} space-y-3`}
+            aria-label="Sample scenarios"
           >
-            Replay value amendment
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              busy ||
-              !statusReady ||
-              !status.data?.sampleEnabled ||
-              !status.data.hasSample ||
-              !!actionError
-            }
-            onClick={() => void replay("cancelled")}
-          >
-            Replay sample cancellation
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              busy ||
-              !statusReady ||
-              !status.data?.sampleEnabled ||
-              !status.data.hasSample ||
-              !!actionError
-            }
-            onClick={() => void replay("registered")}
-          >
-            Replay later registration
-          </Button>
-        </div>
-        {replaying && (
-          <p role="status" className="text-sm">
-            Replaying sample and rereading current state… Values are withheld.
-          </p>
-        )}
-      </section>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold">Controlled sample scenarios</h2>
+              <span className="text-xs text-muted-foreground">
+                {statusReady
+                  ? `State version: ${status.data!.stateVersion ?? "not loaded"}`
+                  : "Current sample state unavailable"}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              A January booking changes from £10,000 to £11,000: the amendment
+              restates January, not the observation month. The sample
+              cancellation removes that file from headlines but retains its
+              cancelled record in the drilldown and export. Later registration
+              moves the retained record to February.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={
+                  busy ||
+                  !statusReady ||
+                  !status.data?.sampleEnabled ||
+                  !!actionError
+                }
+                onClick={() => void replay("initial")}
+              >
+                Load initial sample
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  !statusReady ||
+                  !status.data?.sampleEnabled ||
+                  !status.data.hasSample ||
+                  !!actionError
+                }
+                onClick={() => void replay("amended")}
+              >
+                Replay value amendment
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  !statusReady ||
+                  !status.data?.sampleEnabled ||
+                  !status.data.hasSample ||
+                  !!actionError
+                }
+                onClick={() => void replay("cancelled")}
+              >
+                Replay sample cancellation
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  !statusReady ||
+                  !status.data?.sampleEnabled ||
+                  !status.data.hasSample ||
+                  !!actionError
+                }
+                onClick={() => void replay("registered")}
+              >
+                Replay later registration
+              </Button>
+            </div>
+            {replaying && (
+              <p role="status" className="text-sm">
+                Replaying sample and rereading current state… Values are
+                withheld.
+              </p>
+            )}
+          </section>
+        </>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div
           className="flex flex-wrap gap-2"
@@ -597,11 +753,13 @@ function ActorHq({
                 changePeriod(parseInt(event.target.value, 10), month)
               }
             >
-              {[2025, 2026, 2027].map(value => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
+              {Array.from({ length: 101 }, (_, index) => 2000 + index).map(
+                value => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                )
+              )}
             </select>
           </label>
           <label className="space-y-1 text-xs font-medium">
@@ -637,36 +795,34 @@ function ActorHq({
         </div>
       ) : !statusReady || refreshing ? (
         <div className={panel} role="status">
-          Reading current sample status… Report values are withheld.
+          Reading current HQ status… Report values are withheld.
+        </div>
+      ) : mode === "live" && (!live || unsafeLive) ? (
+        <div
+          className={panel}
+          role={live?.health === "needs_attention" ? "alert" : "status"}
+        >
+          Live report is awaiting connection, a complete verified dataset, or
+          read approval. Values are unavailable, not zero. No sample values are
+          substituted.
         </div>
       ) : !status.data?.sampleEnabled ? (
-        <div className={panel} role="status">
-          Sample reporting is disabled. Live Orbit is not configured; values are
-          unavailable.
-        </div>
-      ) : !status.data.hasSample ? (
+        mode === "live" && canRead ? (
+          renderReport()
+        ) : (
+          <div className={panel} role="status">
+            {status.data?.reportMode === "disabled"
+              ? "Management HQ production reporting is disabled pending connection and acceptance. Values are unavailable, not zero."
+              : "Sample reporting is disabled. Live Orbit is not configured; values are unavailable."}
+          </div>
+        )
+      ) : mode === "sample" && !status.data.hasSample ? (
         <div className={panel} role="status">
           No sample loaded. Load the initial sample to inspect the isolated
           report. No live values are available.
         </div>
       ) : canRead ? (
-        <ReportView
-          key={`${actorId}:${year}:${month ?? "all"}:${status.data.stateVersion}`}
-          actorId={actorId}
-          year={year}
-          month={month}
-          view={view}
-          isCurrent={() => permission.current && identityCheck.current(actorId)}
-          epoch={epoch}
-          onBusy={setReportBusy}
-          onError={() => {
-            permission.current = false;
-            epoch.current++;
-            setActionError(
-              "Report or export access failed. Values are unavailable, not zero. Use Refresh to check current access."
-            );
-          }}
-        />
+        renderReport()
       ) : null}
       <footer className="border-t border-border pt-4 text-sm text-muted-foreground">
         <Link
@@ -682,10 +838,36 @@ function ActorHq({
       </footer>
     </div>
   );
+
+  function renderReport() {
+    return (
+      <ReportView
+        key={`${actorId}:${mode}:${year}:${month ?? "all"}:${status.data?.stateVersion}`}
+        actorId={actorId}
+        mode={mode === "live" ? "live" : "sample"}
+        stateVersion={status.data?.stateVersion ?? null}
+        year={year}
+        month={month}
+        view={view}
+        isCurrent={() => permission.current && identityCheck.current(actorId)}
+        epoch={epoch}
+        onBusy={setReportBusy}
+        onError={() => {
+          permission.current = false;
+          epoch.current++;
+          setActionError(
+            "Report or export access failed. Values are unavailable, not zero. Use Refresh to check current access."
+          );
+        }}
+      />
+    );
+  }
 }
 
 function ReportView({
   actorId,
+  mode,
+  stateVersion,
   year,
   month,
   view,
@@ -695,6 +877,8 @@ function ReportView({
   onError,
 }: {
   actorId: number;
+  mode: "live" | "sample";
+  stateVersion: number | null;
   year: number;
   month?: number;
   view: View;
@@ -723,7 +907,9 @@ function ReportView({
   });
   const matches =
     report.data?.filters.year === year &&
-    report.data.filters.month === (month ?? null);
+    report.data.filters.month === (month ?? null) &&
+    report.data.sourceMode === mode &&
+    (mode !== "live" || report.data.stateVersion === stateVersion);
   const ready =
     booted &&
     report.isFetchedAfterMount &&
@@ -781,6 +967,21 @@ function ReportView({
       // deduplication: a new actor must never join an old actor's CSV request.
       const result = await utils.client.managementHq.exportCsv.query(input);
       if (!stillCurrent()) return;
+      // LIVE must never download a sample CSV if configuration changes in flight.
+      if (
+        mode === "live" &&
+        !result.filename.startsWith("management-hq-LIVE-")
+      ) {
+        onError();
+        return;
+      }
+      if (
+        mode === "sample" &&
+        result.filename.startsWith("management-hq-LIVE-")
+      ) {
+        onError();
+        return;
+      }
       const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -842,7 +1043,7 @@ function ReportView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {month ? MONTHS[month - 1] : "Annual"} {year} · GBP · Latest restated
-          sample
+          {mode === "live" ? " Orbit publication" : " sample"}
         </p>
         <Button
           size="sm"
@@ -854,6 +1055,15 @@ function ReportView({
           {exporting ? "Preparing CSV…" : "Export all filtered records"}
         </Button>
       </div>
+      {mode === "live" && data.stale && (
+        <p
+          role="alert"
+          className="text-sm font-medium text-amber-600 dark:text-amber-300"
+        >
+          Stale source warning: this last-good report exceeds source freshness
+          or carries a source stale flag. Missing is not zero.
+        </p>
+      )}
       {!data.exportComplete && (
         <p role="alert" className="text-sm text-amber-600 dark:text-amber-300">
           Report exceeds the server export bound. Export is unavailable; this is

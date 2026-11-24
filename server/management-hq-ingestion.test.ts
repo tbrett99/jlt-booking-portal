@@ -8,6 +8,7 @@ import type {
 import {
   createHqImplementedEngine,
   createHqImplementedMemoryStore,
+  validateHqImplementedSyncState,
   type HqImplementedSyncState,
   type HqImplementedStore,
 } from "./management-hq-ingestion";
@@ -697,6 +698,80 @@ describe("implemented journal replay, tombstones and controlled recovery", () =>
     expect((await store.readSync())!.stage).toBeNull();
     expect((await visible(store))!.metadata.generationId).toBe(2);
   });
+  it("atomically persists backfill intent at the first expired-stage CAS even if the process crashes there", async () => {
+    const store = await seed(),
+      before = (await store.readSync())!,
+      base = createHqImplementedSampleReader("amended"),
+      page = await base.changes(before.published!.resumeCursor);
+    let remaining = 3;
+    await createHqImplementedEngine(
+      {
+        ...base,
+        changes: async () => ({
+          ...copy(page),
+          complete: false,
+          nextCursor: "expired-staged-changes",
+        }),
+      },
+      store,
+      { shouldContinue: () => remaining-- > 0 }
+    ).catchup();
+    const expired = (await store.readSync())!;
+    expect(expired.stage).toMatchObject({
+      kind: "catchup",
+      cursor: "expired-staged-changes",
+      pages: 1,
+    });
+    const writes: HqImplementedSyncState[] = [];
+    const crashing: HqImplementedStore = {
+      readSync: () => store.readSync(),
+      async compareAndSwapSync(expected, next) {
+        writes.push(copy(next));
+        expect(expected).toBe(expired.version);
+        expect(await store.compareAndSwapSync(expected, next)).toBe(true);
+        throw new Error(
+          "simulated crash immediately after first committed expiry CAS"
+        );
+      },
+    };
+    const changes = vi.fn(async (cursor: string) => {
+      expect(cursor).toBe("expired-staged-changes");
+      unavailable("RESTART_REQUIRED", 410);
+    });
+    expect(
+      await createHqImplementedEngine({ ...base, changes }, crashing).sync()
+    ).toMatchObject({ status: "unavailable", code: "CAS_CONFLICT" });
+    expect(writes).toHaveLength(1);
+    const persisted = (await store.readSync())!;
+    expect(persisted.version).toBe(expired.version + 1);
+    expect(persisted.published).toEqual(before.published);
+    expect(persisted.stage).toEqual({
+      kind: "backfill",
+      phase: "bookings",
+      basePublishedVersion: before.published!.version,
+      metadata: null,
+      cursor: null,
+      pendingResumeCursor: null,
+      entities: before.published!.entities,
+      seqProofs: {},
+      feedKeys: { booking: [], business: [] },
+      catalogueKeys: { booking: [], business: [] },
+      cursors: [],
+      pages: 0,
+      recordsRead: 0,
+      lastSeq: null,
+    });
+    expect(() => validateHqImplementedSyncState(persisted)).not.toThrow();
+    const restored = createHqImplementedMemoryStore(copy(persisted)),
+      bookings = vi.spyOn(base, "bookings");
+    expect(
+      (await createHqImplementedEngine({ ...base, changes }, restored).sync())
+        .status
+    ).toBe("applied");
+    expect(bookings).toHaveBeenCalledOnce();
+    expect(bookings).toHaveBeenCalledWith({ limit: 100 });
+    expect(changes).toHaveBeenCalledOnce();
+  });
   it("on an expired staged page restarts from the first bookings page, never using the old cursor", async () => {
     const store = await seed(),
       base = createHqImplementedSampleReader("amended"),
@@ -874,5 +949,79 @@ describe("implemented restored-state integrity and explicit recovery", () => {
       2
     );
     expect((await store.readSync())!.stage).toBeNull();
+  });
+});
+
+describe("bounded invocation yields and report-boundary persisted validation", () => {
+  it("yields before source calls, or after a durable page, without consuming cumulative caps", async () => {
+    const reader = createHqImplementedSampleReader("initial"),
+      status = vi.spyOn(reader, "status"),
+      store = createHqImplementedMemoryStore();
+    expect(
+      await createHqImplementedEngine(reader, store, {
+        shouldContinue: () => false,
+      }).sync()
+    ).toEqual({ status: "yielded", code: "BATCH_YIELDED", state: null });
+    expect(status).not.toHaveBeenCalled();
+    expect(await store.readSync()).toBeNull();
+    let remaining = 3;
+    expect(
+      (
+        await createHqImplementedEngine(reader, store, {
+          shouldContinue: () => remaining-- > 0,
+        }).sync()
+      ).status
+    ).toBe("yielded");
+    const state = (await store.readSync())!;
+    expect(state.stage).toMatchObject({ phase: "business", pages: 1 });
+    expect(() => validateHqImplementedSyncState(state)).not.toThrow();
+    const restored = createHqImplementedMemoryStore(state);
+    expect(
+      (await createHqImplementedEngine(reader, restored).sync()).status
+    ).toBe("applied");
+  });
+  it.each([
+    false,
+    0,
+    "",
+    [],
+    undefined,
+    {},
+    { version: 1, published: false, stage: null },
+  ])("rejects non-container persisted value %j", value => {
+    expect(() => validateHqImplementedSyncState(value)).toThrow(
+      "INVALID_PERSISTED_STATE"
+    );
+  });
+  it("validates report-consumption bounds and all persisted records, even if published alone looks valid", async () => {
+    const store = await seed(),
+      value = (await store.readSync())!;
+    expect(() =>
+      validateHqImplementedSyncState(value, { maxRecords: 1 })
+    ).toThrow("INVALID_PERSISTED_STATE");
+    expect(() =>
+      validateHqImplementedSyncState(value, { maxStateBytes: 1 })
+    ).toThrow("INVALID_PERSISTED_STATE");
+    value.stage = {
+      kind: "backfill",
+      phase: "bookings",
+      basePublishedVersion: value.published!.version,
+      metadata: null,
+      cursor: null,
+      pendingResumeCursor: null,
+      entities: copy(value.published!.entities),
+      seqProofs: {},
+      feedKeys: { booking: [], business: [] },
+      catalogueKeys: { booking: [], business: [] },
+      cursors: [],
+      pages: 0,
+      recordsRead: 0,
+      lastSeq: null,
+    };
+    expect(() => validateHqImplementedSyncState(value)).not.toThrow();
+    value.stage.entities["booking:1"].canonicalPayload = "{}";
+    expect(() => validateHqImplementedSyncState(value)).toThrow(
+      "INVALID_PERSISTED_STATE"
+    );
   });
 });

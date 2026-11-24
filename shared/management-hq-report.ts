@@ -190,6 +190,10 @@ export interface HqReport {
   undatedExceptions: HqBookingDrilldown[];
   exportComplete: boolean;
   limitations: string[];
+  sourceMode?: "live" | "sample";
+  stateVersion?: number | null;
+  lastSuccessfulCheckAt?: string | null;
+  lastPublishedAt?: string | null;
   sourceContract?: "implemented_1.0.0" | "legacy_internal";
   generationId?: number;
   sourceObservationWindow?: { from: string; to: string };

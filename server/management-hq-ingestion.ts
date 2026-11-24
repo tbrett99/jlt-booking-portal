@@ -81,11 +81,18 @@ export type HqImplementedResult =
       recordsRead: number;
       unchanged: boolean;
     }
+  | {
+      status: "yielded";
+      code: "BATCH_YIELDED";
+      state: HqImplementedState | null;
+    }
   | { status: "unavailable"; code: string; state: HqImplementedState | null };
 export interface HqImplementedOptions {
   maxPages?: number;
   maxRecords?: number;
   maxStateBytes?: number;
+  /** Invocation budget, checked before EACH source method; generation caps remain cumulative. */
+  shouldContinue?: () => boolean | Promise<boolean>;
 }
 class SyncError extends Error {
   constructor(readonly code: string) {
@@ -184,6 +191,16 @@ function newStage(
 }
 function validContainer(value: HqImplementedSyncState | null) {
   if (!value) return;
+  const object = (v: unknown) =>
+    !!v && typeof v === "object" && !Array.isArray(v);
+  if (
+    !object(value) ||
+    !Object.hasOwn(value, "published") ||
+    !Object.hasOwn(value, "stage") ||
+    (value.published !== null && !object(value.published)) ||
+    (value.stage !== null && !object(value.stage))
+  )
+    fail("INVALID_PERSISTED_STATE");
   const validToken = (v: unknown): v is string =>
     typeof v === "string" &&
     v.length > 0 &&
@@ -197,6 +214,7 @@ function validContainer(value: HqImplementedSyncState | null) {
       value.published.scope !== SCOPE ||
       !Number.isSafeInteger(value.published.version) ||
       value.published.version < 1 ||
+      value.published.version > value.version ||
       !validToken(value.published.resumeCursor) ||
       value.published.metadata.scope !== SCOPE)
   )
@@ -206,16 +224,34 @@ function validContainer(value: HqImplementedSyncState | null) {
     value.stage.basePublishedVersion !== (value.published?.version ?? null)
   )
     fail("STAGED_CHECKPOINT_MISMATCH");
+  const initialStage = value.stage?.metadata === null;
+  if (initialStage) {
+    const stage = value.stage!;
+    if (
+      stage.kind !== "backfill" ||
+      stage.phase !== "bookings" ||
+      stage.pages !== 0 ||
+      stage.recordsRead !== 0 ||
+      stage.cursor !== null ||
+      stage.pendingResumeCursor !== null ||
+      stage.lastSeq !== null ||
+      JSON.stringify(stage.cursors) !== "[]" ||
+      canonicalHqJson(stage.feedKeys) !==
+        canonicalHqJson({ booking: [], business: [] }) ||
+      canonicalHqJson(stage.catalogueKeys) !==
+        canonicalHqJson({ booking: [], business: [] }) ||
+      canonicalHqJson(stage.entities) !==
+        canonicalHqJson(value.published?.entities ?? {}) ||
+      canonicalHqJson(stage.seqProofs) !== "{}"
+    )
+      fail("INVALID_STAGED_PROGRESS");
+  }
   for (const recordSet of [value.published, value.stage]) {
     if (!recordSet) continue;
+    if (recordSet === value.stage && initialStage) continue;
     if (!recordSet.metadata) fail("INVALID_PERSISTED_METADATA");
     validateHqWireStatus({ ...recordSet.metadata, ready: true });
-    if (
-      !recordSet.entities ||
-      Array.isArray(recordSet.entities) ||
-      !recordSet.seqProofs ||
-      Array.isArray(recordSet.seqProofs)
-    )
+    if (!object(recordSet.entities) || !object(recordSet.seqProofs))
       fail("INVALID_PERSISTED_STATE");
     for (const [id, record] of Object.entries(recordSet.entities)) {
       const validated = validateHqWireEntity(record.entity);
@@ -230,12 +266,14 @@ function validContainer(value: HqImplementedSyncState | null) {
       if (
         !/^[1-9][0-9]*$/.test(seq) ||
         !Number.isSafeInteger(Number(seq)) ||
+        Number(seq) > recordSet.metadata!.changeUpper ||
+        typeof proof !== "string" ||
         !/^[a-f0-9]{64}$/.test(proof)
       )
         fail("INVALID_REPLAY_PROOF");
   }
   const stage = value.stage;
-  if (stage) {
+  if (stage && !initialStage) {
     if (
       !["backfill", "catchup"].includes(stage.kind) ||
       ![
@@ -260,7 +298,16 @@ function validContainer(value: HqImplementedSyncState | null) {
       !validToken(stage.pendingResumeCursor) ||
       (stage.cursor !== null && !validToken(stage.cursor)) ||
       !Array.isArray(stage.cursors) ||
-      stage.cursors.some(c => typeof c !== "string" || c.length > 2080)
+      stage.cursors.length > stage.pages ||
+      new Set(stage.cursors).size !== stage.cursors.length ||
+      stage.cursors.some(
+        c =>
+          typeof c !== "string" ||
+          c.length > 2080 ||
+          /[\u0000-\u001f\u007f]/.test(c)
+      ) ||
+      !object(stage.feedKeys) ||
+      !object(stage.catalogueKeys)
     )
       fail("INVALID_STAGED_PROGRESS");
     if (
@@ -275,6 +322,7 @@ function validContainer(value: HqImplementedSyncState | null) {
       for (const list of [stage.feedKeys[type], stage.catalogueKeys[type]]) {
         if (
           !Array.isArray(list) ||
+          new Set(list).size !== list.length ||
           list.some(
             id =>
               typeof id !== "string" ||
@@ -284,6 +332,48 @@ function validContainer(value: HqImplementedSyncState | null) {
         )
           fail("INVALID_STAGED_MEMBERSHIP");
       }
+  }
+}
+/** Read/report boundary validator. No mutation, provider calls or partial-state salvage. */
+export function validateHqImplementedSyncState(
+  value: unknown,
+  options: Pick<
+    HqImplementedOptions,
+    "maxPages" | "maxRecords" | "maxStateBytes"
+  > = {}
+): asserts value is HqImplementedSyncState | null {
+  try {
+    const maxPages = options.maxPages ?? 1000;
+    const maxRecords = options.maxRecords ?? 100000;
+    const maxBytes = options.maxStateBytes ?? 16 * 1024 * 1024;
+    if (
+      [maxPages, maxRecords, maxBytes].some(
+        v => !Number.isSafeInteger(v) || v < 1
+      )
+    )
+      fail("INVALID_PERSISTED_STATE");
+    if (Buffer.byteLength(JSON.stringify(value)) > maxBytes)
+      fail("INVALID_PERSISTED_STATE");
+    if (value === null) return;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      fail("INVALID_PERSISTED_STATE");
+    validContainer(value as HqImplementedSyncState);
+    const state = value as HqImplementedSyncState;
+    for (const part of [state.published, state.stage]) {
+      if (!part) continue;
+      if (
+        Object.keys(part.entities).length > maxRecords ||
+        Object.keys(part.seqProofs).length > maxRecords
+      )
+        fail("INVALID_PERSISTED_STATE");
+    }
+    if (
+      state.stage &&
+      (state.stage.pages > maxPages || state.stage.recordsRead > maxRecords)
+    )
+      fail("INVALID_PERSISTED_STATE");
+  } catch {
+    fail("INVALID_PERSISTED_STATE");
   }
 }
 export function createHqImplementedMemoryStore(
@@ -381,14 +471,24 @@ export function createHqImplementedEngine(
     }
   }
   async function ingest(
-    requested: "backfill" | "catchup"
+    requested: "backfill" | "catchup",
+    controlledExpiry = false
   ): Promise<HqImplementedResult> {
     let current: HqImplementedSyncState | null = null;
     try {
       current = await store.readSync();
       if (current) bounded(current);
       validContainer(current);
+      const canContinue = async () =>
+        !options.shouldContinue || (await options.shouldContinue());
+      const yielded = (): HqImplementedResult => ({
+        status: "yielded",
+        code: "BATCH_YIELDED",
+        state: copy(current?.published ?? null),
+      });
+      if (!(await canContinue())) return yielded();
       const status = validateHqWireStatus(await reader.status());
+      if (!(await canContinue())) return yielded();
       validateHqWireCapabilities(await reader.capabilities());
       if (!status.ready) fail("SOURCE_NOT_READY");
       if (current?.stage && current.stage.kind !== requested)
@@ -400,6 +500,7 @@ export function createHqImplementedEngine(
         : newStage(requested, current?.published ?? null);
       const published = current?.published ?? null;
       while (stage.phase !== "finish") {
+        if (!(await canContinue())) return yielded();
         if (stage.pages >= maxPages) fail("PAGE_CAP_EXCEEDED");
         let page: {
           nextCursor: string | null;
@@ -579,6 +680,16 @@ export function createHqImplementedEngine(
                   "UNAVAILABLE",
                   "TIMEOUT",
                   "CLIENT_DISABLED",
+                  "INVALID_PAYLOAD",
+                  "PAYLOAD_TOO_LARGE",
+                  "CONTRACT_VERSION_MISMATCH",
+                  "INVALID_SEMANTICS",
+                  "SCOPE_MISMATCH",
+                  "REDIRECT_REJECTED",
+                  "TRANSPORT_FAILURE",
+                  "LEASE_LOST",
+                  "SOURCE_BINDING_CHANGED",
+                  "INVALID_PERSISTED_STATE",
                 ].includes(candidate.code)
               ? candidate.code
               : "SOURCE_OR_STORE_UNAVAILABLE";
@@ -594,18 +705,24 @@ export function createHqImplementedEngine(
           state: null,
         };
       }
-      if (expired && latest?.stage) {
+      if (expired && (controlledExpiry || latest?.stage)) {
         try {
-          await write(latest, {
-            version: latest.version + 1,
-            published: latest.published,
-            stage: null,
-          });
+          // Controlled sync recovery replaces expired staging AND records the backfill decision
+          // in one CAS, before another source call or budget yield. Direct legacy calls still clear it.
+          const next: HqImplementedSyncState = {
+            version: (latest?.version ?? 0) + 1,
+            published: latest?.published ?? null,
+            stage: controlledExpiry
+              ? newStage("backfill", latest?.published ?? null)
+              : null,
+          };
+          validContainer(next);
+          await write(latest, next);
         } catch {
           return {
             status: "unavailable",
             code: "CAS_CONFLICT",
-            state: latest.published,
+            state: latest?.published ?? null,
           };
         }
       }
@@ -648,11 +765,11 @@ export function createHqImplementedEngine(
       }
       const mode =
         current?.stage?.kind ?? (current?.published ? "catchup" : "backfill");
-      const result = await ingest(mode);
+      const result = await ingest(mode, true);
       // One bounded complete recovery. Persistent expiry/unavailability is surfaced, never looped.
-      return result.status === "unavailable" && result.code === "SOURCE_EXPIRED"
-        ? ingest("backfill")
-        : result;
+      if (result.status !== "unavailable" || result.code !== "SOURCE_EXPIRED")
+        return result;
+      return ingest("backfill");
     },
   };
 }
