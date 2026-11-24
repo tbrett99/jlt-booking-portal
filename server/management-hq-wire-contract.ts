@@ -335,13 +335,16 @@ function booking(value: HqWireBookingPayload): void {
   if (new Set(value.products.map(p => p.id)).size !== value.products.length)
     fail();
   const f = value.financials;
-  // Diagnostics may be absent. If supplied, they must agree with required status/eligibility.
+  // Optional source-financial eligibility can include pending or undated rows;
+  // it is not the confirmed-and-dated reporting activeSalesHeadline flag.
+  // Keep source status/cancellation consistency without equating the two.
   if (Object.hasOwn(f, "bookingStatus") && f.bookingStatus !== value.status)
     fail();
   if (Object.hasOwn(f, "cancelled") && f.cancelled !== e.cancelled) fail();
   if (
     Object.hasOwn(f, "headlineEligible") &&
-    f.headlineEligible !== e.activeSalesHeadline
+    e.cancelled &&
+    f.headlineEligible !== false
   )
     fail();
   if (

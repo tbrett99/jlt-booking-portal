@@ -616,7 +616,7 @@ describe("actual source-selected years, amendments and cancellation structure", 
       p.eligibility.pending = true;
       p.eligibility.activeSalesHeadline = false;
       p.financials.bookingStatus = "pending";
-      p.financials.headlineEligible = false;
+      p.financials.headlineEligible = true;
     });
     const undated = copy(booking(state));
     undated.entityId++;

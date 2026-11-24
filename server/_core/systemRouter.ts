@@ -50,6 +50,7 @@ export const systemRouter = router({
       managementHqConnectionCheck: 1,
       managementHqInitialImport: 1,
       managementHqConfigurationDiagnostics: 1,
+      managementHqFinancialHeadlineEligibility: 1,
     })),
 
   notifyOwner: adminProcedure
