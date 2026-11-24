@@ -25,8 +25,63 @@ export const HQ_WIRE_MAX_DEPTH = 32;
 export const HQ_WIRE_MAX_NODES = 200000;
 export const HQ_WIRE_MAX_ARRAY_ITEMS = 5000;
 export type HqWireSchemaName = keyof typeof HQ_WIRE_SCHEMAS;
-const fail = (code: HqContractErrorCode = "INVALID_SEMANTICS"): never => {
-  throw new HqContractError(code);
+const failureRuleLabels = [
+  "exact_money_pence",
+  "declared_schema",
+  "payload_structure_or_bounds",
+  "calendar_date",
+  "registration_timestamp",
+  "reporting_date_selection",
+  "status_eligibility",
+  "identity_consistency",
+  "duplicate_product",
+  "financial_status_consistency",
+  "cancelled_financial_eligibility",
+  "cancelled_economics",
+  "metadata_window",
+  "pagination_completeness",
+  "cursor_shape",
+  "page_entity_type",
+  "duplicate_entity",
+  "change_sequence",
+  "entity_identity",
+  "query_structure",
+  "query_generation",
+  "query_limit",
+] as const;
+export type HqWireFailureRule = (typeof failureRuleLabels)[number];
+const failureRuleVocabulary = new Set<unknown>(failureRuleLabels);
+// Per-error diagnostics live only here, never on an error, its message or cause.
+const failureRules = new WeakMap<HqContractError, HqWireFailureRule>();
+
+/** Return only a trusted static label; never inspect unknown error properties. */
+export function getHqWireFailureRule(error: unknown): HqWireFailureRule | null {
+  return failureRules.get(error as HqContractError) ?? null;
+}
+
+/** Preserve only the trusted label when the client replaces an error for safety. */
+export function copyHqWireFailureRule(
+  original: unknown,
+  sanitized: HqContractError
+): void {
+  const rule = getHqWireFailureRule(original);
+  if (rule !== null) failureRules.set(sanitized, rule);
+}
+
+/** Create the same generic error; even untyped callers cannot attach raw labels. */
+export function createHqWireFailure(
+  rule: HqWireFailureRule,
+  code: HqContractErrorCode = "INVALID_SEMANTICS"
+): HqContractError {
+  const error = new HqContractError(code);
+  if (failureRuleVocabulary.has(rule)) failureRules.set(error, rule);
+  return error;
+}
+const fail = (
+  rule: HqWireFailureRule,
+  code: HqContractErrorCode = "INVALID_SEMANTICS"
+): never => {
+  throw createHqWireFailure(rule, code);
 };
 
 // Work on a copy. Keep exported source component declarations byte-for-byte in meaning.
@@ -137,22 +192,24 @@ function money(value: unknown): void {
   if (value === null) return;
   let text: string;
   if (typeof value === "string") {
-    if (!/^-?[0-9]+(?:\.[0-9]{1,2})?$/.test(value) || value.length > 32) fail();
+    if (!/^-?[0-9]+(?:\.[0-9]{1,2})?$/.test(value) || value.length > 32)
+      fail("exact_money_pence");
     text = value;
   } else {
-    if (typeof value !== "number" || !Number.isFinite(value)) fail();
+    if (typeof value !== "number" || !Number.isFinite(value))
+      fail("exact_money_pence");
     text = String(value);
   }
   // Decimal text arithmetic avoids rounded multiplication crossing the safe-pence boundary.
   const match = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:e([+-]?[0-9]+))?$/i.exec(text);
-  if (!match) fail();
+  if (!match) fail("exact_money_pence");
   const digits = BigInt(match![2] + (match![3] ?? ""));
   const scale = 2 + Number(match![4] ?? 0) - (match![3]?.length ?? 0);
-  if (Math.abs(scale) > 400) fail();
+  if (Math.abs(scale) > 400) fail("exact_money_pence");
   const factor = BigInt("1" + "0".repeat(Math.abs(scale)));
-  if (scale < 0 && digits % factor !== BigInt(0)) fail();
+  if (scale < 0 && digits % factor !== BigInt(0)) fail("exact_money_pence");
   const pence = scale < 0 ? digits / factor : digits * factor;
-  if (pence > BigInt(Number.MAX_SAFE_INTEGER)) fail();
+  if (pence > BigInt(Number.MAX_SAFE_INTEGER)) fail("exact_money_pence");
 }
 /** Snapshot JSON without calling getters/toJSON. Apply bounds even inside schema-loose diagnostic objects. */
 function cloneJson(value: unknown): unknown {
@@ -161,13 +218,18 @@ function cloneJson(value: unknown): unknown {
     const seen = new WeakSet<object>();
     const visit = (v: unknown, depth: number, key = ""): void => {
       if (++nodes > HQ_WIRE_MAX_NODES || depth > HQ_WIRE_MAX_DEPTH)
-        fail("PAYLOAD_TOO_LARGE");
+        fail("payload_structure_or_bounds", "PAYLOAD_TOO_LARGE");
       if (v === null) return;
       if (
         (integerField(key) || (typeof v === "number" && /Id$/i.test(key))) &&
         (typeof v !== "number" || !Number.isSafeInteger(v))
       )
-        fail("INVALID_PAYLOAD");
+        fail(
+          /(?:pence|minor)$/i.test(key)
+            ? "exact_money_pence"
+            : "payload_structure_or_bounds",
+          "INVALID_PAYLOAD"
+        );
       if (
         moneyFields.has(key) &&
         (typeof v === "number" || typeof v === "string")
@@ -180,7 +242,7 @@ function cloneJson(value: unknown): unknown {
             ? HQ_WIRE_MAX_TOKEN_LENGTH
             : HQ_WIRE_MAX_TEXT_LENGTH)
         )
-          fail("PAYLOAD_TOO_LARGE");
+          fail("payload_structure_or_bounds", "PAYLOAD_TOO_LARGE");
         return;
       }
       if (typeof v === "boolean") return;
@@ -190,12 +252,14 @@ function cloneJson(value: unknown): unknown {
           Math.abs(v) > Number.MAX_SAFE_INTEGER ||
           (Number.isInteger(v) && !Number.isSafeInteger(v))
         )
-          fail("INVALID_PAYLOAD");
+          fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
         return;
       }
-      if (!v || typeof v !== "object") fail("INVALID_PAYLOAD");
+      if (!v || typeof v !== "object")
+        fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
       const object = v as object;
-      if (seen.has(object)) fail("INVALID_PAYLOAD");
+      if (seen.has(object))
+        fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
       seen.add(object);
       const array = Array.isArray(v);
       if (
@@ -203,36 +267,39 @@ function cloneJson(value: unknown): unknown {
         v.length >
           (key === "items" ? HQ_WIRE_MAX_PAGE_ITEMS : HQ_WIRE_MAX_ARRAY_ITEMS)
       )
-        fail("PAYLOAD_TOO_LARGE");
+        fail("payload_structure_or_bounds", "PAYLOAD_TOO_LARGE");
       if (
         !array &&
         Object.getPrototypeOf(v) !== Object.prototype &&
         Object.getPrototypeOf(v) !== null
       )
-        fail("INVALID_PAYLOAD");
-      if (Object.getOwnPropertySymbols(v).length) fail("INVALID_PAYLOAD");
+        fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
+      if (Object.getOwnPropertySymbols(v).length)
+        fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
       for (const [k, descriptor] of Object.entries(
         Object.getOwnPropertyDescriptors(v)
       )) {
         if (array && k === "length") continue;
-        if (k.length > 256) fail("PAYLOAD_TOO_LARGE");
+        if (k.length > 256)
+          fail("payload_structure_or_bounds", "PAYLOAD_TOO_LARGE");
         if (!descriptor.enumerable || !Object.hasOwn(descriptor, "value"))
-          fail("INVALID_PAYLOAD");
+          fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
         if (array && (!/^(?:0|[1-9][0-9]*)$/.test(k) || Number(k) >= v.length))
-          fail("INVALID_PAYLOAD");
+          fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
         visit(descriptor.value, depth + 1, k);
       }
-      if (array && Object.keys(v).length !== v.length) fail("INVALID_PAYLOAD");
+      if (array && Object.keys(v).length !== v.length)
+        fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
       seen.delete(object);
     };
     visit(value, 0);
     const json = JSON.stringify(value);
     if (Buffer.byteLength(json, "utf8") > HQ_WIRE_MAX_PAYLOAD_BYTES)
-      fail("PAYLOAD_TOO_LARGE");
+      fail("payload_structure_or_bounds", "PAYLOAD_TOO_LARGE");
     return JSON.parse(json);
   } catch (error) {
     if (error instanceof HqContractError) throw error;
-    return fail("INVALID_PAYLOAD");
+    return fail("payload_structure_or_bounds", "INVALID_PAYLOAD");
   }
 }
 export function validateHqWireDeclaredSchema(
@@ -241,11 +308,11 @@ export function validateHqWireDeclaredSchema(
 ): void {
   const input = cloneJson(value);
   if (!Object.hasOwn(validators, name) || !validators[name](input))
-    fail("INVALID_PAYLOAD");
+    fail("declared_schema", "INVALID_PAYLOAD");
 }
 function parse<T>(name: HqWireSchemaName, value: unknown): T {
   const input = cloneJson(value);
-  if (!validators[name](input)) fail("INVALID_PAYLOAD");
+  if (!validators[name](input)) fail("declared_schema", "INVALID_PAYLOAD");
   return input as T;
 }
 function validCalendar(value: string): boolean {
@@ -260,8 +327,11 @@ function validCalendar(value: string): boolean {
     time.getUTCDate() === day
   );
 }
-function calendar(value: string): string {
-  if (!validCalendar(value)) fail();
+function calendar(
+  value: string,
+  rule: HqWireFailureRule = "calendar_date"
+): string {
+  if (!validCalendar(value)) fail(rule);
   return value;
 }
 const london = new Intl.DateTimeFormat("en-GB", {
@@ -271,12 +341,16 @@ const london = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
 });
 function londonDate(value: string): string {
-  calendar(value.slice(0, 10));
-  if (!ajv.formats["date-time"] || !Number.isFinite(Date.parse(value))) fail();
+  calendar(value.slice(0, 10), "registration_timestamp");
+  if (!ajv.formats["date-time"] || !Number.isFinite(Date.parse(value)))
+    fail("registration_timestamp");
   const parts = london.formatToParts(new Date(value));
   const part = (type: string) =>
-    parts.find(p => p.type === type)?.value ?? fail();
-  return calendar(`${part("year")}-${part("month")}-${part("day")}`);
+    parts.find(p => p.type === type)?.value ?? fail("registration_timestamp");
+  return calendar(
+    `${part("year")}-${part("month")}-${part("day")}`,
+    "registration_timestamp"
+  );
 }
 function metadata(value: HqWireMetadata): void {
   for (const instant of [
@@ -293,7 +367,7 @@ function metadata(value: HqWireMetadata): void {
       Date.parse(value.publishedAt) ||
     Date.parse(value.expiresAt) <= Date.parse(value.publishedAt)
   )
-    fail();
+    fail("metadata_window");
 }
 function booking(value: HqWireBookingPayload): void {
   const d = value.dates;
@@ -313,40 +387,41 @@ function booking(value: HqWireBookingPayload): void {
     d.dateSource !== source ||
     d.month !== (selected === null ? null : selected.slice(0, 7))
   )
-    fail();
+    fail("reporting_date_selection");
   const e = value.eligibility;
   if (
     e.pending !== (value.status === "pending") ||
     e.cancelled !== (value.status === "cancelled") ||
     e.undated !== (selected === null)
   )
-    fail();
+    fail("status_eligibility");
   if (
     e.activeSalesHeadline &&
     (value.status !== "confirmed" || selected === null)
   )
-    fail();
+    fail("status_eligibility");
   if (
     value.identity.orbitTenantId !== value.orbitTenantId ||
     value.identity.assignedStaff.orbitTenantUserId !==
       value.assignedTenantUserId
   )
-    fail();
+    fail("identity_consistency");
   if (new Set(value.products.map(p => p.id)).size !== value.products.length)
-    fail();
+    fail("duplicate_product");
   const f = value.financials;
   // Optional source-financial eligibility can include pending or undated rows;
   // it is not the confirmed-and-dated reporting activeSalesHeadline flag.
   // Keep source status/cancellation consistency without equating the two.
   if (Object.hasOwn(f, "bookingStatus") && f.bookingStatus !== value.status)
-    fail();
-  if (Object.hasOwn(f, "cancelled") && f.cancelled !== e.cancelled) fail();
+    fail("financial_status_consistency");
+  if (Object.hasOwn(f, "cancelled") && f.cancelled !== e.cancelled)
+    fail("financial_status_consistency");
   if (
     Object.hasOwn(f, "headlineEligible") &&
     e.cancelled &&
     f.headlineEligible !== false
   )
-    fail();
+    fail("cancelled_financial_eligibility");
   if (
     value.status === "cancelled" &&
     (f.grossBookingProfit !== null ||
@@ -356,15 +431,17 @@ function booking(value: HqWireBookingPayload): void {
       f.baselineEstimate.status !== "excluded" ||
       f.completeness.economicsStatus !== "excluded")
   )
-    fail();
+    fail("cancelled_economics");
 }
 function business(value: HqWireBusinessPayload): void {
-  if (value.identity.orbitTenantId !== value.orbitTenantId) fail();
+  if (value.identity.orbitTenantId !== value.orbitTenantId)
+    fail("identity_consistency");
 }
 function entity(value: any, changes: boolean): void {
   const p = value.payload;
   const tombstone = p.deleted === true;
-  if (changes && (value.operation === "delete") !== tombstone) fail();
+  if (changes && (value.operation === "delete") !== tombstone)
+    fail("entity_identity");
   if (tombstone) {
     if (
       p.entityType !== value.entityType ||
@@ -372,10 +449,10 @@ function entity(value: any, changes: boolean): void {
       Object.hasOwn(p, "orbitBookingId") ||
       Object.hasOwn(p, "orbitTenantId")
     )
-      fail();
+      fail("entity_identity");
   } else if (value.entityType === "booking") {
     if (p.orbitBookingId !== value.entityId || !Object.hasOwn(p, "products"))
-      fail();
+      fail("entity_identity");
     booking(p);
   } else {
     if (
@@ -383,7 +460,7 @@ function entity(value: any, changes: boolean): void {
       Object.hasOwn(p, "orbitBookingId") ||
       !Object.hasOwn(p, "account")
     )
-      fail();
+      fail("entity_identity");
     business(p);
   }
 }
@@ -396,7 +473,8 @@ function page<
 ): T {
   const result = parse<T>(name, value);
   metadata(result);
-  if (result.complete !== (result.nextCursor === null)) fail();
+  if (result.complete !== (result.nextCursor === null))
+    fail("pagination_completeness");
   for (const cursor of [result.nextCursor, result.resumeCursor])
     if (
       cursor !== null &&
@@ -404,21 +482,22 @@ function page<
         cursor.length > HQ_WIRE_MAX_TOKEN_LENGTH ||
         /[\u0000-\u001f\u007f]/.test(cursor))
     )
-      fail();
-  if (expected && result.entityType !== expected) fail();
+      fail("cursor_shape");
+  if (expected && result.entityType !== expected) fail("page_entity_type");
   const ids = new Set<string>();
   let previousSeq = 0;
   for (const item of result.items) {
     if (result.entityType !== "mixed" && item.entityType !== result.entityType)
-      fail();
+      fail("page_entity_type");
     if (name === "ChangePage") {
       const change = item as HqWireChangePage["items"][number];
-      if (change.seq <= previousSeq || change.seq > result.changeUpper) fail();
+      if (change.seq <= previousSeq || change.seq > result.changeUpper)
+        fail("change_sequence");
       previousSeq = change.seq;
       entity(item, true);
     } else {
       const id = `${item.entityType}:${item.entityId}`;
-      if (ids.has(id)) fail();
+      if (ids.has(id)) fail("duplicate_entity");
       ids.add(id);
       if (name !== "CataloguePage") entity(item, false);
     }
@@ -438,7 +517,7 @@ export function validateHqWireCataloguePage(
   value: unknown
 ): HqWireCataloguePage {
   const result = page<HqWireCataloguePage>("CataloguePage", value);
-  if (result.entityType === "mixed") fail();
+  if (result.entityType === "mixed") fail("page_entity_type");
   return result;
 }
 export function validateHqWireStatus(value: unknown): HqWireStatus {

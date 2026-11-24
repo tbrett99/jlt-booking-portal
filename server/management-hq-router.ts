@@ -29,6 +29,7 @@ import {
 } from "./management-hq-initial-import";
 import { validateHqInitialPublication } from "./management-hq-initial-validation";
 import type { HqInitialValidationResult } from "../shared/management-hq-initial-validation";
+import { checkHqFirstPage } from "./management-hq-first-page-check";
 import {
   getHqLiveReport,
   withHqLiveReportMetadata,
@@ -111,7 +112,17 @@ function initialImportGuard(
   let failure: { error: unknown } | null = null;
   return async () => {
     try {
+      assertBinding();
+      assertBoundary(start);
+    } catch (error) {
+      failure ??= { error };
+    }
+    try {
       await requireFreshHqSuperAdmin(db, user);
+    } catch (error) {
+      failure ??= { error };
+    }
+    try {
       assertBinding();
       assertBoundary(start);
     } catch (error) {
@@ -274,6 +285,17 @@ export const managementHqRouter = router({
         deny(
           "The reporting publication changed or could not be verified during initial checks. No partial checks have been returned."
         );
+      await guard();
+      return result;
+    } catch (error) {
+      safeError(error);
+    }
+  }),
+  checkFirstBookingPage: procedure.input(z.void()).mutation(async ({ ctx }) => {
+    try {
+      const start = boundary();
+      const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+      const result = await checkHqFirstPage({ guard });
       await guard();
       return result;
     } catch (error) {

@@ -5,6 +5,8 @@ import type {
 } from "../shared/management-hq-wire";
 import {
   HqContractError,
+  createHqWireFailure,
+  copyHqWireFailureRule,
   HQ_WIRE_MAX_PAYLOAD_BYTES as HQ_MAX_PAYLOAD_BYTES,
   HQ_WIRE_MAX_TOKEN_LENGTH as HQ_MAX_TOKEN_LENGTH,
   validateHqWireBookingPage,
@@ -110,7 +112,7 @@ function token(value: unknown): string {
     value.length > HQ_MAX_TOKEN_LENGTH ||
     /[\u0000-\u001f\u007f]/.test(value)
   )
-    throw new HqContractError("INVALID_QUERY");
+    throw createHqWireFailure("cursor_shape", "INVALID_QUERY");
   return value;
 }
 /** Delay hint only; this client never retries. Unknown or malicious values are discarded. */
@@ -184,7 +186,7 @@ export class HqOrbitClient implements HqWireReader {
   }
   catalogue(entityType: "booking" | "business", query?: HqWirePageQuery) {
     if (entityType !== "booking" && entityType !== "business")
-      throw new HqContractError("INVALID_QUERY");
+      throw createHqWireFailure("page_entity_type", "INVALID_QUERY");
     return read(
       clientStates.get(this)!,
       "catalogue",
@@ -192,7 +194,7 @@ export class HqOrbitClient implements HqWireReader {
       value => {
         const page = validateHqWireCataloguePage(value);
         if (page.entityType !== entityType)
-          throw new HqContractError("INVALID_SEMANTICS");
+          throw createHqWireFailure("page_entity_type");
         return page;
       },
       query
@@ -231,7 +233,7 @@ function pageQuery(query?: HqWirePageQuery): Record<string, string> {
     Object.getPrototypeOf(query) !== Object.prototype ||
     Object.getOwnPropertySymbols(query).length
   )
-    throw new HqContractError("INVALID_QUERY");
+    throw createHqWireFailure("query_structure", "INVALID_QUERY");
   const descriptors = Object.getOwnPropertyDescriptors(query);
   for (const [key, descriptor] of Object.entries(descriptors)) {
     if (
@@ -239,15 +241,15 @@ function pageQuery(query?: HqWirePageQuery): Record<string, string> {
       !descriptor.enumerable ||
       !Object.hasOwn(descriptor, "value")
     )
-      throw new HqContractError("INVALID_QUERY");
+      throw createHqWireFailure("query_structure", "INVALID_QUERY");
   }
   if (query.cursor !== undefined && query.generationId !== undefined)
-    throw new HqContractError("INVALID_QUERY");
+    throw createHqWireFailure("query_generation", "INVALID_QUERY");
   const result: Record<string, string> = {};
   if (query.cursor !== undefined) result.cursor = token(query.cursor);
   if (query.generationId !== undefined) {
     if (!Number.isSafeInteger(query.generationId) || query.generationId < 1)
-      throw new HqContractError("INVALID_QUERY");
+      throw createHqWireFailure("query_generation", "INVALID_QUERY");
     result.generationId = String(query.generationId);
   }
   if (query.limit !== undefined) {
@@ -256,7 +258,7 @@ function pageQuery(query?: HqWirePageQuery): Record<string, string> {
       query.limit < 1 ||
       query.limit > 100
     )
-      throw new HqContractError("INVALID_QUERY");
+      throw createHqWireFailure("query_limit", "INVALID_QUERY");
     result.limit = String(query.limit);
   }
   return result;
@@ -401,14 +403,17 @@ async function read<T>(
       query?.generationId !== undefined &&
       wire.generationId !== query.generationId
     )
-      throw new HqContractError("INVALID_SEMANTICS");
+      throw createHqWireFailure("query_generation");
     if (wire.items && wire.items.length > (query?.limit ?? 100))
-      throw new HqContractError("INVALID_SEMANTICS");
+      throw createHqWireFailure("query_limit");
     return page;
   } catch (error) {
     if (timedOut) throw new HqContractError("TIMEOUT");
-    if (error instanceof HqContractError)
-      throw new HqContractError(error.code, error.safeRetryAfter);
+    if (error instanceof HqContractError) {
+      const sanitized = new HqContractError(error.code, error.safeRetryAfter);
+      copyHqWireFailureRule(error, sanitized);
+      throw sanitized;
+    }
     throw new HqContractError("TRANSPORT_FAILURE");
   } finally {
     clearTimeout(timer);
