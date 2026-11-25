@@ -11,6 +11,10 @@ import {
 } from "./management-hq-live-service";
 import { HqLiveError, safeHqLiveErrorCode } from "./management-hq-live-store";
 
+/** Status + capabilities + at most one data page per protected manual action.
+ * Native trigger defaults, source page caps and existing lease limits are unchanged. */
+export const HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS = 3;
+
 const SETTINGS = [
   "HQ_ORBIT_REPORTING_BASE_URL",
   "HQ_ORBIT_REPORTING_API_KEY",
@@ -123,9 +127,13 @@ export async function importHqInitialBatch(
     config,
     onlyInitialPublication: true,
     initialImportGuard: guard,
+    maxSourceMethods: HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS,
   });
   const before = await guarded(() => service.getStatus());
-  if (before.hasPublished) return result("already_complete", before);
+  // An observational header is not a validated publication. The service's
+  // atomic initial-only acquire must strongly validate it before refusing work.
+  if (before.hasPublished && before.payloadIntegrity !== "unchecked")
+    return result("already_complete", before);
   if (
     before.health === "needs_attention" ||
     before.stageStatus === "needs_attention"

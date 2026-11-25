@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import type {
   Pool,
   PoolConnection,
@@ -7,6 +8,7 @@ import type {
 } from "mysql2/promise";
 import {
   validateHqImplementedSyncState,
+  validateHqImplementedSyncStateAsync,
   type HqImplementedState,
   type HqImplementedStore,
   type HqImplementedSyncState,
@@ -14,8 +16,10 @@ import {
 import type { HqLiveConfig } from "./management-hq-live-config";
 import {
   decodeHqLiveV2Sync,
+  decodeHqLiveV2SyncAsync,
   encodeHqLiveV2Sync,
-  hqJsonUtf8Bytes,
+  encodeHqLiveV2SyncAsync,
+  hqJsonUtf8BytesAsync,
   manifestChunkRefs,
   validateHqV2Chunk,
   validateHqV2Manifest,
@@ -24,6 +28,11 @@ import {
   type HqV2Manifest,
   type HqV2ChunkRef,
 } from "./management-hq-storage-v2";
+import { createHqCpuCheckpoint } from "./management-hq-cooperative";
+import {
+  readHqProgressSnapshot,
+  type HqProgressSnapshot,
+} from "./management-hq-progress";
 
 /** Reserved service namespace; ownerUserId=0 creates no user and has no FK. Never caller-selected. */
 export const HQ_LIVE_SYNC_DATASET_ID = "live:company:orbit:v1:sync";
@@ -179,7 +188,7 @@ export interface HqLiveSnapshot {
 }
 export type HqLiveAcquireResult =
   | { status: "acquired"; lease: HqLiveLease }
-  | { status: "busy" | "notdue" | "needs_attention" };
+  | { status: "busy" | "notdue" | "needs_attention" | "already_complete" };
 export interface HqLiveCompletion {
   status: "progress" | "applied" | "backoff" | "needs_attention";
   delaySeconds: number;
@@ -300,6 +309,8 @@ function controlRow(row: RowDataPacket): HqLiveControl {
   }
   return c;
 }
+/** Bounded control validation shared with explicitly unchecked progress observation. */
+export const parseHqLiveControlRow = controlRow;
 function syncRow(row: RowDataPacket): HqLiveSyncEnvelope {
   const e = parseRow(
     row,
@@ -326,7 +337,8 @@ function syncRow(row: RowDataPacket): HqLiveSyncEnvelope {
 /** Short transactions only. All sync/control writes lock the same control row first. */
 export function createHqLiveStore(
   pool: Pool,
-  config: HqLiveConfig
+  config: HqLiveConfig,
+  options: { cooperativeGuard?: () => Promise<void> } = {}
 ): HqLiveStore {
   function binding(write = false): string {
     const s = config.status(),
@@ -338,6 +350,41 @@ export function createHqLiveStore(
     )
       fail("CONFIG_INVALID");
     return f;
+  }
+  function checkpoint(f: string, renew?: () => Promise<void>) {
+    let denial: HqLiveError | undefined;
+    let renewedAt = performance.now();
+    const cpu = createHqCpuCheckpoint(async () => {
+      try {
+        assertBinding(f, binding());
+        await options.cooperativeGuard?.();
+        if (renew && performance.now() - renewedAt >= 8000) {
+          await renew();
+          renewedAt = performance.now();
+          await options.cooperativeGuard?.();
+        }
+        assertBinding(f, binding());
+      } catch (error) {
+        if (error instanceof HqLiveError) denial ??= error;
+        throw error;
+      }
+    });
+    return Object.assign(cpu, { denial: () => denial });
+  }
+  // A mismatched CAS must roll back any lease bookkeeping done while validating.
+  const casMismatch = Symbol("hq-private-cas-mismatch");
+  // Renewals are provisional until this transaction commits. Retain the earliest
+  // old authorization deadline even if held validation renews more than once.
+  const renewalDeadlines = new WeakMap<PoolConnection, number>();
+  function retainRenewalDeadline(
+    c: PoolConnection,
+    expiry: number,
+    hard: number
+  ) {
+    renewalDeadlines.set(
+      c,
+      Math.min(renewalDeadlines.get(c) ?? Infinity, expiry, hard)
+    );
   }
   async function transaction<T>(
     work: (c: PoolConnection) => Promise<T>,
@@ -358,6 +405,22 @@ export function createHqLiveStore(
         if (openingAuthority) await openingAuthority();
       }
       const result = await work(c);
+      const finalBinding = binding();
+      // Still inside rollback boundary: a SQL await after a CPU guard cannot
+      // authorize a renewal or publication for a now-denied action.
+      await options.cooperativeGuard?.();
+      const deadline = renewalDeadlines.get(c);
+      if (deadline !== undefined) {
+        // Refresh authoritative DB time after the final authority await. A last
+        // fresh authority check follows SQL; monotonic elapsed conservatively
+        // covers that awaited check without opening another SQL/authority gap.
+        const sampledAt = performance.now();
+        const databaseNow = await dbNow(c);
+        await options.cooperativeGuard?.();
+        if (databaseNow + Math.ceil(performance.now() - sampledAt) >= deadline)
+          fail("LEASE_LOST");
+      }
+      assertBinding(finalBinding, binding());
       await c.commit();
       return result;
     } catch (error) {
@@ -367,9 +430,11 @@ export function createHqLiveStore(
         } catch {
           /* no provider text */
         }
+      if (error === casMismatch) throw error;
       if (error instanceof HqLiveError) throw error;
       return fail("STORE_UNAVAILABLE");
     } finally {
+      if (c) renewalDeadlines.delete(c);
       c?.release();
     }
   }
@@ -449,7 +514,9 @@ export function createHqLiveStore(
   }
   async function fullSync(
     c: PoolConnection,
-    f: string
+    f: string,
+    cooperative = true,
+    lease?: HqLiveLease
   ): Promise<{
     state: HqImplementedSyncState | null;
     manifest: HqV2Manifest | null;
@@ -466,7 +533,46 @@ export function createHqLiveStore(
       HQ_LIVE_V2_ROOT_BYTES
     ) as HqV2Manifest;
     if (root?.format !== "hq-live-sync-manifest-v2") {
-      const envelope = syncRow(result[0]);
+      let envelope: HqLiveSyncEnvelope;
+      if (!cooperative) envelope = syncRow(result[0]);
+      else {
+        envelope = root as unknown as HqLiveSyncEnvelope;
+        if (
+          !envelope ||
+          typeof envelope !== "object" ||
+          Array.isArray(envelope) ||
+          envelope.format !== "hq-live-sync-v1" ||
+          !hash(envelope.sourceFingerprint)
+        )
+          fail("INVALID_PERSISTED_STATE");
+        const cpu = checkpoint(
+          f,
+          lease ? () => renewCpuLease(c, lease) : undefined
+        );
+        try {
+          await validateHqImplementedSyncStateAsync(
+            envelope.sync,
+            {
+              maxStateBytes: MAX_BYTES,
+              // Parsed V1 extras retain the original native JSON acceptance,
+              // including depths that the strict V2 codec intentionally denies.
+              // This one native byte pass remains bounded by the 16 MiB root.
+              measureStateBytes: value =>
+                Buffer.byteLength(JSON.stringify(value)),
+            },
+            cpu
+          );
+        } catch (error) {
+          if (cpu.denial()) throw cpu.denial();
+          if (error instanceof HqLiveError) throw error;
+          fail("INVALID_PERSISTED_STATE");
+        }
+        if (
+          !envelope.sync ||
+          envelope.sync.version !== Number(result[0].stateVersion)
+        )
+          fail("INVALID_PERSISTED_STATE");
+      }
       assertBinding(f, envelope.sourceFingerprint);
       assertBinding(f, binding());
       return { state: envelope.sync, manifest: null, chunks: new Map() };
@@ -481,9 +587,15 @@ export function createHqLiveStore(
     }
     const chunks = await chunkRows(c, refs!, f);
     let state: HqImplementedSyncState;
+    const cpu = cooperative
+      ? checkpoint(f, lease ? () => renewCpuLease(c, lease) : undefined)
+      : null;
     try {
-      state = decodeHqLiveV2Sync(root, chunks, f);
+      state = cooperative
+        ? await decodeHqLiveV2SyncAsync(root, chunks, f, cpu!)
+        : decodeHqLiveV2Sync(root, chunks, f);
     } catch {
+      if (cpu?.denial()) throw cpu.denial();
       fail("INVALID_PERSISTED_STATE");
     }
     assertBinding(f, binding()); // no state exposure after an awaited binding drift
@@ -532,6 +644,40 @@ export function createHqLiveStore(
     )
       fail("LEASE_LOST");
     return { control, now };
+  }
+  async function renewCpuLease(c: PoolConnection, lease: HqLiveLease) {
+    // Same locked transaction and same fencing token; never renew an expired
+    // or superseded holder, and never extend the original 95-second hard cap.
+    await options.cooperativeGuard?.();
+    const { control, now } = await guard(c, lease);
+    if (control.leaseExpiresAtMs! - now > 20000) {
+      await options.cooperativeGuard?.();
+      assertBinding(lease.sourceFingerprint, binding(true));
+      return;
+    }
+    const oldExpiry = control.leaseExpiresAtMs!;
+    const oldHardExpiry = control.leaseHardExpiresAtMs!;
+    await options.cooperativeGuard?.();
+    const refreshed = await guard(c, lease);
+    if (refreshed.now >= oldExpiry || refreshed.now >= oldHardExpiry)
+      fail("LEASE_LOST");
+    control.leaseExpiresAtMs = Math.min(
+      refreshed.now + HQ_LIVE_LEASE_SECONDS * 1000,
+      oldHardExpiry
+    );
+    retainRenewalDeadline(c, oldExpiry, oldHardExpiry);
+    assertBinding(lease.sourceFingerprint, binding(true));
+    await saveControl(c, control);
+    await options.cooperativeGuard?.();
+    const verified = await guard(c, lease);
+    // A replacement expiry is not permission to cross the old deadline during
+    // the renewal UPDATE or authority await.
+    if (verified.now >= oldExpiry || verified.now >= oldHardExpiry)
+      fail("LEASE_LOST");
+    await options.cooperativeGuard?.();
+    const finalNow = await dbNow(c);
+    if (finalNow >= oldExpiry || finalNow >= oldHardExpiry) fail("LEASE_LOST");
+    assertBinding(lease.sourceFingerprint, binding(true));
   }
   const store: HqLiveStore = {
     async recoverEmptyInitialImport(expectedVersion, authority) {
@@ -741,7 +887,7 @@ export function createHqLiveStore(
           control.initialStagedResume !== undefined
         )
           return "not_resumable";
-        const loaded = await fullSync(guarded, originalBinding!);
+        const loaded = await fullSync(guarded, originalBinding!, false);
         const state = loaded.state;
         if (
           !state ||
@@ -777,6 +923,7 @@ export function createHqLiveStore(
         return "resumed";
       }, verifyAuthority);
     },
+    readProgressSnapshot: () => readHqProgressSnapshot(pool, config),
     async readSnapshot() {
       const f = binding();
       return transaction(async c => {
@@ -791,7 +938,8 @@ export function createHqLiveStore(
     async readPublished() {
       return (await store.readSnapshot()).sync?.published ?? null;
     },
-    async acquire() {
+    acquireInitialPublication: () => store.acquire(true),
+    async acquire(initialOnly = false) {
       const f = binding(true);
       return transaction(async c => {
         // INSERT IGNORE is initialization only; inspect by primary ID to reject foreign/sample collisions.
@@ -820,6 +968,8 @@ export function createHqLiveStore(
         const state = await sync(c, f); // reject corrupt or differently-bound state BEFORE granting a lease/provider request
         if (initialized.affectedRows === 1 && state)
           fail("INVALID_PERSISTED_STATE"); // missing control is not an implicit protected reset
+        if (initialOnly && state?.published)
+          return { status: "already_complete" };
         const now = await dbNow(c);
         if (control.leaseToken && control.leaseExpiresAtMs! > now)
           return { status: "busy" };
@@ -855,10 +1005,20 @@ export function createHqLiveStore(
         await saveControl(c, control);
       });
     },
+    renewCooperative: lease => transaction(c => renewCpuLease(c, lease)),
     fencedSyncStore(lease) {
       return {
         async readSync() {
-          return (await store.readSnapshot()).sync;
+          const f = binding();
+          return transaction(async c => {
+            // Keep original strong read-only snapshot semantics, including the
+            // engine's recovery reread after a failed expiry-guarded CAS.
+            const control = await locked(c, f);
+            const loaded = await fullSync(c, f, true, lease);
+            if (!control && loaded.state) fail("INVALID_PERSISTED_STATE");
+            assertBinding(f, binding());
+            return loaded.state;
+          });
         },
         async compareAndSwapSync(expected, next) {
           assertBinding(lease.sourceFingerprint, binding(true));
@@ -867,9 +1027,13 @@ export function createHqLiveStore(
             next.version !== (expected ?? 0) + 1
           )
             fail("INVALID_PERSISTED_STATE");
+          const nextVersion = next.version;
           // All encoding and bounded validation happens outside the transaction.
           // Prepare both representations because a small next state must stay v2
           // when its current root has already migrated.
+          // Engine CAS inputs are private stable snapshots across these awaits.
+          // Prepared bytes and scalar commit decisions are owned below; no
+          // later transaction decision depends on a mutable caller object.
           let encoded: ReturnType<typeof encodeHqLiveV2Sync>;
           let legacy: string | null = null;
           const envelope: HqLiveSyncEnvelope = {
@@ -877,49 +1041,105 @@ export function createHqLiveStore(
             sourceFingerprint: lease.sourceFingerprint,
             sync: next,
           };
+          const cpu = checkpoint(lease.sourceFingerprint, () =>
+            transaction(c => renewCpuLease(c, lease))
+          );
           try {
-            encoded = encodeHqLiveV2Sync(next, lease.sourceFingerprint);
-            if (hqJsonUtf8Bytes(envelope) < V1_WRITE_BYTES)
+            encoded = await encodeHqLiveV2SyncAsync(
+              next,
+              lease.sourceFingerprint,
+              cpu
+            );
+            if (
+              encoded.manifest.syncVersion !== nextVersion ||
+              next.version !== nextVersion
+            )
+              fail("INVALID_PERSISTED_STATE");
+            const wrapperBytes =
+              Buffer.byteLength(JSON.stringify({ ...envelope, sync: null })) -
+              4;
+            if (encoded.manifest.expandedBytes + wrapperBytes < V1_WRITE_BYTES)
               legacy = JSON.stringify(envelope);
-          } catch {
+          } catch (error) {
+            if (cpu.denial()) throw cpu.denial();
+            if (error instanceof HqLiveError) throw error;
             fail("INVALID_PERSISTED_STATE");
           }
           const manifestSerialized = JSON.stringify(encoded!.manifest);
           if (Buffer.byteLength(manifestSerialized) > HQ_LIVE_V2_ROOT_BYTES)
             fail("INVALID_PERSISTED_STATE");
+          const completePublicationVersion =
+            encoded!.manifest.sync.stage === null
+              ? (encoded!.manifest.sync.published?.version ?? null)
+              : null;
           const newRefs = manifestChunkRefs(encoded!.manifest);
           const preparedChunks = new Map(
             encoded!.chunks.map(chunk => [chunk.id, chunk.serialized])
           );
-          return transaction(async c => {
-            await guard(c, lease); // control lock before sync row; never a transaction around HTTP
-            const loaded = await fullSync(c, lease.sourceFingerprint);
-            const current = loaded.state;
-            if ((current?.version ?? null) !== expected) return false;
-            const useV2 = loaded.manifest !== null || legacy === null;
-            const serialized = useV2 ? manifestSerialized : legacy!;
-            const oldRefs = loaded.manifest
-              ? manifestChunkRefs(loaded.manifest)
-              : [];
-            if (useV2) {
-              const unheld = newRefs.filter(ref => !loaded.chunks.has(ref.id));
-              // Exact locked lookups only, including collisions not referenced by the old root.
-              const existing = await chunkRows(
+          try {
+            return await transaction(async c => {
+              await guard(c, lease); // control lock before sync row; never a transaction around HTTP
+              await renewCpuLease(c, lease);
+              const loaded = await fullSync(
                 c,
-                unheld,
                 lease.sourceFingerprint,
-                true
+                true,
+                lease
               );
-              for (const ref of newRefs) {
-                const text = preparedChunks.get(ref.id);
-                if (!text) fail("INVALID_PERSISTED_STATE");
-                const reused =
-                  loaded.chunks.get(ref.id) ?? existing.get(ref.id);
-                if (reused !== undefined) {
-                  try {
+              const current = loaded.state;
+              if ((current?.version ?? null) !== expected) throw casMismatch;
+              const useV2 = loaded.manifest !== null || legacy === null;
+              const serialized = useV2 ? manifestSerialized : legacy!;
+              const oldRefs = loaded.manifest
+                ? manifestChunkRefs(loaded.manifest)
+                : [];
+              if (useV2) {
+                const unheld = newRefs.filter(
+                  ref => !loaded.chunks.has(ref.id)
+                );
+                // Exact locked lookups only, including collisions not referenced by the old root.
+                const existing = await chunkRows(
+                  c,
+                  unheld,
+                  lease.sourceFingerprint,
+                  true
+                );
+                for (const ref of newRefs) {
+                  const text = preparedChunks.get(ref.id);
+                  if (!text) fail("INVALID_PERSISTED_STATE");
+                  const reused =
+                    loaded.chunks.get(ref.id) ?? existing.get(ref.id);
+                  if (reused !== undefined) {
+                    try {
+                      if (
+                        !validateHqV2Chunk(
+                          reused,
+                          ref,
+                          lease.sourceFingerprint
+                        ).equals(
+                          validateHqV2Chunk(text, ref, lease.sourceFingerprint)
+                        )
+                      )
+                        fail("INVALID_PERSISTED_STATE");
+                    } catch {
+                      fail("INVALID_PERSISTED_STATE");
+                    }
+                    continue;
+                  }
+                  await guard(c, lease);
+                  const [inserted] = await c.execute<ResultSetHeader>(
+                    "INSERT IGNORE INTO management_hq_datasets (datasetId,mode,ownerUserId,stateVersion,state,updatedAt) VALUES (?,'live',0,1,?,UTC_TIMESTAMP(3))",
+                    [ref.id, text]
+                  );
+                  await guard(c, lease);
+                  if (inserted.affectedRows !== 1) {
+                    if (inserted.affectedRows !== 0)
+                      fail("INVALID_PERSISTED_STATE");
+                    const collided = await rows(c, ref.id, true);
+                    if (collided.length !== 1) fail("INVALID_PERSISTED_STATE");
                     if (
                       !validateHqV2Chunk(
-                        reused,
+                        chunkText(collided[0], ref, lease.sourceFingerprint),
                         ref,
                         lease.sourceFingerprint
                       ).equals(
@@ -927,79 +1147,57 @@ export function createHqLiveStore(
                       )
                     )
                       fail("INVALID_PERSISTED_STATE");
-                  } catch {
-                    fail("INVALID_PERSISTED_STATE");
                   }
-                  continue;
                 }
-                await guard(c, lease);
-                const [inserted] = await c.execute<ResultSetHeader>(
+              }
+              // Recheck DB clock/binding/fence immediately before EVERY sync CAS (including publication/410).
+              const { control, now } = await guard(c, lease);
+              let r: ResultSetHeader;
+              if (expected === null)
+                [r] = await c.execute<ResultSetHeader>(
                   "INSERT IGNORE INTO management_hq_datasets (datasetId,mode,ownerUserId,stateVersion,state,updatedAt) VALUES (?,'live',0,1,?,UTC_TIMESTAMP(3))",
-                  [ref.id, text]
+                  [HQ_LIVE_SYNC_DATASET_ID, serialized]
                 );
-                await guard(c, lease);
-                if (inserted.affectedRows !== 1) {
-                  if (inserted.affectedRows !== 0)
-                    fail("INVALID_PERSISTED_STATE");
-                  const collided = await rows(c, ref.id, true);
-                  if (collided.length !== 1) fail("INVALID_PERSISTED_STATE");
-                  if (
-                    !validateHqV2Chunk(
-                      chunkText(collided[0], ref, lease.sourceFingerprint),
-                      ref,
-                      lease.sourceFingerprint
-                    ).equals(
-                      validateHqV2Chunk(text, ref, lease.sourceFingerprint)
-                    )
-                  )
+              else
+                [r] = await c.execute<ResultSetHeader>(
+                  "UPDATE management_hq_datasets SET stateVersion = ?,state = ?,updatedAt = UTC_TIMESTAMP(3) WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = ?",
+                  [nextVersion, serialized, HQ_LIVE_SYNC_DATASET_ID, expected]
+                );
+              // Once chunks may have been inserted, a false return would commit
+              // orphan mutations. Any failed root CAS is therefore a rollback.
+              if (r.affectedRows !== 1) fail("LEASE_LOST");
+              // A sync write can itself cross expiry: staging, 410 intent/cleanup and publication all roll back.
+              await guard(c, lease);
+              if (useV2) {
+                const retained = new Set(newRefs.map(ref => ref.id));
+                for (const ref of oldRefs) {
+                  if (retained.has(ref.id)) continue;
+                  await guard(c, lease);
+                  const [deleted] = await c.execute<ResultSetHeader>(
+                    "DELETE FROM management_hq_datasets WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = 1",
+                    [ref.id]
+                  );
+                  await guard(c, lease);
+                  if (deleted.affectedRows !== 1)
                     fail("INVALID_PERSISTED_STATE");
                 }
               }
-            }
-            // Recheck DB clock/binding/fence immediately before EVERY sync CAS (including publication/410).
-            const { control, now } = await guard(c, lease);
-            let r: ResultSetHeader;
-            if (expected === null)
-              [r] = await c.execute<ResultSetHeader>(
-                "INSERT IGNORE INTO management_hq_datasets (datasetId,mode,ownerUserId,stateVersion,state,updatedAt) VALUES (?,'live',0,1,?,UTC_TIMESTAMP(3))",
-                [HQ_LIVE_SYNC_DATASET_ID, serialized]
-              );
-            else
-              [r] = await c.execute<ResultSetHeader>(
-                "UPDATE management_hq_datasets SET stateVersion = ?,state = ?,updatedAt = UTC_TIMESTAMP(3) WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = ?",
-                [next.version, serialized, HQ_LIVE_SYNC_DATASET_ID, expected]
-              );
-            // Once chunks may have been inserted, a false return would commit
-            // orphan mutations. Any failed root CAS is therefore a rollback.
-            if (r.affectedRows !== 1) fail("LEASE_LOST");
-            // A sync write can itself cross expiry: staging, 410 intent/cleanup and publication all roll back.
-            await guard(c, lease);
-            if (useV2) {
-              const retained = new Set(newRefs.map(ref => ref.id));
-              for (const ref of oldRefs) {
-                if (retained.has(ref.id)) continue;
+              if (
+                completePublicationVersion !== null &&
+                completePublicationVersion !== current?.published?.version
+              ) {
+                control.lastPublishAtMs = now;
+                await guard(c, lease); // final success/control update is guarded too
+                await saveControl(c, control);
                 await guard(c, lease);
-                const [deleted] = await c.execute<ResultSetHeader>(
-                  "DELETE FROM management_hq_datasets WHERE datasetId = ? AND mode = 'live' AND ownerUserId = 0 AND stateVersion = 1",
-                  [ref.id]
-                );
-                await guard(c, lease);
-                if (deleted.affectedRows !== 1) fail("INVALID_PERSISTED_STATE");
               }
-            }
-            if (
-              next.stage === null &&
-              next.published &&
-              next.published.version !== current?.published?.version
-            ) {
-              control.lastPublishAtMs = now;
-              await guard(c, lease); // final success/control update is guarded too
-              await saveControl(c, control);
-              await guard(c, lease);
-            }
-            await guard(c, lease); // fresh configuration/fence/database clock before commit
-            return true;
-          });
+              await guard(c, lease); // fresh configuration/fence/database clock before commit
+              return true;
+            });
+          } catch (error) {
+            if (error === casMismatch) return false;
+            throw error;
+          }
         },
       };
     },
@@ -1016,9 +1214,12 @@ export function createHqLiveStore(
       )
         fail("INVALID_PERSISTED_STATE");
       await transaction(async c => {
-        const { control, now } = await guard(c, lease);
-        await sync(c, lease.sourceFingerprint); // don't report successful health for corrupt cached state
+        const opening = await guard(c, lease);
+        const now = opening.now;
+        await renewCpuLease(c, lease);
+        await fullSync(c, lease.sourceFingerprint, true, lease); // strong validation remains mandatory
         const verified = await guard(c, lease);
+        const control = verified.control; // includes any fenced CPU renewals
         control.stageStatus = completion.status;
         control.nextDueAtMs = verified.now + completion.delaySeconds * 1000;
         control.lastErrorCode = completion.errorCode ?? null;
@@ -1045,6 +1246,7 @@ export function createHqLiveStore(
 }
 export interface HqLiveStore {
   readSnapshot(): Promise<HqLiveSnapshot>;
+  readProgressSnapshot?(): Promise<HqProgressSnapshot>;
   readPublished(): Promise<HqImplementedState | null>;
   recoverEmptyInitialImport?(
     expectedVersion: number,
@@ -1055,8 +1257,10 @@ export interface HqLiveStore {
     expectedSyncVersion: number,
     authority: () => Promise<void>
   ): Promise<HqLiveStagedResumeResult>;
-  acquire(): Promise<HqLiveAcquireResult>;
+  acquire(initialOnly?: boolean): Promise<HqLiveAcquireResult>;
+  acquireInitialPublication?(): Promise<HqLiveAcquireResult>;
   renew(lease: HqLiveLease): Promise<void>;
+  renewCooperative?(lease: HqLiveLease): Promise<void>;
   fencedSyncStore(lease: HqLiveLease): HqImplementedStore;
   complete(lease: HqLiveLease, completion: HqLiveCompletion): Promise<void>;
 }

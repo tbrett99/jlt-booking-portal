@@ -254,7 +254,11 @@ export const managementHqRouter = router({
         deny(
           "Initial publication checks require valid sync-on/read-off settings. Dashboards and automatic updates remain off."
         );
-      const service = createHqLiveService({ config: start.config });
+      const service = createHqLiveService({
+        config: start.config,
+        onlyInitialPublication: true,
+        initialImportGuard: guard,
+      });
       // Guard rejected awaits as well: provider/SQL failure is not permission to
       // release a stale result to a revoked actor or changed source binding.
       const read = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -269,7 +273,9 @@ export const managementHqRouter = router({
         if (!outcome.ok) throw outcome.error;
         return outcome.value;
       };
-      const before = await read(() => service.getStatus());
+      const validationStatus = () =>
+        service.getValidationStatus?.() ?? service.getStatus();
+      const before = await read(validationStatus);
       let result: HqInitialValidationResult;
       if (!before.hasPublished) {
         result = {
@@ -299,7 +305,7 @@ export const managementHqRouter = router({
           validateHqInitialPublication(state!, ctx.hqDb, before, guard)
         );
       }
-      const after = await read(() => service.getStatus());
+      const after = await read(validationStatus);
       if (
         after.stateVersion !== before.stateVersion ||
         after.generationId !== before.generationId ||

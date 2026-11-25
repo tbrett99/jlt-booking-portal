@@ -9,6 +9,8 @@ import {
 import { getHqReport } from "./management-hq-engine";
 import { importHqInitialBatch } from "./management-hq-initial-import";
 import type { HqWireReader } from "../shared/management-hq-wire";
+import { HQ_PROGRESS_SQL } from "./management-hq-progress";
+import { projectHqProgressFixture } from "./management-hq-progress-fixtures";
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const settings = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   HQ_LIVE_SYNC_ENABLED: "true",
@@ -24,7 +26,9 @@ function offlinePool() {
   let clock = Date.parse("2026-11-22T12:00:00Z"),
     tail = Promise.resolve();
   const pool: any = {
-    execute: vi.fn(() => {
+    execute: vi.fn(async (sql: string) => {
+      if (sql === HQ_PROGRESS_SQL)
+        return [projectHqProgressFixture(rows, clock)];
       throw new Error("no nontransactional SQL");
     }),
     getConnection: vi.fn(async () => {
@@ -206,6 +210,16 @@ describe("actual initial recovery plus existing bounded importer, offline only",
     expect(published).not.toBeNull();
     expect(s.config.status().readEnabled).toBe(false);
     expect(await s.services[s.services.length - 1].readPublished()).toBeNull();
+    const progress = await s.services[s.services.length - 1].getStatus();
+    expect(progress).toMatchObject({
+      health: "progress",
+      payloadIntegrity: "unchecked",
+      hasPublished: true,
+      readEnabled: false,
+      generationId: null,
+      isStale: null,
+    });
+    safe(progress);
     expect(
       (
         await recoverHqEmptyInitialImport({
@@ -220,5 +234,18 @@ describe("actual initial recovery plus existing bounded importer, offline only",
     expect((await s.click()).status).toBe("already_complete");
     expect(await s.store.readPublished()).toEqual(published);
     expect(s.createReader).toHaveBeenCalledTimes(2);
+    // The progress exception must never authorize arbitrary outside SQL.
+    expect(s.fixture.pool.execute).toHaveBeenCalled();
+    expect(
+      s.fixture.pool.execute.mock.calls.every(
+        ([sql]: [string]) => sql === HQ_PROGRESS_SQL
+      )
+    ).toBe(true);
+    await expect(
+      s.fixture.pool.execute(`${HQ_PROGRESS_SQL} FOR UPDATE`)
+    ).rejects.toThrow("no nontransactional SQL");
+    await expect(
+      s.fixture.pool.execute("SELECT state FROM management_hq_datasets")
+    ).rejects.toThrow("no nontransactional SQL");
   });
 });

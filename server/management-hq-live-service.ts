@@ -1,9 +1,12 @@
 import type { HqWireReader } from "../shared/management-hq-wire";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { performance } from "node:perf_hooks";
 import type { Pool } from "mysql2/promise";
 import {
   createHqImplementedEngine,
   validateHqImplementedSyncState,
+  validateHqImplementedSyncStateAsync,
   type HqImplementedState,
 } from "./management-hq-ingestion";
 import {
@@ -20,6 +23,9 @@ import {
   type HqLiveStore,
 } from "./management-hq-live-store";
 import { HQ_LIVE_V2_VALIDATION_OPTIONS } from "./management-hq-storage-v2";
+import { hqJsonUtf8BytesAsync } from "./management-hq-storage-v2";
+import { createHqCpuCheckpoint } from "./management-hq-cooperative";
+import type { HqProgressSnapshot } from "./management-hq-progress";
 
 // One lazy process-wide pool, not one per HTTP request. No raw DB URI is retained in exported data.
 // A runtime DB binding change requires process restart rather than silently mixing stores/pools.
@@ -109,6 +115,8 @@ export interface HqLiveStatusDto extends HqLiveConfigurationStatus {
   sourceAgeSeconds: number | null;
   freshnessTargetSeconds: number;
   isStale: boolean | null;
+  /** Unchecked progress is never accepted reporting health or report data. */
+  payloadIntegrity?: "validated" | "unchecked";
 }
 const iso = (v: number | null | undefined) =>
   v == null ? null : new Date(v).toISOString();
@@ -124,6 +132,14 @@ export function buildHqLiveStatus(
       snapshot.sync,
       HQ_LIVE_V2_VALIDATION_OPTIONS
     );
+  return projectHqLiveStatus(configuration, snapshot, nowMs, errorCode);
+}
+function projectHqLiveStatus(
+  configuration: HqLiveConfigurationStatus,
+  snapshot: HqLiveSnapshot | null,
+  nowMs: number,
+  errorCode: HqLiveErrorCode | null
+): HqLiveStatusDto {
   const published = snapshot?.sync?.published,
     stage = snapshot?.sync?.stage,
     control = snapshot?.control;
@@ -204,6 +220,54 @@ export function buildHqLiveStatus(
     sourceAgeSeconds: age,
     freshnessTargetSeconds: target,
     isStale: stale,
+    ...(snapshot ? { payloadIntegrity: "validated" as const } : {}),
+  };
+}
+function buildHqProgressStatus(
+  configuration: HqLiveConfigurationStatus,
+  observation: HqProgressSnapshot,
+  nowMs: number
+): HqLiveStatusDto {
+  const base = buildHqLiveStatus(configuration, null, nowMs);
+  const control = observation.control;
+  const stageStatus =
+    control?.stageStatus === "running" &&
+    (control.leaseExpiresAtMs === null ||
+      control.leaseExpiresAtMs <= observation.databaseNowMs ||
+      control.leaseHardExpiresAtMs === null ||
+      control.leaseHardExpiresAtMs <= observation.databaseNowMs)
+      ? observation.progress
+        ? "progress"
+        : "idle"
+      : (control?.stageStatus ?? "idle");
+  const attention = stageStatus === "needs_attention";
+  return {
+    ...base,
+    payloadIntegrity: "unchecked",
+    health: attention
+      ? "needs_attention"
+      : stageStatus === "backoff"
+        ? "backoff"
+        : observation.progress ||
+            observation.hasPublished ||
+            stageStatus === "running"
+          ? "progress"
+          : "no_data",
+    hasPublished: observation.hasPublished,
+    stateVersion: observation.stateVersion,
+    lastAttemptAt: iso(control?.lastAttemptAtMs),
+    lastSuccessfulCheckAt: iso(control?.lastSuccessAtMs),
+    lastPublishedAt: iso(control?.lastPublishAtMs),
+    nextDueAt: iso(control?.nextDueAtMs),
+    lastErrorCode: control?.lastErrorCode ?? null,
+    recoveryGuidance:
+      control?.lastErrorCode === "SOURCE_BINDING_CHANGED"
+        ? "restore_original_source_binding_or_explicit_protected_reset"
+        : attention
+          ? "investigate_before_explicit_protected_recovery"
+          : null,
+    stageStatus,
+    progress: observation.progress,
   };
 }
 export interface HqLiveServiceOptions {
@@ -236,6 +300,8 @@ export interface HqLiveService {
   readPublished(): Promise<HqImplementedState | null>;
   /** Server-only acceptance snapshot; only configured sync-on/read-off is permitted. */
   readValidationSnapshot(): Promise<HqImplementedState | null>;
+  /** Explicit totals checks require strong publication metadata, not progress headers. */
+  getValidationStatus?(): Promise<HqLiveStatusDto>;
   getStatus(): Promise<HqLiveStatusDto>;
 }
 /** Native HTTP invocation core; no scheduling, activation, background loop or operational writes. */
@@ -250,15 +316,45 @@ export function createHqLiveService(
   const guard = options.onlyInitialPublication
     ? options.initialImportGuard
     : undefined;
+  // Action-local rather than a global/cache latch: a concurrent invocation
+  // cannot clear the first denial observed by a suspended action.
+  const cpuActions = new AsyncLocalStorage<{
+    denial: { error: unknown } | null;
+  }>();
+  const cpuGuard = async () => {
+    const action = cpuActions.getStore();
+    let denial = action?.denial ?? null;
+    const retain = (error: unknown) => {
+      denial ??= { error };
+      if (action) action.denial ??= denial;
+    };
+    try {
+      if (!options.createStore) currentDatabaseBinding();
+    } catch (error) {
+      retain(error);
+    }
+    // Still refresh authority when a simultaneous database failure is observed.
+    try {
+      await guard?.();
+    } catch (error) {
+      retain(error);
+    }
+    try {
+      if (!options.createStore) currentDatabaseBinding();
+    } catch (error) {
+      retain(error);
+    }
+    if (denial) throw denial.error;
+  };
   const guarded = async <T>(work: () => Promise<T>): Promise<T> => {
-    await guard?.();
+    await cpuGuard();
     let outcome: { ok: true; value: T } | { ok: false; error: unknown };
     try {
       outcome = { ok: true, value: await work() };
     } catch (error) {
       outcome = { ok: false, error };
     }
-    await guard?.();
+    await cpuGuard();
     if (!outcome.ok) throw outcome.error;
     return outcome.value;
   };
@@ -275,7 +371,9 @@ export function createHqLiveService(
   async function defaultStore(): Promise<HqLiveStore> {
     // Lazy and server-only: do not import db.ts (which has unrelated operational/logging dependencies).
     // Read-only pool construction requires read-enabled; a client is constructed ONLY by invoke after acquire.
-    return createHqLiveStore(await getSharedHqPool(), config);
+    return createHqLiveStore(await getSharedHqPool(), config, {
+      cooperativeGuard: cpuGuard,
+    });
   }
   async function getStore() {
     // Even a resolved default store must fail closed on runtime DB drift, without pool/DB work.
@@ -300,6 +398,22 @@ export function createHqLiveService(
     "SOURCE_NOT_READY",
     "SOURCE_OR_STORE_UNAVAILABLE",
   ]);
+  const strongStatus = async (configuration: HqLiveConfigurationStatus) => {
+    const snapshot = await (await getStore()).readSnapshot();
+    await cpuGuard();
+    const cpu = createHqCpuCheckpoint(cpuGuard);
+    await validateHqImplementedSyncStateAsync(
+      snapshot.sync,
+      {
+        ...HQ_LIVE_V2_VALIDATION_OPTIONS,
+        measureStateBytesAsync: (value, maximum) =>
+          hqJsonUtf8BytesAsync(value, maximum, cpu),
+      },
+      cpu
+    );
+    await cpuGuard();
+    return projectHqLiveStatus(configuration, snapshot, now(), null);
+  };
   const service: HqLiveService = {
     configurationStatus: () => config.status(),
     authorizeTrigger: token => config.authorizeTrigger(token),
@@ -424,13 +538,21 @@ export function createHqLiveService(
         return { status: "disabled" };
       let store: HqLiveStore;
       let lease: Awaited<ReturnType<HqLiveStore["acquire"]>>;
+      let initialAcquisitionChecked = false;
       try {
         store = await guarded(getStore);
-        if (options.onlyInitialPublication) {
+        initialAcquisitionChecked =
+          !!options.onlyInitialPublication &&
+          typeof store.acquireInitialPublication === "function";
+        if (options.onlyInitialPublication && !initialAcquisitionChecked) {
           const before = await guarded(() => store.readSnapshot());
           if (before.sync?.published) return { status: "already_complete" };
         }
-        lease = await guarded(() => store.acquire());
+        lease = await guarded(() =>
+          initialAcquisitionChecked
+            ? store.acquireInitialPublication!()
+            : store.acquire()
+        );
       } catch (error) {
         return {
           status: "needs_attention",
@@ -442,7 +564,7 @@ export function createHqLiveService(
       let methods = 0,
         retryAfter = 0;
       try {
-        if (options.onlyInitialPublication) {
+        if (options.onlyInitialPublication && !initialAcquisitionChecked) {
           // Renew proves the acquired fence before checking the published checkpoint.
           // No second generation may start if another worker published during acquire.
           await guarded(() => store.renew(lease.lease));
@@ -491,6 +613,18 @@ export function createHqLiveService(
           changes: (cursor, limit) => call(() => source.changes(cursor, limit)),
         };
         const fenced = store.fencedSyncStore(lease.lease);
+        let renewedAt = performance.now();
+        const cpu = createHqCpuCheckpoint(async () => {
+          await cpuGuard();
+          if (performance.now() - renewedAt >= 8000) {
+            await guarded(() =>
+              store.renewCooperative
+                ? store.renewCooperative(lease.lease)
+                : store.renew(lease.lease)
+            );
+            renewedAt = performance.now();
+          }
+        });
         const engine = createHqImplementedEngine(
           reader,
           guard
@@ -502,6 +636,9 @@ export function createHqLiveService(
             : fenced,
           {
             ...HQ_LIVE_V2_VALIDATION_OPTIONS,
+            cooperativeCheckpoint: cpu,
+            measureStateBytesAsync: (value, maximum) =>
+              hqJsonUtf8BytesAsync(value, maximum, cpu),
             shouldContinue: async () => {
               if (methods >= maxMethods || now() - started >= deadlineMs)
                 return false;
@@ -513,6 +650,7 @@ export function createHqLiveService(
           }
         );
         const result = await engine.sync();
+        await cpuGuard(); // sanitized engine outcomes cannot clear a prior denial
         if (result.status === "applied") {
           await guarded(() =>
             store.complete(lease.lease, {
@@ -600,6 +738,16 @@ export function createHqLiveService(
         );
       return (await getStore()).readPublished();
     },
+    async getValidationStatus() {
+      const configuration = config.status();
+      if (
+        !configuration.configured ||
+        !configuration.syncEnabled ||
+        configuration.readEnabled
+      )
+        throw new HqLiveError("CONFIG_INVALID");
+      return strongStatus(configuration);
+    },
     async getStatus() {
       const configuration = config.status();
       if (
@@ -608,11 +756,17 @@ export function createHqLiveService(
       )
         return buildHqLiveStatus(configuration, null, now());
       try {
-        return buildHqLiveStatus(
-          configuration,
-          await (await getStore()).readSnapshot(),
-          now()
-        );
+        const store = await getStore();
+        if (
+          configuration.syncEnabled &&
+          !configuration.readEnabled &&
+          store.readProgressSnapshot
+        ) {
+          const observation = await store.readProgressSnapshot();
+          if (!options.createStore) currentDatabaseBinding();
+          return buildHqProgressStatus(configuration, observation, now());
+        }
+        return await strongStatus(configuration);
       } catch (error) {
         return buildHqLiveStatus(
           configuration,
@@ -623,5 +777,17 @@ export function createHqLiveService(
       }
     },
   };
+  const inAction = <T>(work: () => Promise<T>) =>
+    cpuActions.run({ denial: null }, work);
+  const invoke = service.invoke.bind(service);
+  const status = service.getStatus.bind(service);
+  const published = service.readPublished.bind(service);
+  const validation = service.readValidationSnapshot.bind(service);
+  const validationStatus = service.getValidationStatus!.bind(service);
+  service.invoke = () => inAction(invoke);
+  service.getStatus = () => inAction(status);
+  service.readPublished = () => inAction(published);
+  service.readValidationSnapshot = () => inAction(validation);
+  service.getValidationStatus = () => inAction(validationStatus);
   return service;
 }

@@ -14,6 +14,8 @@ import {
   HQ_LIVE_SYNC_DATASET_ID,
   type HqLiveLease,
 } from "./management-hq-live-store";
+import { HQ_PROGRESS_SQL } from "./management-hq-progress";
+import { projectHqProgressFixture } from "./management-hq-progress-fixtures";
 export const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 export function liveConfig(
   overrides: Record<string, string> = {}
@@ -47,7 +49,12 @@ export function offlineLivePool() {
     rollbacks = vi.fn();
   let beforeExecute: ((sql: string, args: any[]) => void) | null = null;
   const pool: any = {
-    execute: vi.fn(() => {
+    execute: vi.fn(async (sql: string, args: any[] = []) => {
+      if (sql === HQ_PROGRESS_SQL) {
+        beforeExecute?.(sql, args);
+        trace.push({ sql, args, transaction: 0 });
+        return [projectHqProgressFixture(rows, clock)];
+      }
       throw new Error("queries must use explicit transaction");
     }),
     getConnection: vi.fn(async () => {

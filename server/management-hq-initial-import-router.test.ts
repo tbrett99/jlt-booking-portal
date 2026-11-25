@@ -7,6 +7,7 @@ import type {
 } from "./management-hq-live-store";
 import type { HqImplementedSyncState } from "./management-hq-ingestion";
 import type { HqWireReader } from "../shared/management-hq-wire";
+import type { HqLiveService } from "./management-hq-live-service";
 const m = vi.hoisted(() => ({
   rows: [] as any[][],
   select: vi.fn(),
@@ -18,7 +19,9 @@ const m = vi.hoisted(() => ({
   reader: null as HqWireReader | null,
   readerFactory: vi.fn(),
   serviceFactory: vi.fn(),
+  services: [] as HqLiveService[],
   onSelect: null as null | (() => void | Promise<void>),
+  statusHook: null as null | (() => void),
   directoryRead: vi.fn(),
   directoryHook: null as null | (() => void | Promise<void>),
   snapshotHook: null as null | (() => void | Promise<void>),
@@ -35,7 +38,7 @@ vi.mock("./management-hq-live-service", async () => {
     createHqLiveService: (options: any) => {
       m.serviceFactory(options);
       m.options.push(options);
-      return actual.createHqLiveService({
+      const service = actual.createHqLiveService({
         ...options,
         createStore: () => m.store,
         createReader: () => {
@@ -43,6 +46,15 @@ vi.mock("./management-hq-live-service", async () => {
           return m.reader;
         },
       });
+      const getStatus = service.getStatus.bind(service);
+      vi.spyOn(service, "getStatus").mockImplementation(async () => {
+        const status = await getStatus();
+        m.statusHook?.();
+        return status;
+      });
+      vi.spyOn(service, "getValidationStatus");
+      m.services.push(service);
+      return service;
     },
   };
 });
@@ -191,8 +203,35 @@ async function denied(pending: Promise<unknown>, code = "FORBIDDEN") {
   expect(error.code).toBe(code);
   safe({ code: error.code, message: error.message });
 }
+async function completeInitialPublication(
+  initial?: Awaited<ReturnType<ReturnType<typeof caller>["importInitialBatch"]>>
+) {
+  let outcome = initial ?? (await caller().importInitialBatch());
+  let batches = 1;
+  while (outcome.status === "progress") {
+    expect(++batches).toBeLessThan(12);
+    expect(outcome.hasPublished).toBe(false);
+    const due = Date.parse(outcome.nextDueAt!);
+    expect(due - Date.now()).toBe(60000);
+    vi.advanceTimersByTime(due - Date.now());
+    outcome = await caller().importInitialBatch();
+  }
+  expect(outcome).toMatchObject({ status: "applied", hasPublished: true });
+  expect((await m.store!.readSnapshot()).sync?.published).not.toBeNull();
+  return batches;
+}
 beforeEach(() => {
-  vi.useFakeTimers();
+  // Freeze security/lease timestamps and explicit due advances, but keep the
+  // cooperative CPU validator's setImmediate handoff genuinely asynchronous.
+  vi.useFakeTimers({
+    toFake: [
+      "Date",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+    ],
+  });
   vi.setSystemTime(new Date("2026-11-22T12:00:10Z"));
   for (const [k, v] of Object.entries({
     NODE_ENV: "production",
@@ -208,7 +247,9 @@ beforeEach(() => {
     vi.stubEnv(k, v);
   m.rows = [];
   m.options = [];
+  m.services = [];
   m.onSelect = m.directoryHook = m.snapshotHook = null;
+  m.statusHook = null;
   for (const fn of [
     m.select,
     m.getDb,
@@ -297,12 +338,21 @@ describe("actual protected tRPC first-import procedures", () => {
     }
   );
   it("one protected click invokes one bounded first-only service with actual strict config and keeps reports/export off", async () => {
+    const sourceMethods = [
+      vi.spyOn(m.reader!, "status"),
+      vi.spyOn(m.reader!, "capabilities"),
+      vi.spyOn(m.reader!, "bookings"),
+      vi.spyOn(m.reader!, "businessMappings"),
+      vi.spyOn(m.reader!, "catalogue"),
+      vi.spyOn(m.reader!, "changes"),
+    ];
     const result = await caller().importInitialBatch();
-    expect(result).toMatchObject({ status: "applied", hasPublished: true });
+    expect(result).toMatchObject({ status: "progress", hasPublished: false });
     safe(result);
     expect(m.options[0]).toMatchObject({
       onlyInitialPublication: true,
       initialImportGuard: expect.any(Function),
+      maxSourceMethods: 3,
     });
     expect(m.options[0].config.status()).toMatchObject({
       configured: true,
@@ -311,18 +361,24 @@ describe("actual protected tRPC first-import procedures", () => {
     });
     expect(m.store!.acquire).toHaveBeenCalledOnce();
     expect(m.readerFactory).toHaveBeenCalledOnce();
+    expect(sourceMethods.map(spy => spy.mock.calls.length)).toEqual([
+      1, 1, 1, 0, 0, 0,
+    ]);
     await denied(caller().report({ year: 2026 }), "PRECONDITION_FAILED");
     await denied(caller().exportCsv({ year: 2026 }), "PRECONDITION_FAILED");
     expect(process.env.HQ_LIVE_READ_ENABLED).toBe("false");
+    const batches = await completeInitialPublication(result);
+    expect(m.store!.acquire).toHaveBeenCalledTimes(batches);
+    expect(m.readerFactory).toHaveBeenCalledTimes(batches);
     vi.advanceTimersByTime(3600000);
     expect((await caller().importInitialBatch()).status).toBe(
       "already_complete"
     );
-    expect(m.store!.acquire).toHaveBeenCalledOnce();
-    expect(m.readerFactory).toHaveBeenCalledOnce();
+    expect(m.store!.acquire).toHaveBeenCalledTimes(batches);
+    expect(m.readerFactory).toHaveBeenCalledTimes(batches);
   });
   it("complete first publication validates bounded totals with real engine; no normal reads or new source batch", async () => {
-    await caller().importInitialBatch();
+    const batches = await completeInitialPublication();
     const before = m.readerFactory.mock.calls.length;
     const result = await caller().validateInitialImport();
     expect(result).toMatchObject({
@@ -335,7 +391,60 @@ describe("actual protected tRPC first-import procedures", () => {
     safe(result);
     expect(m.readerFactory).toHaveBeenCalledTimes(before);
     expect(m.store!.readPublished).toHaveBeenCalled();
-    expect(m.store!.acquire).toHaveBeenCalledOnce();
+    expect(m.store!.acquire).toHaveBeenCalledTimes(batches);
+  });
+  it("ordinary protected progress remains unchecked while real validation prefers strong pre/post status", async () => {
+    const batches = await completeInitialPublication();
+    const snapshot = await m.store!.readSnapshot();
+    m.store!.readProgressSnapshot = vi.fn(async () => ({
+      payloadIntegrity: "unchecked" as const,
+      control: clone(snapshot.control),
+      stateVersion: snapshot.sync!.version,
+      hasPublished: true,
+      progress: null,
+      databaseNowMs: Date.now(),
+    }));
+    vi.mocked(m.store!.readSnapshot).mockClear();
+    vi.mocked(m.store!.readPublished).mockClear();
+    const progress = await caller().status();
+    expect(progress.live).toMatchObject({
+      health: "progress",
+      payloadIntegrity: "unchecked",
+      hasPublished: true,
+      stateVersion: snapshot.sync!.version,
+      generationId: null,
+      isStale: null,
+      readEnabled: false,
+    });
+    const progressService = m.services[m.services.length - 1];
+    expect(progressService.getStatus).toHaveBeenCalledOnce();
+    expect(progressService.getValidationStatus).not.toHaveBeenCalled();
+    expect(m.store!.readProgressSnapshot).toHaveBeenCalledOnce();
+    expect(m.store!.readSnapshot).not.toHaveBeenCalled();
+    expect(m.store!.readPublished).not.toHaveBeenCalled();
+    safe(progress);
+
+    const checks = await caller().validateInitialImport();
+    const validationService = m.services[m.services.length - 1];
+    expect(validationService.getValidationStatus).toHaveBeenCalledTimes(2);
+    expect(validationService.getStatus).not.toHaveBeenCalled();
+    expect(m.store!.readProgressSnapshot).toHaveBeenCalledOnce();
+    expect(m.store!.readPublished).toHaveBeenCalledOnce();
+    expect(checks).toMatchObject({
+      status: "checks_ready",
+      generationId: snapshot.sync!.published!.metadata.generationId,
+      sourcePublishedAt: snapshot.sync!.published!.metadata.publishedAt,
+      isStale: false,
+      manualChecksPending: true,
+    });
+    expect(checks.years.length).toBeGreaterThan(0);
+    expect(checks.years[0].grossSales).toMatch(/^\d+\.\d{2}$/);
+    safe(checks);
+    expect(m.store!.acquire).toHaveBeenCalledTimes(batches);
+    expect(m.readerFactory).toHaveBeenCalledTimes(batches);
+    await denied(caller().report({ year: 2026 }), "PRECONDITION_FAILED");
+    await denied(caller().exportCsv({ year: 2026 }), "PRECONDITION_FAILED");
+    expect(process.env.HQ_LIVE_READ_ENABLED).toBe("false");
   });
   it.each(["importInitialBatch", "validateInitialImport"] as const)(
     "anonymous %s is denied before database/source work",
@@ -475,32 +584,41 @@ describe("actual protected tRPC first-import procedures", () => {
     expect(m.store!.acquire).not.toHaveBeenCalled();
   });
   it("raw binding drift during the final authority await cannot return already-complete status", async () => {
-    await caller().importInitialBatch();
+    const batches = await completeInitialPublication();
     let selects = 0;
-    m.onSelect = () => {
-      if (++selects === 5)
-        vi.stubEnv("HQ_PORTAL_SYNC_TOKEN", "rotated-" + "x".repeat(40));
+    m.statusHook = () => {
+      // Arm only after strong status has resolved. The first fresh read is
+      // the import helper's post-await guard; the second is the router's final
+      // guard. Cooperative validation may add earlier reads but cannot retarget
+      // this regression away from the last authority await.
+      m.onSelect = () => {
+        if (++selects === 2)
+          vi.stubEnv("HQ_PORTAL_SYNC_TOKEN", "rotated-" + "x".repeat(40));
+      };
     };
     await denied(caller().importInitialBatch(), "PRECONDITION_FAILED");
-    expect(m.store!.acquire).toHaveBeenCalledOnce();
-    expect(m.readerFactory).toHaveBeenCalledOnce();
+    expect(selects).toBe(2);
+    expect(m.store!.acquire).toHaveBeenCalledTimes(batches);
+    expect(m.readerFactory).toHaveBeenCalledTimes(batches);
   });
   it("validation directory authority revocation is denied even if helper catches its guard", async () => {
-    await caller().importInitialBatch();
+    await completeInitialPublication();
     m.directoryHook = () => {
       m.rows = [[{ ...fresh, role: "admin" }], [{ ...fresh, role: "admin" }]];
     };
     await denied(caller().validateInitialImport());
+    expect(m.directoryRead).toHaveBeenCalled();
   });
   it("validation directory source/token drift suppresses checks", async () => {
-    await caller().importInitialBatch();
+    await completeInitialPublication();
     m.directoryHook = () => {
       vi.stubEnv("HQ_PORTAL_SYNC_TOKEN", "rotated-" + "x".repeat(40));
     };
     await denied(caller().validateInitialImport(), "PRECONDITION_FAILED");
+    expect(m.directoryRead).toHaveBeenCalled();
   });
   it("concurrent publication/status version change suppresses computed validation totals", async () => {
-    await caller().importInitialBatch();
+    await completeInitialPublication();
     const read = vi.mocked(m.store!.readSnapshot).getMockImplementation()!;
     let count = 0;
     vi.mocked(m.store!.readSnapshot).mockImplementation(async () => {
@@ -510,6 +628,8 @@ describe("actual protected tRPC first-import procedures", () => {
       return snapshot;
     });
     await denied(caller().validateInitialImport(), "PRECONDITION_FAILED");
+    expect(count).toBeGreaterThanOrEqual(3);
+    expect(m.directoryRead).toHaveBeenCalled();
   });
   it("safe terminal provider outcome exposes no raw SQL/source data and never auto-retries", async () => {
     const base = m.reader!;

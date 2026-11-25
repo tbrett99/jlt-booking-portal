@@ -201,10 +201,34 @@ describe("actual staged Resume and separately invoked bounded importer, offline 
     expect(final.control!.initialRecovery).toEqual(history.initialRecovery);
     expect(await service.readPublished()).toBeNull();
     expect(config.status().readEnabled).toBe(false);
+    const progress = await service.getStatus();
+    expect(progress).toMatchObject({
+      health: "progress",
+      payloadIntegrity: "unchecked",
+      hasPublished: true,
+      readEnabled: false,
+      stateVersion: final.sync!.version,
+      generationId: null,
+      isStale: null,
+      progress: null,
+    });
+    safe(progress);
+    const validationStatus = await service.getValidationStatus!();
+    expect(validationStatus).toMatchObject({
+      health: "ready",
+      payloadIntegrity: "validated",
+      hasPublished: true,
+      readEnabled: false,
+      stateVersion: final.sync!.version,
+      generationId: final.sync!.published!.metadata.generationId,
+      isStale: false,
+      progress: null,
+      lastErrorCode: null,
+    });
     const checks = await validateHqInitialPublication(
       await service.readValidationSnapshot(),
       emptyDirectoryDb(),
-      await service.getStatus(),
+      validationStatus,
       guard
     );
     expect(checks.status).toBe("checks_ready");
@@ -218,6 +242,16 @@ describe("actual staged Resume and separately invoked bounded importer, offline 
       undatedBookings: 0,
     });
     expect(checks.manualChecksPending).toBe(true);
+    expect(checks.generationId).toBe(validationStatus.generationId);
+    expect(checks.sourcePublishedAt).toBe(validationStatus.sourcePublishedAt);
+    expect(checks.isStale).toBe(false);
+    expect(await service.getValidationStatus!()).toMatchObject({
+      health: "ready",
+      stateVersion: validationStatus.stateVersion,
+      generationId: validationStatus.generationId,
+      isStale: false,
+      readEnabled: false,
+    });
     safe(checks);
     const reads = createReader.mock.calls.length;
     expect((await resume()).status).toBe("not_resumable");

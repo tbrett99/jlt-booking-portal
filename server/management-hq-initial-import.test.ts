@@ -1,14 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHqLiveConfig } from "./management-hq-live-config";
-import { createHqLiveService } from "./management-hq-live-service";
+import {
+  createHqLiveService,
+  HQ_LIVE_MAX_SOURCE_METHODS,
+} from "./management-hq-live-service";
 import { createHqLiveStore } from "./management-hq-live-store";
 import {
   createHqImplementedSampleReader,
   createHqImplementedSampleDirectory,
 } from "./management-hq-implemented-fixtures";
 import { getHqReport } from "./management-hq-engine";
-import { importHqInitialBatch } from "./management-hq-initial-import";
+import {
+  importHqInitialBatch,
+  HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS,
+} from "./management-hq-initial-import";
 import type { HqWireReader } from "../shared/management-hq-wire";
+import { HQ_PROGRESS_SQL } from "./management-hq-progress";
+import { projectHqProgressFixture } from "./management-hq-progress-fixtures";
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const settings = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   HQ_LIVE_SYNC_ENABLED: "true",
@@ -24,7 +32,9 @@ function offlinePool() {
   let clock = Date.parse("2026-11-22T12:00:00Z"),
     tail = Promise.resolve();
   const pool: any = {
-    execute: vi.fn(() => {
+    execute: vi.fn(async (sql: string) => {
+      if (sql === HQ_PROGRESS_SQL)
+        return [projectHqProgressFixture(rows, clock)];
       throw new Error("no nontransactional SQL");
     }),
     getConnection: vi.fn(async () => {
@@ -109,7 +119,9 @@ function offlinePool() {
 }
 function setup(
   reader = createHqImplementedSampleReader("initial"),
-  maxSourceMethods?: number
+  // Historical whole-feed tests explicitly retain the native 25-method seam.
+  // null exercises the actual protected helper's new server-owned default.
+  maxSourceMethods: number | null = HQ_LIVE_MAX_SOURCE_METHODS
 ) {
   const env = settings(),
     config = createHqLiveConfig(env),
@@ -125,7 +137,7 @@ function setup(
         createStore: () => store,
         createReader,
         now: fixture.now,
-        maxSourceMethods,
+        ...(maxSourceMethods === null ? {} : { maxSourceMethods }),
       });
       vi.spyOn(service, "invoke");
       services.push(service);
@@ -183,10 +195,77 @@ describe("manual first-import helper with real live runner and real fenced store
     expect(await s.services[0].readPublished()).toBeNull();
     expect(await s.services[0].readValidationSnapshot()).toEqual(published);
     s.fixture.advance(3600000);
+    const saved = clone(Array.from(s.fixture.rows));
     expect((await s.click()).status).toBe("already_complete");
-    expect(s.services[1].invoke).not.toHaveBeenCalled();
+    expect(s.services[1].invoke).toHaveBeenCalledOnce();
     expect(s.createReader).toHaveBeenCalledOnce();
+    expect(Array.from(s.fixture.rows)).toEqual(saved);
     expect(await s.store.readPublished()).toEqual(published);
+  });
+  it("the real protected manual default is status plus capabilities plus at most one saved data page, not the native 25-method batch", async () => {
+    const base = createHqImplementedSampleReader("initial");
+    const calls: string[] = [];
+    const reader = Object.fromEntries(
+      Object.entries(base).map(([name, method]) => [
+        name,
+        (...args: any[]) => {
+          calls.push(name);
+          return (method as (...args: any[]) => any)(...args);
+        },
+      ])
+    ) as unknown as HqWireReader;
+    const s = setup(reader, null);
+    expect(HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS).toBe(3);
+    expect(HQ_LIVE_MAX_SOURCE_METHODS).toBe(25);
+    const response = await s.click();
+    expect(response.status).toBe("progress");
+    expect(calls).toEqual(["status", "capabilities", "bookings"]);
+    expect(s.createService.mock.calls[0][0].maxSourceMethods).toBe(3);
+    expect(response.hasPublished).toBe(false);
+    expect(response.progress!.pages).toBe(1);
+    expect(response.progress!.recordsRead).toBeGreaterThan(0);
+    expect((await s.store.readSnapshot()).sync!.stage).not.toBeNull();
+    expect(await s.services[0].readPublished()).toBeNull();
+    safe(response);
+  });
+  it("separate bounded default actions retain exact staging and eventually publish the small synthetic feed without enabling reads", async () => {
+    const s = setup(undefined, null);
+    let response = await s.click(),
+      actions = 1;
+    while (response.status === "progress" && actions < 20) {
+      s.fixture.advance(60000);
+      response = await s.click();
+      actions++;
+    }
+    expect(actions).toBeGreaterThan(1);
+    expect(response.status).toBe("applied");
+    expect(response.hasPublished).toBe(true);
+    const publication = await s.store.readPublished();
+    expect(publication).not.toBeNull();
+    expect(await s.services.at(-1)!.readPublished()).toBeNull();
+    s.fixture.advance(300000);
+    expect((await s.click()).status).toBe("already_complete");
+    expect(await s.store.readPublished()).toEqual(publication);
+    safe(response);
+  });
+  it("an unchecked valid-looking publication header cannot bypass full corrupt-payload admission checks", async () => {
+    const s = setup();
+    expect((await s.click()).status).toBe("applied");
+    const root = s.fixture.rows.get("live:company:orbit:v1:sync")!;
+    const envelope = JSON.parse(root.state);
+    envelope.sync.published.entities["booking:1"].canonicalPayload = "{}";
+    root.state = JSON.stringify(envelope);
+    s.fixture.advance(3600000);
+    const saved = clone(Array.from(s.fixture.rows));
+    const response = await s.click();
+    expect(response).toMatchObject({
+      status: "needs_attention",
+      errorCode: "INVALID_PERSISTED_STATE",
+    });
+    expect(s.services[1].invoke).toHaveBeenCalledOnce();
+    expect(s.createReader).toHaveBeenCalledOnce();
+    expect(Array.from(s.fixture.rows)).toEqual(saved);
+    safe(response);
   });
   it("imports unregistered pending source-financial eligibility without adding active sales or enabling reads", async () => {
     const base = createHqImplementedSampleReader("initial");
@@ -420,10 +499,11 @@ describe("manual first-import helper with real live runner and real fenced store
       now: s.fixture.now,
     });
     const acquire = s.store.acquire.bind(s.store);
-    vi.spyOn(s.store, "acquire").mockImplementationOnce(async () => {
+    vi.spyOn(s.store, "acquire").mockImplementationOnce(async initialOnly => {
+      expect(initialOnly).toBe(true);
       expect((await other.invoke()).status).toBe("applied");
       s.fixture.advance(300000);
-      return acquire();
+      return acquire(initialOnly);
     });
     const complete = vi.spyOn(s.store, "complete");
     const response = await s.click();

@@ -116,6 +116,7 @@ describe("actual live service with bounded large synthetic storage", () => {
       const pending = await service.getStatus();
       expect(pending.hasPublished).toBe(false);
       expect(pending.readEnabled).toBe(false);
+      expect(pending.payloadIntegrity).toBe("unchecked");
       expect(pending.lastErrorCode).toBeNull();
       expect(await service.readPublished()).toBeNull();
       expect(Date.parse(pending.nextDueAt!) - f.now()).toBe(60000);
@@ -133,11 +134,27 @@ describe("actual live service with bounded large synthetic storage", () => {
       "hq-live-sync-manifest-v2"
     );
     expect(await service.readPublished()).toBeNull();
-    const safe = await service.getStatus();
-    expect(safe).toMatchObject({
-      health: "ready",
+    const progress = await service.getStatus();
+    expect(progress).toMatchObject({
+      health: "progress",
+      payloadIntegrity: "unchecked",
       hasPublished: true,
       readEnabled: false,
+      stateVersion: snapshot.sync!.version,
+      generationId: null,
+      isStale: null,
+      progress: null,
+      lastErrorCode: null,
+    });
+    const safe = await service.getValidationStatus!();
+    expect(safe).toMatchObject({
+      health: "ready",
+      payloadIntegrity: "validated",
+      hasPublished: true,
+      readEnabled: false,
+      stateVersion: snapshot.sync!.version,
+      generationId: publication.metadata.generationId,
+      isStale: false,
       progress: null,
       lastErrorCode: null,
     });
@@ -159,6 +176,16 @@ describe("actual live service with bounded large synthetic storage", () => {
       undatedBookings: 0,
     });
     expect(validation.manualChecksPending).toBe(true);
+    expect(validation.generationId).toBe(safe.generationId);
+    expect(validation.sourcePublishedAt).toBe(safe.sourcePublishedAt);
+    expect(validation.isStale).toBe(false);
+    expect(await service.getValidationStatus!()).toMatchObject({
+      health: "ready",
+      stateVersion: safe.stateVersion,
+      generationId: safe.generationId,
+      isStale: false,
+      readEnabled: false,
+    });
     expect(JSON.stringify(validation)).not.toMatch(
       /SYNTHETIC-LARGE-|canonicalPayload|sourceFingerprint|chunk:|synthetic-only-/
     );

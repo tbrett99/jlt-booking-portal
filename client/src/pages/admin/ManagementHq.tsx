@@ -499,6 +499,12 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
         Live semantic acceptance is not yet verified. Orbit financials remain
         authoritative; missing values are not zero.
       </p>
+      {live.payloadIntegrity === "unchecked" && (
+        <p className="text-sm">
+          Saved import progress only. This does not confirm an import is running
+          now or that the reporting data has passed validation.
+        </p>
+      )}
       {!live.configured ? (
         <p role="status">
           Awaiting connection approval or valid server settings. No verified
@@ -516,8 +522,10 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
         </p>
       ) : live.health === "progress" ? (
         <p role="status">
-          Import in progress. Partial records are not published as report
-          totals.
+          {live.payloadIntegrity === "unchecked"
+            ? "Saved import progress."
+            : "Import in progress."}{" "}
+          Partial records are not published as report totals.
         </p>
       ) : !live.hasPublished ? (
         <p role="status">
@@ -561,10 +569,16 @@ function LiveConnection({ live }: { live: HqLiveStatusDto }) {
           read. Incomplete progress is separate from the last-good report.
         </p>
       )}
-      {live.hasPublished && (
+      {live.hasPublished && live.payloadIntegrity !== "unchecked" && (
         <p className="text-sm">
           Showing only the last-good complete publication; incomplete imports
           and failed checks never replace it.
+        </p>
+      )}
+      {live.hasPublished && live.payloadIntegrity === "unchecked" && (
+        <p className="text-sm">
+          A saved publication was found. Imported totals checks must still
+          validate it; report access remains disabled.
         </p>
       )}
       {live.isStale && (

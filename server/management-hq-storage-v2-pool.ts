@@ -1,4 +1,6 @@
 import type { Pool } from "mysql2/promise";
+import { HQ_PROGRESS_SQL } from "./management-hq-progress";
+import { projectHqProgressFixture } from "./management-hq-progress-fixtures";
 
 /** Independent offline SQL model. No connection, schema, provider, or environment access.
  * Serializes transactions locally; this is NOT proof of real MySQL locking semantics.
@@ -48,7 +50,19 @@ export function offlineHqV2Pool() {
       ) => HqV2OfflineRow[])
     | null = null;
   const pool = {
-    execute() {
+    async execute(sql: string, args: any[] = []) {
+      if (sql === HQ_PROGRESS_SQL) {
+        hook?.(sql, args, rows);
+        const projected = projectHqProgressFixture(rows, clock);
+        trace.push({
+          sql,
+          args: clone(args),
+          transaction: 0,
+          responseBytes: Buffer.byteLength(JSON.stringify(projected)),
+        });
+        afterHook?.(sql, args, rows);
+        return [projected];
+      }
       throw new Error("offline model requires an explicit transaction");
     },
     async getConnection() {

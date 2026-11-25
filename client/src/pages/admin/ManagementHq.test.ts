@@ -2882,3 +2882,58 @@ describe("Owned post-import status refresh access failures", () => {
     }
   );
 });
+
+describe("Observational import progress is not validated reporting", () => {
+  it("labels retained 4000-record progress without claiming a current worker or starting anything", async () => {
+    firstImportFixture({
+      payloadIntegrity: "unchecked",
+      health: "progress",
+      stateVersion: 40,
+      stageStatus: "progress",
+      progress: {
+        kind: "backfill",
+        phase: "bookings",
+        pages: 40,
+        recordsRead: 4000,
+      },
+    });
+    await render();
+    expect(container.textContent).toContain("Saved import progress only.");
+    expect(container.textContent).toContain(
+      "This does not confirm an import is running now"
+    );
+    expect(container.textContent).toContain("4000 records");
+    expect(mock.mutationCalls).toHaveLength(0);
+    assertNoDashboardActivation();
+  });
+  it("a saved unchecked publication is offered for checks, not shown as a last-good report", async () => {
+    firstImportFixture({
+      payloadIntegrity: "unchecked",
+      health: "progress",
+      hasPublished: true,
+    });
+    await render();
+    expect(container.textContent).toContain("A saved publication was found.");
+    expect(container.textContent).toContain(
+      "Imported totals checks must still validate it"
+    );
+    expect(container.textContent).not.toContain(
+      "Showing only the last-good complete publication"
+    );
+    expect(button("Check imported figures").disabled).toBe(false);
+    expect(mock.mutationCalls).toHaveLength(0);
+    assertNoDashboardActivation();
+  });
+  it("keeps validated read-enabled monitoring copy unchanged", async () => {
+    liveFixture({
+      payloadIntegrity: "validated",
+      health: "ready",
+      hasPublished: true,
+    });
+    await render();
+    expect(container.textContent).not.toContain("Saved import progress only.");
+    expect(container.textContent).toContain(
+      "Showing only the last-good complete publication"
+    );
+  });
+});

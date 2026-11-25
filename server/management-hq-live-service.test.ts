@@ -18,6 +18,8 @@ import {
 } from "./management-hq-live-store";
 import { HqOrbitClient } from "./management-hq-orbit-client";
 import { HQ_LIVE_V2_VALIDATION_OPTIONS } from "./management-hq-storage-v2";
+import { HQ_PROGRESS_SQL } from "./management-hq-progress";
+import { projectHqProgressFixture } from "./management-hq-progress-fixtures";
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 function liveConfig(overrides: Record<string, string> = {}) {
   return createHqLiveConfig({
@@ -43,7 +45,9 @@ function offlineLivePool() {
   let clock = Date.parse("2026-11-22T12:00:00Z"),
     tail = Promise.resolve();
   const pool: any = {
-    execute: vi.fn(() => {
+    execute: vi.fn(async (sql: string) => {
+      if (sql === HQ_PROGRESS_SQL)
+        return [projectHqProgressFixture(rows, clock)];
       throw new Error("explicit transaction required");
     }),
     getConnection: vi.fn(async () => {
@@ -558,6 +562,7 @@ describe("finite external-triggered live runner", () => {
     const config = liveConfig({ HQ_LIVE_READ_ENABLED: "false" });
     const store = createHqLiveStore(s.fixture.pool, config);
     const readSnapshot = vi.spyOn(store, "readSnapshot");
+    const readProgress = vi.spyOn(store, "readProgressSnapshot");
     const readPublished = vi.spyOn(store, "readPublished");
     const createReader = vi.fn(() => {
       throw new Error("provider forbidden");
@@ -575,8 +580,10 @@ describe("finite external-triggered live runner", () => {
       health: "progress",
       hasPublished: false,
       progress: { kind: "backfill", phase: "business" },
+      payloadIntegrity: "unchecked",
     });
-    expect(readSnapshot).toHaveBeenCalledOnce();
+    expect(readSnapshot).not.toHaveBeenCalled();
+    expect(readProgress).toHaveBeenCalledOnce();
     expect(await service.readPublished()).toBeNull();
     expect(readPublished).not.toHaveBeenCalled();
     expect(createReader).not.toHaveBeenCalled();
