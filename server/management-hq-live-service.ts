@@ -282,6 +282,10 @@ export interface HqLiveServiceOptions {
   onlyInitialPublication?: boolean;
   /** Fresh authority/settings guard for the manual first import, never RPC input. */
   initialImportGuard?: () => Promise<void>;
+  /** Protected initial-run profile only; no native/manual-default changes. */
+  acceleratedInitialImport?: boolean;
+  /** Synchronous raw settings guard; CPU-only yields cannot perform side effects. */
+  initialImportCpuBindingGuard?: () => void;
 }
 export interface HqLiveService {
   configurationStatus(): HqLiveConfigurationStatus;
@@ -316,6 +320,14 @@ export function createHqLiveService(
   const guard = options.onlyInitialPublication
     ? options.initialImportGuard
     : undefined;
+  const accelerated = options.acceleratedInitialImport === true;
+  if (
+    accelerated &&
+    (options.onlyInitialPublication !== true ||
+      typeof guard !== "function" ||
+      typeof options.initialImportCpuBindingGuard !== "function")
+  )
+    throw new HqLiveError("CONFIG_INVALID");
   // Action-local rather than a global/cache latch: a concurrent invocation
   // cannot clear the first denial observed by a suspended action.
   const cpuActions = new AsyncLocalStorage<{
@@ -346,6 +358,27 @@ export function createHqLiveService(
     }
     if (denial) throw denial.error;
   };
+  let lastCpuAuthorityAt = -Infinity;
+  const cpuYieldGuard = async () => {
+    if (!accelerated) return cpuGuard();
+    const action = cpuActions.getStore();
+    if (action?.denial) throw action.denial.error;
+    try {
+      if (!options.createStore) currentDatabaseBinding();
+      options.initialImportCpuBindingGuard!();
+      // CPU-only work has no source/storage side effects. Source methods,
+      // CAS and transaction commit retain the independent fresh cpuGuard.
+      if (performance.now() - lastCpuAuthorityAt >= 1000) {
+        await cpuGuard();
+        lastCpuAuthorityAt = performance.now();
+      }
+      options.initialImportCpuBindingGuard!();
+      if (!options.createStore) currentDatabaseBinding();
+    } catch (error) {
+      if (action) action.denial ??= { error };
+      throw action?.denial?.error ?? error;
+    }
+  };
   const guarded = async <T>(work: () => Promise<T>): Promise<T> => {
     await cpuGuard();
     let outcome: { ok: true; value: T } | { ok: false; error: unknown };
@@ -373,6 +406,7 @@ export function createHqLiveService(
     // Read-only pool construction requires read-enabled; a client is constructed ONLY by invoke after acquire.
     return createHqLiveStore(await getSharedHqPool(), config, {
       cooperativeGuard: cpuGuard,
+      ...(accelerated ? { cooperativeYieldGuard: cpuYieldGuard } : {}),
     });
   }
   async function getStore() {
@@ -563,6 +597,8 @@ export function createHqLiveService(
       const started = now();
       let methods = 0,
         retryAfter = 0;
+      let dataStartedAt: number | null = null,
+        largestDataWorkMs = 0;
       try {
         if (options.onlyInitialPublication && !initialAcquisitionChecked) {
           // Renew proves the acquired fence before checking the published checkpoint.
@@ -615,7 +651,7 @@ export function createHqLiveService(
         const fenced = store.fencedSyncStore(lease.lease);
         let renewedAt = performance.now();
         const cpu = createHqCpuCheckpoint(async () => {
-          await cpuGuard();
+          await cpuYieldGuard();
           if (performance.now() - renewedAt >= 8000) {
             await guarded(() =>
               store.renewCooperative
@@ -640,11 +676,28 @@ export function createHqLiveService(
             measureStateBytesAsync: (value, maximum) =>
               hqJsonUtf8BytesAsync(value, maximum, cpu),
             shouldContinue: async () => {
+              if (accelerated && dataStartedAt !== null) {
+                largestDataWorkMs = Math.max(
+                  largestDataWorkMs,
+                  now() - dataStartedAt
+                );
+                // Preserve the original method-start/hard-lease ceilings rather
+                // than starting another costly page close to their boundary.
+                if (
+                  now() -
+                    started +
+                    Math.ceil(largestDataWorkMs * 1.25) +
+                    10000 >=
+                  deadlineMs
+                )
+                  return false;
+              }
               if (methods >= maxMethods || now() - started >= deadlineMs)
                 return false;
               await guarded(() => store.renew(lease.lease));
               if (now() - started >= deadlineMs) return false;
               methods++;
+              if (accelerated && methods >= 3) dataStartedAt = now();
               return true;
             },
           }
@@ -664,7 +717,7 @@ export function createHqLiveService(
           await guarded(() =>
             store.complete(lease.lease, {
               status: "progress",
-              delaySeconds: HQ_LIVE_PROGRESS_DELAY_SECONDS,
+              delaySeconds: accelerated ? 0 : HQ_LIVE_PROGRESS_DELAY_SECONDS,
             })
           );
           return { status: "progress" };

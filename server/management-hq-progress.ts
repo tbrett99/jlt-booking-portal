@@ -1,5 +1,6 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { HqLiveConfig } from "./management-hq-live-config";
+import { hqReadDeadline } from "./management-hq-read-deadline";
 import {
   HqLiveError,
   HQ_LIVE_CONTROL_DATASET_ID,
@@ -77,10 +78,12 @@ export async function readHqProgressSnapshot(
   check();
   let rows: RowDataPacket[];
   try {
-    [rows] = await pool.execute<RowDataPacket[]>(HQ_PROGRESS_SQL, [
-      HQ_LIVE_CONTROL_DATASET_ID,
-      HQ_LIVE_SYNC_DATASET_ID,
-    ]);
+    [rows] = await hqReadDeadline(() =>
+      pool.execute<RowDataPacket[]>(HQ_PROGRESS_SQL, [
+        HQ_LIVE_CONTROL_DATASET_ID,
+        HQ_LIVE_SYNC_DATASET_ID,
+      ])
+    );
   } catch {
     check();
     throw new HqLiveError("STORE_UNAVAILABLE");

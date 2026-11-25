@@ -653,3 +653,139 @@ describe("actual protected tRPC first-import procedures", () => {
     expect(m.store!.acquire).toHaveBeenCalledOnce();
   });
 });
+
+describe("actual protected accelerated first-import route", () => {
+  it("finishes the small initial feed in one existing bounded batch and keeps report access off", async () => {
+    const sourceMethods = [
+      vi.spyOn(m.reader!, "status"),
+      vi.spyOn(m.reader!, "capabilities"),
+      vi.spyOn(m.reader!, "bookings"),
+      vi.spyOn(m.reader!, "businessMappings"),
+      vi.spyOn(m.reader!, "catalogue"),
+      vi.spyOn(m.reader!, "changes"),
+    ];
+    const result = await caller().finishInitialImportBatch();
+    expect(result).toMatchObject({
+      status: "applied",
+      hasPublished: true,
+      errorCode: null,
+    });
+    safe(result);
+    expect(m.options[0]).toMatchObject({
+      onlyInitialPublication: true,
+      maxSourceMethods: 25,
+      acceleratedInitialImport: true,
+      initialImportGuard: expect.any(Function),
+      initialImportCpuBindingGuard: expect.any(Function),
+    });
+    expect(sourceMethods.map(spy => spy.mock.calls.length)).toEqual([
+      1, 1, 1, 1, 2, 0,
+    ]);
+    expect(m.store!.acquire).toHaveBeenCalledOnce();
+    await denied(caller().report({ year: 2026 }), "PRECONDITION_FAILED");
+    await denied(caller().exportCsv({ year: 2026 }), "PRECONDITION_FAILED");
+    expect(process.env.HQ_LIVE_READ_ENABLED).toBe("false");
+    expect((await caller().finishInitialImportBatch()).status).toBe(
+      "already_complete"
+    );
+    expect(m.readerFactory).toHaveBeenCalledOnce();
+    expect(m.store!.acquire).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the exact completed source entities and publication of the old manual route", async () => {
+    await completeInitialPublication();
+    const expected = (await m.store!.readSnapshot()).sync!;
+    m.store = fakeFencedStore();
+    const result = await caller().finishInitialImportBatch();
+    expect(result.status).toBe("applied");
+    const actual = (await m.store!.readSnapshot()).sync!;
+    expect(JSON.stringify(actual)).toBe(JSON.stringify(expected));
+  });
+
+  it.each([
+    null,
+    { ...fresh, role: "agent" },
+    { ...fresh, role: "admin" },
+    { ...fresh, role: "instructor" },
+    { ...fresh, role: "engagement" },
+    { ...fresh, isActive: false },
+    { ...fresh, portalStatus: "suspended" },
+  ])(
+    "denies an unauthorized actor before source or store work: %j",
+    async user => {
+      if (user !== null) m.rows = [[{ ...user }]];
+      await denied(
+        caller(user).finishInitialImportBatch(),
+        user === null ? "UNAUTHORIZED" : "FORBIDDEN"
+      );
+      expect(m.serviceFactory).not.toHaveBeenCalled();
+      expect(m.readerFactory).not.toHaveBeenCalled();
+      expect(m.store!.acquire).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { maxSourceMethods: 100 },
+    { cursor: "private" },
+    { accelerated: true },
+    [],
+  ])("rejects nonvoid limit/cursor/profile input: %j", async input => {
+    await denied(
+      (caller().finishInitialImportBatch as any)(input),
+      "BAD_REQUEST"
+    );
+    expect(m.serviceFactory).not.toHaveBeenCalled();
+    expect(m.readerFactory).not.toHaveBeenCalled();
+    expect(m.store!.acquire).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "HQ_ORBIT_REPORTING_BASE_URL",
+    "HQ_ORBIT_REPORTING_API_KEY",
+    "HQ_PORTAL_SYNC_TOKEN",
+    "HQ_LIVE_SYNC_ENABLED",
+    "HQ_LIVE_READ_ENABLED",
+    "HQ_LIVE_INTERVAL_SECONDS",
+    "HQ_LIVE_FRESHNESS_SECONDS",
+  ])(
+    "permanently stops after %s rotates during a source await",
+    async field => {
+      const status = m.reader!.status.bind(m.reader);
+      const spy = vi.spyOn(m.reader!, "status").mockImplementation(async () => {
+        const result = await status();
+        vi.stubEnv(field, (process.env[field] ?? "") + "rotated");
+        return result;
+      });
+      const capabilities = vi.spyOn(m.reader!, "capabilities");
+      await denied(caller().finishInitialImportBatch(), "PRECONDITION_FAILED");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(capabilities).not.toHaveBeenCalled();
+      expect(m.store!.complete).not.toHaveBeenCalled();
+      expect(
+        (await m.store!.readSnapshot()).sync?.published ?? null
+      ).toBeNull();
+    }
+  );
+
+  it("times out an unresolved fresh authority SELECT without source work or late admission", async () => {
+    let release!: () => void;
+    m.onSelect = () =>
+      new Promise<void>(resolve => {
+        release = resolve;
+      });
+    const pending = denied(
+      caller().finishInitialImportBatch(),
+      "PRECONDITION_FAILED"
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    await pending;
+    expect(m.select).toHaveBeenCalledOnce();
+    expect(m.serviceFactory).not.toHaveBeenCalled();
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(m.serviceFactory).not.toHaveBeenCalled();
+    expect(m.readerFactory).not.toHaveBeenCalled();
+    expect(m.store!.acquire).not.toHaveBeenCalled();
+  });
+});

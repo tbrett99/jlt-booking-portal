@@ -8,6 +8,7 @@ import {
   type HqLiveServiceOptions,
   type HqLiveService,
   type HqLiveStatusDto,
+  HQ_LIVE_MAX_SOURCE_METHODS,
 } from "./management-hq-live-service";
 import { HqLiveError, safeHqLiveErrorCode } from "./management-hq-live-store";
 
@@ -71,6 +72,8 @@ type ImportOptions = {
   env?: NodeJS.ProcessEnv;
   guard: () => Promise<void>;
   createService?: (options: HqLiveServiceOptions) => HqLiveService;
+  /** Private explicit initial-run profile; no RPC input selects limits. */
+  accelerated?: true;
 };
 /** One click advances at most one existing fenced bounded batch. Never creates recurring work. */
 export async function importHqInitialBatch(
@@ -127,7 +130,18 @@ export async function importHqInitialBatch(
     config,
     onlyInitialPublication: true,
     initialImportGuard: guard,
-    maxSourceMethods: HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS,
+    maxSourceMethods: options.accelerated
+      ? HQ_LIVE_MAX_SOURCE_METHODS
+      : HQ_INITIAL_IMPORT_MAX_SOURCE_METHODS,
+    ...(options.accelerated
+      ? {
+          acceleratedInitialImport: true,
+          initialImportCpuBindingGuard: () => {
+            if (guardFailure) throw guardFailure.error;
+            assertBinding();
+          },
+        }
+      : {}),
   });
   const before = await guarded(() => service.getStatus());
   // An observational header is not a validated publication. The service's
@@ -158,3 +172,8 @@ export async function importHqInitialBatch(
     invocation.errorCode ?? after.lastErrorCode
   );
 }
+
+/** One explicitly-started run batch; same lease/caps and initial-only publication fence. */
+export const finishHqInitialBatch = (
+  options: Omit<ImportOptions, "accelerated">
+) => importHqInitialBatch({ ...options, accelerated: true });

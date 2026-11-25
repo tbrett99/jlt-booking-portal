@@ -26,12 +26,14 @@ import {
 import {
   captureHqInitialImportBinding,
   importHqInitialBatch,
+  finishHqInitialBatch,
 } from "./management-hq-initial-import";
 import { validateHqInitialPublication } from "./management-hq-initial-validation";
 import type { HqInitialValidationResult } from "../shared/management-hq-initial-validation";
 import { checkHqFirstPage } from "./management-hq-first-page-check";
 import { recoverHqEmptyInitialImport } from "./management-hq-initial-recovery";
 import { resumeHqStagedInitialImport } from "./management-hq-staged-resume";
+import { hqReadDeadline } from "./management-hq-read-deadline";
 import {
   getHqLiveReport,
   withHqLiveReportMetadata,
@@ -59,6 +61,10 @@ function boundary() {
   };
 }
 class HqBoundaryError extends TRPCError {}
+const freshAuthority = (
+  db: unknown,
+  user: Parameters<typeof requireFreshHqSuperAdmin>[1]
+) => hqReadDeadline(() => requireFreshHqSuperAdmin(db, user));
 function deny(message: string): never {
   throw new HqBoundaryError({ code: "PRECONDITION_FAILED", message });
 }
@@ -92,7 +98,7 @@ function safeError(error: unknown): never {
 const procedure = protectedProcedure.use(async ({ ctx, next }) => {
   try {
     const db = await getDb();
-    await requireFreshHqSuperAdmin(db, ctx.user);
+    await freshAuthority(db, ctx.user);
     return next({ ctx: { ...ctx, hqDb: db! } });
   } catch (error) {
     safeError(error);
@@ -120,7 +126,7 @@ function initialImportGuard(
       failure ??= { error };
     }
     try {
-      await requireFreshHqSuperAdmin(db, user);
+      await freshAuthority(db, user);
     } catch (error) {
       failure ??= { error };
     }
@@ -169,7 +175,7 @@ async function readReport(
     const result = withHqLiveReportMetadata(report, state, after);
     // Revalidate source binding/settings and current authority after every store/directory read.
     assertBoundary(start);
-    await requireFreshHqSuperAdmin(db, user);
+    await freshAuthority(db, user);
     assertBoundary(start);
     return { report: result, boundary: start };
   }
@@ -189,7 +195,7 @@ async function readReport(
     createHqImplementedSampleDirectory(),
     input
   );
-  await requireFreshHqSuperAdmin(db, user);
+  await freshAuthority(db, user);
   assertBoundary(start);
   requireHqSampleEnabled();
   return {
@@ -199,6 +205,22 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  finishInitialImportBatch: procedure
+    .input(z.void())
+    .mutation(async ({ ctx }) => {
+      try {
+        const start = boundary();
+        const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+        const result = await finishHqInitialBatch({
+          config: start.config,
+          guard,
+        });
+        await guard();
+        return result;
+      } catch (error) {
+        safeError(error);
+      }
+    }),
   resumeInitialImport: procedure.input(z.void()).mutation(async ({ ctx }) => {
     try {
       const start = boundary();
@@ -344,12 +366,12 @@ export const managementHqRouter = router({
       const assertSourceBinding = captureHqConnectionBinding();
       const result = await checkHqConnection({
         beforeRequest: async () => {
-          await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+          await freshAuthority(ctx.hqDb, ctx.user);
           assertBoundary(start);
         },
       });
       assertSourceBinding();
-      await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+      await freshAuthority(ctx.hqDb, ctx.user);
       assertSourceBinding();
       assertBoundary(start);
       return result;
@@ -367,7 +389,7 @@ export const managementHqRouter = router({
         start.mode === "sample"
           ? await createHqSampleStore(await getRawDbPool(), ctx.user).read()
           : null;
-      await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+      await freshAuthority(ctx.hqDb, ctx.user);
       assertBoundary(start);
       return {
         sampleEnabled: start.mode === "sample",
@@ -417,7 +439,7 @@ export const managementHqRouter = router({
             message:
               "The sample changed in another request. Refresh before trying again.",
           });
-        await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+        await freshAuthority(ctx.hqDb, ctx.user);
         assertBoundary(start);
         return { stateVersion: (input.expectedVersion ?? 0) + 1 };
       } catch (error) {
@@ -436,7 +458,7 @@ export const managementHqRouter = router({
       const result = await readReport(ctx.hqDb, ctx.user, input);
       const csv = exportHqReportCsv(result.report);
       // CSV generation is bounded but still sits inside the final authority/configuration gate.
-      await requireFreshHqSuperAdmin(ctx.hqDb, ctx.user);
+      await freshAuthority(ctx.hqDb, ctx.user);
       assertBoundary(result.boundary);
       return {
         csv,

@@ -35,6 +35,7 @@ const mock = vi.hoisted(() => ({
   connectionMutateAsync: vi.fn(),
   importMutateAsync: vi.fn(),
   validationMutateAsync: vi.fn(),
+  finishMutateAsync: vi.fn(),
   refetch: vi.fn(),
   cancel: vi.fn(),
   csv: vi.fn(),
@@ -127,6 +128,8 @@ vi.mock("@/lib/trpc", async () => {
                       return await mock.importMutateAsync(input);
                     if (path === "managementHq.validateInitialImport")
                       return await mock.validationMutateAsync(input);
+                    if (path === "managementHq.finishInitialImportBatch")
+                      return await mock.finishMutateAsync(input);
                     await mock.mutationWait;
                     if (mock.mutationError) throw mock.mutationError;
                     if (input === undefined) return mock.connectionResult;
@@ -433,6 +436,7 @@ beforeEach(() => {
   mock.connectionMutateAsync.mockReset();
   mock.importMutateAsync.mockReset();
   mock.validationMutateAsync.mockReset();
+  mock.finishMutateAsync.mockReset();
   mock.connectionMutateAsync.mockImplementation(async () => {
     await mock.mutationWait;
     if (mock.mutationError) throw mock.mutationError;
@@ -3129,5 +3133,577 @@ describe("Observational import progress is not validated reporting", () => {
     expect(container.textContent).toContain(
       "Showing only the last-good complete publication"
     );
+  });
+});
+
+function finishRunPanel() {
+  return container.querySelector('[aria-label="Finish first Orbit import"]');
+}
+function finishCalls() {
+  return mock.mutationCalls.filter(
+    call => call.path === "managementHq.finishInitialImportBatch"
+  );
+}
+function savedRunProgress(pages: number, recordsRead = pages * 100) {
+  return { kind: "backfill", phase: "bookings", pages, recordsRead };
+}
+async function redrawRunPage() {
+  await act(async () => {
+    root.render(React.createElement(ManagementHq));
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+function assertRunOnly() {
+  expect(initialCalls("importInitialBatch")).toHaveLength(0);
+  expect(initialCalls("validateInitialImport")).toHaveLength(0);
+  expect(mock.connectionMutateAsync).not.toHaveBeenCalled();
+  expect(mock.hooks.some(hook => hook.options?.refetchInterval)).toBe(false);
+  assertNoDashboardActivation();
+}
+
+describe("Explicit bounded first-import run on actual DOM", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("starts zero mutations or status refetches before an explicit start, including redraw/focus/time/filter changes", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(40, 4000),
+    });
+    const get = vi.spyOn(Storage.prototype, "getItem");
+    const set = vi.spyOn(Storage.prototype, "setItem");
+    await render();
+    expect(finishRunPanel()?.textContent).toContain(
+      "No run starts automatically"
+    );
+    await render();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await change("Reporting month", "2");
+    vi.useFakeTimers();
+    await act(async () => vi.advanceTimersByTimeAsync(900_000));
+    expect(mock.mutationCalls).toHaveLength(0);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    assertRunOnly();
+    await click("Refresh");
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    expect(mock.mutationCalls).toHaveLength(0);
+  });
+
+  it("one same-tick explicit start runs two advancing pages, fresh matching checks and completion, but no financial check/old manual calls", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(40, 4000),
+    });
+    await render();
+    vi.useFakeTimers();
+    const startTime = Date.now();
+    const firstDue = new Date(startTime + 1000).toISOString();
+    const secondDue = new Date(startTime + 2000).toISOString();
+    mock.finishMutateAsync
+      .mockImplementationOnce(async () => {
+        mock.data["managementHq.status"].live.progress = savedRunProgress(
+          41,
+          4100
+        );
+        mock.data["managementHq.status"].live.nextDueAt = firstDue;
+        return importPayload({
+          progress: { pages: 41, recordsRead: 4100 },
+          nextDueAt: firstDue,
+        });
+      })
+      .mockImplementationOnce(async () => {
+        mock.data["managementHq.status"].live.progress = savedRunProgress(
+          42,
+          4200
+        );
+        mock.data["managementHq.status"].live.nextDueAt = secondDue;
+        return importPayload({
+          progress: { pages: 42, recordsRead: 4200 },
+          nextDueAt: secondDue,
+        });
+      })
+      .mockImplementationOnce(async () => {
+        Object.assign(mock.data["managementHq.status"].live, {
+          hasPublished: true,
+          health: "ready",
+          progress: null,
+          nextDueAt: null,
+        });
+        return importPayload({
+          status: "applied",
+          hasPublished: true,
+          progress: null,
+        });
+      });
+    const start = button("Finish first import");
+    await act(async () => {
+      start.click();
+      start.click();
+    });
+    expect(finishCalls()).toHaveLength(1);
+    expect(finishRunPanel()?.textContent).toContain(
+      "41 pages · 4100 records read"
+    );
+    expect(finishRunPanel()?.textContent).not.toContain(
+      "First import complete"
+    );
+    expect(button("Continue first import").disabled).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(finishCalls()).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(finishCalls()).toHaveLength(2);
+    expect(finishRunPanel()?.textContent).toContain(
+      "42 pages · 4200 records read"
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(finishCalls()).toEqual(
+      Array.from({ length: 3 }, () => ({
+        path: "managementHq.finishInitialImportBatch",
+        actorId: 47,
+        input: undefined,
+      }))
+    );
+    expect(mock.refetch.mock.calls).toEqual(
+      Array.from({ length: 4 }, () => [
+        "managementHq.status",
+        { cancelRefetch: true },
+      ])
+    );
+    expect(finishRunPanel()?.textContent).toContain("First import complete");
+    expect(finishRunPanel()?.textContent).toContain(
+      "42 pages · 4200 records read"
+    );
+    expect(button("Check imported figures").disabled).toBe(false);
+    expect(container.textContent).not.toContain("NEVER-RENDER");
+    assertRunOnly();
+    const reads = mock.refetch.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(900_000));
+    expect(finishCalls()).toHaveLength(3);
+    expect(mock.refetch).toHaveBeenCalledTimes(reads);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("requires fresh progress matching the returned page before permitting the next mutation", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(40, 4000),
+    });
+    mock.finishMutateAsync.mockResolvedValue(
+      importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+    );
+    await render();
+    await click("Finish first import");
+    expect(finishCalls()).toHaveLength(1);
+    expect(mock.refetch).toHaveBeenCalledTimes(2);
+    expect(finishRunPanel()?.textContent).toContain(
+      "progress did not advance consistently"
+    );
+    expect(finishRunPanel()?.textContent).not.toContain(
+      "First import complete"
+    );
+    assertRunOnly();
+  });
+
+  it.each(["resolve", "reject"])(
+    "stop during flight prevents another page and holds every competing action lock until actual %s",
+    async settlement => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      const pending = deferred<any>();
+      mock.finishMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Finish first import");
+      expect(finishCalls()).toHaveLength(1);
+      await click("Stop after current batch");
+      expect(finishRunPanel()?.textContent).toContain("Run stopped");
+      for (const label of [
+        "Finish first import",
+        "Continue first import",
+        "Refresh",
+        "Check Orbit connection",
+        "Executive Dashboard",
+        "Financial Performance",
+        "Agent Activity",
+      ])
+        expect(button(label).disabled, label).toBe(true);
+      for (const label of ["Reporting year", "Reporting month"])
+        expect(
+          container.querySelector<HTMLSelectElement>(
+            `select[aria-label="${label}"]`
+          )!.disabled
+        ).toBe(true);
+      await click("Finish first import");
+      await click("Continue first import");
+      await click("Refresh");
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(mock.mutationCalls).toHaveLength(1);
+      vi.useFakeTimers();
+      await act(async () => vi.advanceTimersByTimeAsync(180_001));
+      expect(button("Finish first import").disabled).toBe(true);
+      await act(async () => {
+        if (settlement === "resolve")
+          pending.resolve(
+            importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+          );
+        else pending.reject(new Error("NEVER-RENDER late rejection"));
+      });
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(button("Finish first import").disabled).toBe(false);
+      expect(button("Refresh").disabled).toBe(false);
+      expect(finishCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(finishRunPanel()?.textContent).not.toContain("41 pages");
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      assertRunOnly();
+    }
+  );
+
+  it.each(["stop", "timeout"])(
+    "a %s cannot restart an unresolved mutation after same-actor page unmount/remount and observes actual settlement",
+    async mode => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      const pending = deferred<any>();
+      mock.finishMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      vi.useFakeTimers();
+      await click("Finish first import");
+      if (mode === "stop") await click("Stop after current batch");
+      else await act(async () => vi.advanceTimersByTimeAsync(180_000));
+      expect(button("Finish first import").disabled).toBe(true);
+      expect(finishRunPanel()?.textContent).toContain(
+        mode === "stop" ? "Run stopped" : "request deadline"
+      );
+      await act(async () => root.render(null));
+      await redrawRunPage();
+      expect(finishRunPanel()).toBeTruthy();
+      expect(button("Finish first import").disabled).toBe(true);
+      expect(button("Refresh").disabled).toBe(true);
+      expect(button("Continue first import").disabled).toBe(true);
+      await click("Finish first import");
+      expect(finishCalls()).toHaveLength(1);
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () =>
+        pending.resolve(
+          importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+        )
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(button("Finish first import").disabled).toBe(false);
+      expect(button("Refresh").disabled).toBe(false);
+      expect(finishCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(finishRunPanel()?.textContent).not.toContain(
+        "First import complete"
+      );
+      assertRunOnly();
+    }
+  );
+
+  it("a pending initial status fetch preserves the owned panel and lock without admitting a duplicate mutation", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(40, 4000),
+    });
+    await render();
+    const statusRead = deferred<any>();
+    const mutation = deferred<any>();
+    mock.refetch.mockReturnValueOnce(statusRead.promise);
+    mock.finishMutateAsync.mockReturnValue(mutation.promise);
+    await click("Finish first import");
+    const panel = finishRunPanel();
+    expect(finishCalls()).toHaveLength(0);
+    mock.fetching["managementHq.status"] = true;
+    await render();
+    expect(finishRunPanel()).toBe(panel);
+    expect(finishRunPanel()?.textContent).toContain("Import running");
+    expect(button("Stop after current batch")).toBeTruthy();
+    expect(button("Refresh").disabled).toBe(true);
+    await act(async () =>
+      statusRead.resolve({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+    );
+    expect(finishCalls()).toHaveLength(1);
+    mock.fetching["managementHq.status"] = false;
+    await render();
+    expect(finishRunPanel()).toBe(panel);
+    await click("Stop after current batch");
+    await act(async () => mutation.resolve(importPayload()));
+    expect(finishCalls()).toHaveLength(1);
+    assertRunOnly();
+  });
+
+  it("pending post-page status retains historical progress, never unmounts the panel and admits no extra page", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(40, 4000),
+    });
+    await render();
+    const confirmed = deferred<any>();
+    mock.refetch
+      .mockResolvedValueOnce({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+      .mockReturnValueOnce(confirmed.promise);
+    mock.finishMutateAsync.mockResolvedValue(
+      importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+    );
+    await click("Finish first import");
+    const panel = finishRunPanel();
+    expect(panel?.textContent).toContain("40 pages · 4000 records read");
+    mock.fetching["managementHq.status"] = true;
+    await render();
+    expect(finishRunPanel()).toBe(panel);
+    expect(panel?.textContent).toContain("40 pages · 4000 records read");
+    expect(finishCalls()).toHaveLength(1);
+    await click("Stop after current batch");
+    await act(async () =>
+      confirmed.resolve({ data: mock.data["managementHq.status"], error: null })
+    );
+    mock.fetching["managementHq.status"] = false;
+    await render();
+    expect(finishCalls()).toHaveLength(1);
+    expect(mock.refetch).toHaveBeenCalledTimes(2);
+    assertRunOnly();
+  });
+
+  it.each(["settings", "actor", "unmount"])(
+    "%s invalidation cancels a future scheduled wait without any import or status callback",
+    async changeType => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      await render();
+      vi.useFakeTimers();
+      mock.data["managementHq.status"].live.nextDueAt = new Date(
+        Date.now() + 60_000
+      ).toISOString();
+      await click("Finish first import");
+      expect(finishRunPanel()?.textContent).toContain("Waiting until");
+      expect(finishCalls()).toHaveLength(0);
+      if (changeType === "settings")
+        mock.data["managementHq.status"].live.syncEnabled = false;
+      if (changeType === "actor") mock.user = { ...mock.user, id: 48 };
+      if (changeType === "unmount") await act(async () => root.render(null));
+      else await redrawRunPage();
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(finishCalls()).toHaveLength(0);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(finishRunPanel()?.textContent ?? "").not.toContain(
+        "4000 records read"
+      );
+      assertRunOnly();
+    }
+  );
+
+  it.each(["settings", "actor", "unmount"])(
+    "%s invalidation ignores a late batch callback and never schedules its next page",
+    async changeType => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      const pending = deferred<any>();
+      mock.finishMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Finish first import");
+      if (changeType === "settings")
+        mock.data["managementHq.status"].live.syncEnabled = false;
+      if (changeType === "actor") mock.user = { ...mock.user, id: 48 };
+      if (changeType === "unmount") await act(async () => root.render(null));
+      else await redrawRunPage();
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () =>
+        pending.resolve(
+          importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+        )
+      );
+      expect(finishCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(container.textContent).not.toContain("41 pages");
+      expect(container.textContent).not.toContain("First import complete");
+      assertRunOnly();
+    }
+  );
+
+  it.each(["backoff", "source-error"])(
+    "fresh %s status with existing progress halts immediately, rather than hiding the failure behind progress",
+    async fault => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      mock.refetch.mockImplementation(async () => ({
+        data: {
+          ...mock.data["managementHq.status"],
+          live: {
+            ...mock.data["managementHq.status"].live,
+            ...(fault === "backoff"
+              ? {
+                  health: "backoff",
+                  nextDueAt: new Date(Date.now() + 60_000).toISOString(),
+                }
+              : { lastErrorCode: "NEVER-RENDER secret source error" }),
+          },
+        },
+        error: null,
+      }));
+      await render();
+      vi.useFakeTimers();
+      await click("Finish first import");
+      expect(finishRunPanel()?.querySelector('[role="alert"]')).toBeTruthy();
+      expect(finishCalls()).toHaveLength(0);
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(finishCalls()).toHaveLength(0);
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      assertRunOnly();
+    }
+  );
+
+  it.each(["failure", "deadline"])(
+    "a post-page current-status %s halts and cannot publish or continue even when status later resolves",
+    async fault => {
+      firstImportFixture({
+        health: "progress",
+        progress: savedRunProgress(40, 4000),
+      });
+      await render();
+      vi.useFakeTimers();
+      const statusRead = deferred<any>();
+      mock.refetch.mockResolvedValueOnce({
+        data: mock.data["managementHq.status"],
+        error: null,
+      });
+      if (fault === "failure")
+        mock.refetch.mockRejectedValueOnce(
+          new Error("NEVER-RENDER private request error")
+        );
+      else mock.refetch.mockReturnValueOnce(statusRead.promise);
+      mock.finishMutateAsync.mockResolvedValue(
+        importPayload({ progress: { pages: 41, recordsRead: 4100 } })
+      );
+      await click("Finish first import");
+      if (fault === "deadline") {
+        expect(finishRunPanel()?.textContent).toContain("Import running");
+        await act(async () => vi.advanceTimersByTimeAsync(15_000));
+      }
+      expect(finishRunPanel()?.textContent).toContain(
+        fault === "failure"
+          ? "current status could not be verified"
+          : "current-status request deadline"
+      );
+      expect(finishRunPanel()?.textContent).not.toContain(
+        "First import complete"
+      );
+      expect(button("Refresh").disabled).toBe(false);
+      await act(async () =>
+        statusRead.resolve({
+          data: {
+            ...mock.data["managementHq.status"],
+            live: {
+              ...mock.data["managementHq.status"].live,
+              hasPublished: true,
+              health: "ready",
+              progress: null,
+            },
+          },
+          error: null,
+        })
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(finishCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(2);
+      expect(finishRunPanel()?.textContent).not.toContain(
+        "First import complete"
+      );
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      assertRunOnly();
+    }
+  );
+});
+
+describe("Explicit run admission and slow-status read-only controls", () => {
+  afterEach(() => vi.useRealTimers());
+  it.each(["Import Orbit figures", "Check Orbit connection", "Refresh"])(
+    "explicit start synchronously excludes a same-tick %s action",
+    async competing => {
+      firstImportFixture();
+      await render();
+      const firstStatus = deferred<any>();
+      const batch = deferred<any>();
+      mock.refetch.mockReturnValueOnce(firstStatus.promise);
+      mock.finishMutateAsync.mockReturnValue(batch.promise);
+      mock.importMutateAsync.mockResolvedValue(importPayload());
+      const start = button("Finish first import");
+      const other = button(competing);
+      try {
+        await act(async () => {
+          start.click();
+          other.click();
+        });
+        expect(mock.refetch).toHaveBeenCalledTimes(1);
+        expect(initialCalls("importInitialBatch")).toHaveLength(0);
+        expect(mock.connectionMutateAsync).not.toHaveBeenCalled();
+        await act(async () =>
+          firstStatus.resolve({
+            data: mock.data["managementHq.status"],
+            error: null,
+          })
+        );
+        expect(finishCalls()).toHaveLength(1);
+        assertRunOnly();
+      } finally {
+        await act(async () =>
+          firstStatus.resolve({
+            data: mock.data["managementHq.status"],
+            error: null,
+          })
+        );
+        const stop = [
+          ...container.querySelectorAll<HTMLButtonElement>("button"),
+        ].find(item => item.textContent?.trim() === "Stop after current batch");
+        if (stop) await act(async () => stop.click());
+        await act(async () => batch.resolve(importPayload()));
+      }
+    }
+  );
+  it("a slow ordinary status fetch exposes a working explicit read-only Refresh after 15 seconds without any automatic refetch/import", async () => {
+    firstImportFixture();
+    await render();
+    vi.useFakeTimers();
+    mock.fetching["managementHq.status"] = true;
+    await redrawRunPage();
+    expect(button("Refresh").disabled).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(14_999));
+    expect(button("Refresh").disabled).toBe(true);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(container.textContent).toContain(
+      "status check is taking longer than expected"
+    );
+    expect(button("Refresh").disabled).toBe(false);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    await click("Refresh");
+    expect(mock.refetch.mock.calls).toEqual([
+      ["managementHq.status", { cancelRefetch: true }],
+    ]);
+    expect(mock.mutationCalls).toHaveLength(0);
+    mock.fetching["managementHq.status"] = false;
+    await redrawRunPage();
+    assertRunOnly();
   });
 });

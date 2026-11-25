@@ -4,6 +4,7 @@ import { Download, RefreshCw } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { HqInitialRunPanel } from "@/components/HqInitialRunPanel";
 import type { HqLiveStatusDto } from "../../../../server/management-hq-live-service";
 import type { HqConnectionCheckResult } from "@shared/management-hq-connection-check";
 import type { HqInitialImportResult } from "@shared/management-hq-initial-import";
@@ -697,6 +698,7 @@ function ActorHq({
   const [month, setMonth] = useState<number | undefined>();
   const [view, setView] = useState<View>(VIEWS[0]);
   const [refreshing, setRefreshing] = useState(false);
+  const [statusSlow, setStatusSlow] = useState(false);
   const [replaying, setReplaying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
@@ -704,6 +706,7 @@ function ActorHq({
   const [connectionAccessRevoked, setConnectionAccessRevoked] = useState(false);
   const [connectionResult, setConnectionResult] =
     useState<HqConnectionCheckResult | null>(null);
+  const [initialRunBusy, setInitialRunBusy] = useState(false);
   const [initialBusy, setInitialBusy] = useState<"import" | "check" | null>(
     null
   );
@@ -716,6 +719,7 @@ function ActorHq({
   const [initialCheckFailed, setInitialCheckFailed] = useState(false);
   const alive = useRef(true);
   const lock = useRef(false);
+  const initialRunLock = useRef(false);
   const epoch = useRef(0);
   const connectionAttempt = useRef(0);
   const connectionFlight = useRef<symbol | null>(null);
@@ -732,9 +736,17 @@ function ActorHq({
     ...queryOptions,
     enabled: booted,
   });
+  useEffect(() => {
+    setStatusSlow(false);
+    if (!booted || (!status.isFetching && !status.isLoading)) return;
+    const timer = setTimeout(() => setStatusSlow(true), 15000);
+    return () => clearTimeout(timer);
+  }, [booted, status.isFetching, status.isLoading]);
   const sample = trpc.managementHq.sample.useMutation();
   const checkConnection = trpc.managementHq.checkConnection.useMutation();
   const importInitialBatch = trpc.managementHq.importInitialBatch.useMutation();
+  const finishInitialBatch =
+    trpc.managementHq.finishInitialImportBatch.useMutation();
   const validateInitialImport =
     trpc.managementHq.validateInitialImport.useMutation();
   const statusReady =
@@ -772,6 +784,7 @@ function ActorHq({
     status.isLoading ||
     reportBusy ||
     connectionBusy ||
+    initialRunBusy ||
     !!initialBusy;
   const canRead =
     statusReady &&
@@ -852,6 +865,20 @@ function ActorHq({
   const initialStatusError = useRef(false);
   initialStatusError.current =
     !!status.error || authorityError || connectionAccessRevoked;
+  // Read-only pending status refreshes must not unmount the explicitly owned run.
+  // Fresh post-response checks below still deny changed authority/settings/errors.
+  const initialRunEligible =
+    booted &&
+    mode === "live" &&
+    live?.configured === true &&
+    status.data?.liveConfigured === true &&
+    live.syncEnabled === true &&
+    live.readEnabled === false &&
+    !live.configurationCode &&
+    !status.error &&
+    !authorityError &&
+    !connectionAccessRevoked &&
+    !actionError;
   useEffect(() => {
     if (!alive.current) return;
     if (authorityError) {
@@ -928,7 +955,12 @@ function ActorHq({
   }, [actorId, utils]);
 
   async function refresh() {
-    if (lock.current || !identityCheck.current(actorId)) return;
+    if (
+      lock.current ||
+      initialRunLock.current ||
+      !identityCheck.current(actorId)
+    )
+      return;
     lock.current = true;
     epoch.current++;
     connectionAttempt.current++;
@@ -969,6 +1001,7 @@ function ActorHq({
   async function checkOrbitConnection() {
     if (
       lock.current ||
+      initialRunLock.current ||
       connectionBusy ||
       connectionAccessRevoked ||
       authorityError ||
@@ -1031,6 +1064,7 @@ function ActorHq({
       live?.hasPublished === true || initialResult?.hasPublished === true;
     if (
       lock.current ||
+      initialRunLock.current ||
       busy ||
       !initialGate.current ||
       !alive.current ||
@@ -1138,6 +1172,7 @@ function ActorHq({
   async function replay(scenario: Scenario) {
     if (
       lock.current ||
+      initialRunLock.current ||
       busy ||
       !statusReady ||
       actionError ||
@@ -1177,6 +1212,7 @@ function ActorHq({
   }
 
   function changePeriod(nextYear: number, nextMonth: number | undefined) {
+    if (initialRunLock.current) return;
     permission.current = false;
     epoch.current++;
     connectionAttempt.current++;
@@ -1254,7 +1290,18 @@ function ActorHq({
         </div>
         <Button
           variant="outline"
-          disabled={busy && booted}
+          disabled={
+            busy &&
+            booted &&
+            !(
+              statusSlow &&
+              !initialRunBusy &&
+              !initialBusy &&
+              !connectionBusy &&
+              !replaying &&
+              !reportBusy
+            )
+          }
           onClick={() => void refresh()}
         >
           <RefreshCw className="mr-2 h-4 w-4" />
@@ -1300,6 +1347,47 @@ function ActorHq({
           </div>
         )}
       </section>
+      <HqInitialRunPanel
+        actorId={actorId}
+        boundary={`${settingsBoundary}:${window.location.href}:${year}:${month ?? "annual"}`}
+        eligible={initialRunEligible}
+        published={live?.hasPublished === true}
+        disabled={busy && !initialRunBusy}
+        verifyCurrent={() =>
+          alive.current &&
+          identityCheck.current(actorId) &&
+          !initialStatusError.current
+        }
+        invoke={() => finishInitialBatch.mutateAsync()}
+        freshStatus={async () => {
+          const fresh = await status.refetch({ cancelRefetch: true });
+          const dto = fresh.data?.live;
+          if (
+            fresh.error ||
+            !dto ||
+            fresh.data?.reportMode !== "live" ||
+            fresh.data.liveConfigured !== true ||
+            !alive.current ||
+            !identityCheck.current(actorId) ||
+            dto.configured !== true ||
+            dto.syncEnabled !== true ||
+            dto.readEnabled !== false ||
+            dto.configurationCode ||
+            dto.lastErrorCode
+          )
+            throw new Error("HQ_STATUS_UNVERIFIED");
+          return {
+            hasPublished: dto.hasPublished,
+            progress: dto.progress,
+            nextDueAt: dto.nextDueAt,
+            health: dto.health,
+          };
+        }}
+        onBusy={owned => {
+          initialRunLock.current = owned;
+          setInitialRunBusy(owned);
+        }}
+      />
       {statusReady &&
         !actionError &&
         !connectionAccessRevoked &&
@@ -1630,8 +1718,9 @@ function ActorHq({
               key={label}
               variant={view === label ? "default" : "outline"}
               aria-pressed={view === label}
-              disabled={!!initialBusy}
+              disabled={!!initialBusy || initialRunBusy}
               onClick={() => {
+                if (initialRunBusy) return;
                 if (initialBusy || initialValidation || initialResult)
                   changePeriod(year, month);
                 setView(label);
@@ -1648,7 +1737,9 @@ function ActorHq({
               aria-label="Reporting year"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={year}
-              disabled={replaying || connectionBusy || !!initialBusy}
+              disabled={
+                replaying || connectionBusy || !!initialBusy || initialRunBusy
+              }
               onChange={event =>
                 changePeriod(parseInt(event.target.value, 10), month)
               }
@@ -1668,7 +1759,9 @@ function ActorHq({
               aria-label="Reporting month"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={month ?? "all"}
-              disabled={replaying || connectionBusy || !!initialBusy}
+              disabled={
+                replaying || connectionBusy || !!initialBusy || initialRunBusy
+              }
               onChange={event =>
                 changePeriod(
                   year,
@@ -1696,6 +1789,13 @@ function ActorHq({
       ) : !statusReady || refreshing ? (
         <div className={panel} role="status">
           Reading current HQ status… Report values are withheld.
+          {statusSlow && (
+            <p className="mt-2">
+              The status check is taking longer than expected. No further import
+              is started. Use Refresh to retry this read-only check once it is
+              available.
+            </p>
+          )}
         </div>
       ) : mode === "live" && (!live || unsafeLive) ? (
         <div
