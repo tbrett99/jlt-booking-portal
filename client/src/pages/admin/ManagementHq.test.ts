@@ -2883,6 +2883,200 @@ describe("Owned post-import status refresh access failures", () => {
   );
 });
 
+describe("Manual import cooldown expiry without an external redraw", () => {
+  it("re-enables at the due time, updates the wait copy and starts nothing until another explicit click", async () => {
+    firstImportFixture();
+    await render();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-25T12:42:00.000Z"));
+      const due = new Date(Date.now() + 60_000).toISOString();
+      mock.importMutateAsync
+        .mockResolvedValueOnce(
+          importPayload({ status: "notdue", nextDueAt: due })
+        )
+        .mockResolvedValueOnce(
+          importPayload({ progress: { pages: 43, recordsRead: 4300 } })
+        );
+      await click("Import Orbit figures");
+      expect(button("Continue first import").disabled).toBe(true);
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(59_999));
+      expect(button("Continue first import").disabled).toBe(true);
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+      expect(button("Continue first import").disabled).toBe(false);
+      expect(firstPanel()?.textContent).toContain("Waiting time has ended");
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      expect(initialCalls("validateInitialImport")).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+      await click("Continue first import");
+      expect(initialCalls("importInitialBatch")).toHaveLength(2);
+      expect(firstPanel()?.textContent).toContain(
+        "43 pages · 4300 records read"
+      );
+      assertNoDashboardActivation();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("manual Refresh cancels the old wait and a replaced deadline is not enabled by its old timer", async () => {
+    firstImportFixture();
+    await render();
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      mock.importMutateAsync
+        .mockResolvedValueOnce(
+          importPayload({
+            status: "notdue",
+            nextDueAt: new Date(start + 60_000).toISOString(),
+          })
+        )
+        .mockResolvedValueOnce(
+          importPayload({
+            status: "notdue",
+            nextDueAt: new Date(start + 180_000).toISOString(),
+          })
+        );
+      await click("Import Orbit figures");
+      expect(vi.getTimerCount()).toBe(1);
+      await click("Refresh");
+      expect(vi.getTimerCount()).toBe(0);
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      await click("Import Orbit figures");
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(button("Continue first import").disabled).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(button("Continue first import").disabled).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(initialCalls("importInitialBatch")).toHaveLength(2);
+      expect(initialCalls("validateInitialImport")).toHaveLength(0);
+      assertNoDashboardActivation();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clamps a long display timeout without treating its early wake as due", async () => {
+    firstImportFixture();
+    await render();
+    vi.useFakeTimers();
+    try {
+      const limit = 2147483647;
+      const due = new Date(Date.now() + limit + 60_000).toISOString();
+      mock.importMutateAsync.mockResolvedValue(
+        importPayload({ status: "notdue", nextDueAt: due })
+      );
+      await click("Import Orbit figures");
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(limit));
+      expect(button("Continue first import").disabled).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(button("Continue first import").disabled).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      assertNoDashboardActivation();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rearms after a backward clock change and keeps the button disabled until the actual due time", async () => {
+    firstImportFixture();
+    await render();
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      const due = new Date(start + 60_000).toISOString();
+      mock.importMutateAsync.mockResolvedValue(
+        importPayload({ status: "notdue", nextDueAt: due })
+      );
+      await click("Import Orbit figures");
+      const reads = mock.refetch.mock.calls.length;
+      vi.setSystemTime(start - 30_000);
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(button("Continue first import").disabled).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      expect(button("Continue first import").disabled).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      assertNoDashboardActivation();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["actor", "settings", "unmount"])(
+    "cancels a settled cooldown on %s invalidation without fetching or importing",
+    async changeType => {
+      firstImportFixture();
+      await render();
+      vi.useFakeTimers();
+      try {
+        const due = new Date(Date.now() + 60_000).toISOString();
+        mock.importMutateAsync.mockResolvedValue(
+          importPayload({ status: "notdue", nextDueAt: due })
+        );
+        await click("Import Orbit figures");
+        expect(vi.getTimerCount()).toBe(1);
+        if (changeType === "actor") mock.user = { ...mock.user, id: 48 };
+        if (changeType === "settings")
+          mock.data["managementHq.status"].live.syncEnabled = false;
+        await act(async () => {
+          if (changeType === "unmount") root.unmount();
+          else root.render(React.createElement(ManagementHq));
+        });
+        expect(vi.getTimerCount()).toBe(0);
+        const reads = mock.refetch.mock.calls.length;
+        await act(async () => vi.advanceTimersByTimeAsync(120_000));
+        expect(mock.refetch).toHaveBeenCalledTimes(reads);
+        expect(initialCalls("importInitialBatch")).toHaveLength(1);
+        expect(initialCalls("validateInitialImport")).toHaveLength(0);
+        expect(mock.csv).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it("a cancelled cooldown cannot unlock a newer pending connection action", async () => {
+    firstImportFixture();
+    await render();
+    const pending = deferred<any>();
+    vi.useFakeTimers();
+    try {
+      const due = new Date(Date.now() + 60_000).toISOString();
+      mock.importMutateAsync.mockResolvedValue(
+        importPayload({ status: "notdue", nextDueAt: due })
+      );
+      await click("Import Orbit figures");
+      mock.connectionMutateAsync.mockReturnValue(pending.promise);
+      await click("Check Orbit connection");
+      expect(vi.getTimerCount()).toBe(0);
+      const reads = mock.refetch.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(button("Checking…").disabled).toBe(true);
+      expect(button("Refresh").disabled).toBe(true);
+      expect(mock.refetch).toHaveBeenCalledTimes(reads);
+      expect(initialCalls("importInitialBatch")).toHaveLength(1);
+      expect(mock.connectionMutateAsync).toHaveBeenCalledTimes(1);
+      assertNoDashboardActivation();
+    } finally {
+      await act(async () => pending.resolve(mock.connectionResult));
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("Observational import progress is not validated reporting", () => {
   it("labels retained 4000-record progress without claiming a current worker or starting anything", async () => {
     firstImportFixture({

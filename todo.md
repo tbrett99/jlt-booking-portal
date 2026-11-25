@@ -3177,3 +3177,12 @@
 - [x] Final real-monotonic model-clock 6000→6100synthetic batch passes exact baseline manifest/chunk/state/control parity, guarded renewal, immediate cooldown and expiry denials;96.967s total/79.485s grant→completion/2.096s maxobserved heartbeatgap. Model-cloning RSS~2.36GB is not a production memory estimate or SLA.
 - [ ] Owner approval for exact tested-checkpoint release and controlled initial continuation; no GitHubpush/deployment/import/Resume/recovery/reset/read or automatic-update activation in this offline correction.
 - [ ] Actual full-feed fit, production RSS/latency, source totals/date/amendment/cancellation/admin-owner reconciliation and reporting acceptance remain pending; current owners remain provisional, not verified original sellers.
+
+## Management HQ — manual cooldown display correction (25 November 2026)
+
+- [x] Confirmed the screen-only cooldown defect with a new real-DOM regression: a settled not-due result left Continue disabled at its due time unless another redraw occurred. Preserved the failing old-UI log.
+- [x] Added one finite display-only timer from the currently visible validated wait result; cancels on invalidation/actor/settings/unmount and handles long delay clamping/early wake without changing the actual due time. Expired copy now says waiting ended. No fetch, status polling, import, retry or automatic continuation occurs when it expires.
+- [x] Preserved independent click-time checks, action ownership, fresh authority, server due/backoff/fences/storage/source validation, no partial reporting and all existing HQ/operational behavior.
+- [x] Final 271 actual HQ DOM tests pass, including eight new no-external-redraw/clock/lifecycle/Refresh/deadline/competing-action checks. Fresh nonincremental TypeScript, full frontend/SSR/backend production build, scoped formatting/diff and exact 47 local asset hashes pass. Compiled backend is byte-identical to released 87fb559e and all frozen source hashes outside UI/test/todo scope remain unchanged.
+- [x] Manual Refresh is a read-only workaround for the deployed screen. Owner screenshot shows 42 pages/4200 records of incomplete saved progress; it is not proof of current liveness or a complete publication.
+- [ ] Release of this additional UI correction awaits owner approval after its tested checkpoint. No new GitHub push/deployment, production import, Resume/recovery/reset, flag change, report-display approval or automatic-update activation performed during the correction.

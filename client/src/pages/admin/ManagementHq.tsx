@@ -256,7 +256,10 @@ function safeInitialValidation(value: unknown): InitialValidationView | null {
   };
 }
 
-function initialImportMessage(result: InitialImportView): string {
+function initialImportMessage(
+  result: InitialImportView,
+  waiting: boolean
+): string {
   if (
     result.hasPublished &&
     ["applied", "already_complete"].includes(result.status)
@@ -266,7 +269,9 @@ function initialImportMessage(result: InitialImportView): string {
     case "disabled":
       return "Awaiting approved server setup. Import has not been enabled here.";
     case "notdue":
-      return `Wait until ${new Date(result.nextDueAt!).toLocaleString()}, then continue`;
+      return waiting
+        ? `Wait until ${new Date(result.nextDueAt!).toLocaleString()}, then continue`
+        : "Waiting time has ended. Continue when you are ready.";
     case "busy":
       return "An import is already running. Use Refresh to check its status before continuing.";
     case "progress":
@@ -705,6 +710,7 @@ function ActorHq({
   const [initialResult, setInitialResult] = useState<InitialImportView | null>(
     null
   );
+  const [initialCooldownPulse, setInitialCooldownPulse] = useState(0);
   const [initialValidation, setInitialValidation] =
     useState<InitialValidationView | null>(null);
   const [initialCheckFailed, setInitialCheckFailed] = useState(false);
@@ -1207,10 +1213,29 @@ function ActorHq({
       : null;
   const initialPublished =
     live?.hasPublished === true || visibleInitialResult?.hasPublished === true;
-  const initialWait =
+  const initialWaitDue =
     visibleInitialResult?.status === "notdue" &&
-    visibleInitialResult.nextDueAt &&
-    Date.now() < Date.parse(visibleInitialResult.nextDueAt);
+    safeStamp(visibleInitialResult.nextDueAt)
+      ? Date.parse(visibleInitialResult.nextDueAt)
+      : null;
+  const initialWait = initialWaitDue !== null && Date.now() < initialWaitDue;
+
+  useEffect(() => {
+    if (!initialWait || initialWaitDue === null) return;
+    // Wake only this display at its current due time. No fetch, source request,
+    // retry or import is started; the independent click-time/server guards remain.
+    const delay = Math.max(
+      1,
+      Math.min(2147483647, initialWaitDue - Date.now())
+    );
+    const timer = setTimeout(() => {
+      if (alive.current && identityCheck.current(actorId))
+        setInitialCooldownPulse(value => value + 1);
+    }, delay);
+    // A visible-result/authority change cancels this timer. The pulse dependency
+    // rearms a clamped or early wake when the actual due time is still ahead.
+    return () => clearTimeout(timer);
+  }, [initialWait, initialWaitDue, initialCooldownPulse, actorId]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
@@ -1349,7 +1374,9 @@ function ActorHq({
                     }
                     className="space-y-1 text-sm"
                   >
-                    <p>{initialImportMessage(visibleInitialResult)}</p>
+                    <p>
+                      {initialImportMessage(visibleInitialResult, initialWait)}
+                    </p>
                     {visibleInitialResult.progress && (
                       <p>
                         {visibleInitialResult.progress.pages} pages ·{" "}
