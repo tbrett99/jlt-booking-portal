@@ -891,6 +891,17 @@ export function createHqImplementedEngine(
       let stage = current?.stage
         ? await clone(current.stage)
         : await createStage(requested, current?.published ?? null);
+      // Rebuild per invocation, only after persisted validation and owned cloning.
+      // Arrays remain the ordered, serialized authority; these indexes never persist.
+      const feedKeys = {
+        booking: new Set(stage.feedKeys.booking),
+        business: new Set(stage.feedKeys.business),
+      };
+      const catalogueKeys = {
+        booking: new Set(stage.catalogueKeys.booking),
+        business: new Set(stage.catalogueKeys.business),
+      };
+      const cursors = new Set(stage.cursors);
       const published = current?.published ?? null;
       while (stage.phase !== "finish") {
         if (!(await canContinue())) return await yielded();
@@ -949,13 +960,14 @@ export function createHqImplementedEngine(
             const existing = stage.entities[id];
             if (
               !existing ||
-              !stage.feedKeys[item.entityType].includes(id) ||
+              !feedKeys[item.entityType].has(id) ||
               existing.entity.revision !== item.revision
             )
               fail("CATALOGUE_REVISION_MISMATCH");
-            if (stage.catalogueKeys[item.entityType].includes(id))
+            if (catalogueKeys[item.entityType].has(id))
               fail("DUPLICATE_CATALOGUE_ENTRY");
             stage.catalogueKeys[item.entityType].push(id);
+            catalogueKeys[item.entityType].add(id);
           } else if (phase === "changes") {
             const change = raw as HqWireChange;
             if (change.seq > page.changeUpper) fail("CHANGE_UPPER_EXCEEDED");
@@ -992,19 +1004,19 @@ export function createHqImplementedEngine(
             }
           } else {
             apply(stage, item);
-            if (!stage.feedKeys[item.entityType].includes(id))
+            if (!feedKeys[item.entityType].has(id)) {
               stage.feedKeys[item.entityType].push(id);
+              feedKeys[item.entityType].add(id);
+            }
           }
           if (checkpoint) await checkpoint();
         }
         if (page.nextCursor !== null) {
           const cursorKey = `${phase}:${page.nextCursor}`;
-          if (
-            stage.cursors.includes(cursorKey) ||
-            page.nextCursor === stage.cursor
-          )
+          if (cursors.has(cursorKey) || page.nextCursor === stage.cursor)
             fail("CURSOR_LOOP");
           stage.cursors.push(cursorKey);
+          cursors.add(cursorKey);
           stage.cursor = page.nextCursor;
         } else {
           stage.cursor = null;

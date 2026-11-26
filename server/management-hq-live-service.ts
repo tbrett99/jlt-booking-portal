@@ -407,6 +407,28 @@ export function createHqLiveService(
     return createHqLiveStore(await getSharedHqPool(), config, {
       cooperativeGuard: cpuGuard,
       ...(accelerated ? { cooperativeYieldGuard: cpuYieldGuard } : {}),
+      ...(accelerated
+        ? {
+            // Only an opaque identity crosses request boundaries, never this
+            // action's authority/settings closures or a lease-bearing service.
+            validatedInitialReuseScope: createHash("sha256")
+              .update(
+                JSON.stringify(
+                  [
+                    "DATABASE_URL",
+                    "HQ_ORBIT_REPORTING_BASE_URL",
+                    "HQ_ORBIT_REPORTING_API_KEY",
+                    "HQ_PORTAL_SYNC_TOKEN",
+                    "HQ_LIVE_SYNC_ENABLED",
+                    "HQ_LIVE_READ_ENABLED",
+                    "HQ_LIVE_INTERVAL_SECONDS",
+                    "HQ_LIVE_FRESHNESS_SECONDS",
+                  ].map(key => process.env[key])
+                )
+              )
+              .digest("hex"),
+          }
+        : {}),
     });
   }
   async function getStore() {

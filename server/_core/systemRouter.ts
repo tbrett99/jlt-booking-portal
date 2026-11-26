@@ -58,6 +58,7 @@ export const systemRouter = router({
       managementHqStagedInitialResume: 1,
       managementHqImportResponsiveness: 1,
       managementHqInitialRunPerformance: 1,
+      managementHqInitialReuseLifecycle: 1,
     })),
 
   notifyOwner: adminProcedure

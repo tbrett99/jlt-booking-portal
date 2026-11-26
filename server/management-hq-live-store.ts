@@ -20,6 +20,7 @@ import {
   decodeHqLiveV2SyncAsync,
   encodeHqLiveV2Sync,
   encodeHqLiveV2SyncAsync,
+  encodeHqLiveV2SyncOwnedAsync,
   hqJsonUtf8BytesAsync,
   manifestChunkRefs,
   validateHqV2Chunk,
@@ -336,6 +337,27 @@ function syncRow(row: RowDataPacket): HqLiveSyncEnvelope {
     fail("INVALID_PERSISTED_STATE");
   return e;
 }
+type VerifiedV2 = {
+  sourceFingerprint: string;
+  rootCanonical: string;
+  chunks: Map<string, Buffer>;
+  state: HqImplementedSyncState;
+};
+// One module-private result, never authority/config/guards/actors/leases. The
+// opaque parent SHA binds all seven raw settings plus DB URL; Pool identity is
+// additionally mandatory. Only unfinished initial V2 states qualify. Original
+// codec caps bound retained state to 128 MiB expanded JSON, chunks to 64 MiB
+// decoded bytes and canonical root to 16 MiB UTF-8. No publication is retained.
+// Non-sliding 60s monotonic TTL, checked/cleared on access; no timers or work.
+const INITIAL_REUSE_TTL_MS = 60_000;
+let initialVerifiedV2:
+  | {
+      pool: Pool;
+      scope: string;
+      expiresAt: number;
+      result: VerifiedV2;
+    }
+  | undefined;
 /** Short transactions only. All sync/control writes lock the same control row first. */
 export function createHqLiveStore(
   pool: Pool,
@@ -343,9 +365,29 @@ export function createHqLiveStore(
   options: {
     cooperativeGuard?: () => Promise<void>;
     cooperativeYieldGuard?: () => Promise<void>;
+    /** Parent-only accelerated initial profile; SHA of raw settings + DB URL. */
+    validatedInitialReuseScope?: string;
   } = {}
 ): HqLiveStore {
+  const initialReuseScope = options.validatedInitialReuseScope;
+  function sharedResult(): VerifiedV2 | undefined {
+    if (
+      initialVerifiedV2 &&
+      (initialVerifiedV2.pool !== pool ||
+        initialVerifiedV2.scope !== initialReuseScope ||
+        performance.now() >= initialVerifiedV2.expiresAt)
+    )
+      initialVerifiedV2 = undefined;
+    return initialVerifiedV2?.result;
+  }
   function binding(write = false): string {
+    if (initialReuseScope !== undefined) {
+      sharedResult(); // configuration/scope changes and expiry clear on access
+      if (!hash(initialReuseScope)) {
+        clearVerifiedV2();
+        fail("CONFIG_INVALID");
+      }
+    }
     const s = config.status(),
       f = config.sourceFingerprint();
     if (
@@ -383,25 +425,34 @@ export function createHqLiveStore(
   // Renewals are provisional until this transaction commits. Retain the earliest
   // old authorization deadline even if held validation renews more than once.
   const renewalDeadlines = new WeakMap<PoolConnection, number>();
-  // A single-store, single-snapshot reuse slot. The persisted root is compared
-  // semantically (wrapper key order is immaterial), while every referenced
-  // chunk is compared by the exact decoded bytes returned by its validator.
+  // Default callers retain their original single-store snapshot slot. Opt-in
+  // callers use only the one bounded module result above. The persisted root is
+  // compared canonically (wrapper key order is immaterial); every referenced
+  // chunk is compared by exact decoded bytes returned by its validator.
   // Cooperative copies own the state; no mutable return value or Buffer view
   // aliases the slot. Candidates become reusable only after their SQL commit.
   // This is a validation result, never lease authority: acquisition may reuse
   // the same exact bytes in its newly fenced reader; every write still guards
   // the current control token/fence/DB deadlines independently below.
-  type VerifiedV2 = {
-    sourceFingerprint: string;
-    rootCanonical: string;
-    chunks: Map<string, Buffer>;
-    state: HqImplementedSyncState;
-  };
   let verifiedV2: VerifiedV2 | undefined;
   const pendingV2 = new WeakMap<PoolConnection, VerifiedV2>();
   const clearVerifiedV2 = () => {
     verifiedV2 = undefined;
+    // Also invalidate an opt-in result if a default caller of the same pool
+    // encounters a write/error/config denial. Never retain stale shared state.
+    if (initialVerifiedV2?.pool === pool) initialVerifiedV2 = undefined;
   };
+  function retainCandidate(candidate: VerifiedV2) {
+    if (initialReuseScope === undefined) verifiedV2 = candidate;
+    else if (candidate.state.published === null && candidate.state.stage) {
+      initialVerifiedV2 = {
+        pool,
+        scope: initialReuseScope,
+        expiresAt: performance.now() + INITIAL_REUSE_TTL_MS,
+        result: candidate,
+      };
+    } else clearVerifiedV2();
+  }
   function retainRenewalDeadline(
     c: PoolConnection,
     expiry: number,
@@ -449,7 +500,7 @@ export function createHqLiveStore(
       assertBinding(finalBinding, binding());
       await c.commit();
       const candidate = pendingV2.get(c);
-      if (candidate) verifiedV2 = candidate;
+      if (candidate) retainCandidate(candidate);
       return result;
     } catch (error) {
       clearVerifiedV2();
@@ -637,14 +688,17 @@ export function createHqLiveStore(
     // it neither reads nor populates the cooperative reuse slot.
     if (!cooperative) clearVerifiedV2();
     const rootCanonical = cooperative ? canonicalHqJson(root) : "";
+    const available =
+      initialReuseScope === undefined ? verifiedV2 : sharedResult();
     if (
-      verifiedV2 &&
-      (verifiedV2.sourceFingerprint !== f ||
-        verifiedV2.rootCanonical !== rootCanonical ||
-        verifiedV2.state.version !== root.syncVersion)
+      available &&
+      (available.sourceFingerprint !== f ||
+        available.rootCanonical !== rootCanonical ||
+        available.state.version !== root.syncVersion)
     )
       clearVerifiedV2();
-    const retained = verifiedV2;
+    const retained =
+      initialReuseScope === undefined ? verifiedV2 : sharedResult();
     const ownedChunks = new Map<string, Buffer>();
     if (cooperative) {
       let exact = !!retained && retained.chunks.size === chunks.size;
@@ -675,7 +729,11 @@ export function createHqLiveStore(
       state = cooperative
         ? await decodeHqLiveV2SyncAsync(root, chunks, f, cpu!)
         : decodeHqLiveV2Sync(root, chunks, f);
-      if (cooperative) {
+      if (
+        cooperative &&
+        (initialReuseScope === undefined ||
+          (state.published === null && state.stage))
+      ) {
         const ownedState = await cloneHqJsonAsync(state, cpu!);
         assertBinding(f, binding());
         pendingV2.set(c, {
@@ -1118,8 +1176,10 @@ export function createHqLiveStore(
           if (
             !integer(next.version, 1, MAX_VERSION) ||
             next.version !== (expected ?? 0) + 1
-          )
+          ) {
+            if (initialReuseScope !== undefined) clearVerifiedV2();
             fail("INVALID_PERSISTED_STATE");
+          }
           const nextVersion = next.version;
           // All encoding and bounded validation happens outside the transaction.
           // Prepare both representations because a small next state must stay v2
@@ -1128,6 +1188,7 @@ export function createHqLiveStore(
           // Prepared bytes and scalar commit decisions are owned below; no
           // later transaction decision depends on a mutable caller object.
           let encoded: ReturnType<typeof encodeHqLiveV2Sync>;
+          let preparedCandidate: VerifiedV2 | undefined;
           let legacy: string | null = null;
           const envelope: HqLiveSyncEnvelope = {
             format: "hq-live-sync-v1",
@@ -1138,11 +1199,32 @@ export function createHqLiveStore(
             transaction(c => renewCpuLease(c, lease))
           );
           try {
-            encoded = await encodeHqLiveV2SyncAsync(
-              next,
-              lease.sourceFingerprint,
-              cpu
-            );
+            if (initialReuseScope === undefined) {
+              encoded = await encodeHqLiveV2SyncAsync(
+                next,
+                lease.sourceFingerprint,
+                cpu
+              );
+            } else {
+              const owned = await encodeHqLiveV2SyncOwnedAsync(
+                next,
+                lease.sourceFingerprint,
+                cpu
+              );
+              encoded = owned;
+              envelope.sync = owned.candidate.state;
+              if (
+                owned.candidate.state.published === null &&
+                owned.candidate.state.stage
+              ) {
+                preparedCandidate = {
+                  sourceFingerprint: lease.sourceFingerprint,
+                  rootCanonical: canonicalHqJson(owned.manifest),
+                  chunks: owned.candidate.chunks,
+                  state: owned.candidate.state,
+                };
+              }
+            }
             if (
               encoded.manifest.syncVersion !== nextVersion ||
               next.version !== nextVersion
@@ -1154,6 +1236,7 @@ export function createHqLiveStore(
             if (encoded.manifest.expandedBytes + wrapperBytes < V1_WRITE_BYTES)
               legacy = JSON.stringify(envelope);
           } catch (error) {
+            if (initialReuseScope !== undefined) clearVerifiedV2();
             if (cpu.denial()) throw cpu.denial();
             if (error instanceof HqLiveError) throw error;
             fail("INVALID_PERSISTED_STATE");
@@ -1246,6 +1329,10 @@ export function createHqLiveStore(
               // Recheck DB clock/binding/fence immediately before EVERY sync CAS (including publication/410).
               const { control, now } = await guard(c, lease);
               let r: ResultSetHeader;
+              // The read candidate describes the old root, NEVER this write.
+              // Clear before root SQL; denial/zero CAS/rollback cannot promote it.
+              pendingV2.delete(c);
+              clearVerifiedV2();
               if (expected === null)
                 [r] = await c.execute<ResultSetHeader>(
                   "INSERT IGNORE INTO management_hq_datasets (datasetId,mode,ownerUserId,stateVersion,state,updatedAt) VALUES (?,'live',0,1,?,UTC_TIMESTAMP(3))",
@@ -1259,10 +1346,8 @@ export function createHqLiveStore(
               // Once chunks may have been inserted, a false return would commit
               // orphan mutations. Any failed root CAS is therefore a rollback.
               if (r.affectedRows !== 1) fail("LEASE_LOST");
-              // The validated read described the old root, not this prepared
-              // write. Never promote it (or caller-owned next) after publication.
-              pendingV2.delete(c);
-              clearVerifiedV2();
+              if (useV2 && preparedCandidate)
+                pendingV2.set(c, preparedCandidate);
               // A sync write can itself cross expiry: staging, 410 intent/cleanup and publication all roll back.
               await guard(c, lease);
               if (useV2) {

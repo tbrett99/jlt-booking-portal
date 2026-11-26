@@ -158,7 +158,11 @@ function* stringFragments(value: string): Generator<string> {
  * functions and symbols follow JSON.stringify's omission/null rules. Strict
  * storage mode rejects non-JSON data instead of silently dropping extensions. */
 type JsonFragment = string | Generator<JsonFragment>;
-function* jsonTree(value: unknown, strict = false): Generator<JsonFragment> {
+function* jsonTree(
+  value: unknown,
+  strict = false,
+  own?: (value: unknown) => void
+): Generator<JsonFragment> {
   const active = new Set<object>();
   function prepare(v: unknown, key: string): unknown {
     if (
@@ -178,23 +182,28 @@ function* jsonTree(value: unknown, strict = false): Generator<JsonFragment> {
     depth: number,
     key: string,
     inArray = false,
-    prepared = false
+    prepared = false,
+    capture?: (value: unknown) => void
   ): Generator<JsonFragment> {
     if (depth > 256) invalid();
     if (!prepared) v = prepare(v, key);
     if (v === null) {
+      capture?.(null);
       yield "null";
       return;
     }
     switch (typeof v) {
       case "string":
+        capture?.(v);
         yield stringFragments(v);
         return;
       case "number":
         if (strict && !Number.isFinite(v)) invalid();
+        capture?.(v === 0 ? 0 : v);
         yield JSON.stringify(v);
         return;
       case "boolean":
+        capture?.(v);
         yield v ? "true" : "false";
         return;
       case "undefined":
@@ -230,16 +239,37 @@ function* jsonTree(value: unknown, strict = false): Generator<JsonFragment> {
     active.add(obj);
     if (Array.isArray(obj)) {
       if (strict && Object.keys(obj).length !== obj.length) invalid();
+      const owned = capture ? ([] as unknown[]) : undefined;
       yield "[";
       for (let i = 0; i < obj.length; i++) {
         if (i) yield ",";
-        yield visit(obj[i], depth + 1, String(i), true);
+        yield visit(
+          obj[i],
+          depth + 1,
+          String(i),
+          true,
+          false,
+          owned
+            ? child => {
+                owned.push(child);
+              }
+            : undefined
+        );
       }
       yield "]";
+      if (owned) capture!(owned);
     } else {
+      const owned = capture
+        ? (Object.create(null) as Record<string, unknown>)
+        : undefined;
+      const keys = Object.keys(obj);
+      // Canonical bytes traverse sorted keys, but the original manifest/legacy
+      // encoding preserves skeleton insertion order. Capture both facts without
+      // retaining any caller values or rereading the caller after capture.
+      if (owned) for (const k of keys) owned[k] = undefined;
       yield "{";
       let first = true;
-      for (const k of Object.keys(obj).sort()) {
+      for (const k of keys.sort()) {
         const child = prepare((obj as Record<string, unknown>)[k], k);
         if (
           !strict &&
@@ -254,22 +284,35 @@ function* jsonTree(value: unknown, strict = false): Generator<JsonFragment> {
         first = false;
         yield stringFragments(k);
         yield ":";
-        yield visit(child, depth + 1, k, false, true);
+        yield visit(
+          child,
+          depth + 1,
+          k,
+          false,
+          true,
+          owned
+            ? value => {
+                owned[k] = value;
+              }
+            : undefined
+        );
       }
       yield "}";
+      if (owned) capture!(owned);
     }
     active.delete(obj);
   }
-  yield visit(value, 0, "");
+  yield visit(value, 0, "", false, false, own);
 }
 
 /** Flatten nested JSON iterators without target-dependent delegation. */
 function* jsonFragments(
   value: unknown,
   strict = false,
-  coalesce = true
+  coalesce = true,
+  own?: (value: unknown) => void
 ): Generator<string> {
-  const stack: Generator<JsonFragment>[] = [jsonTree(value, strict)];
+  const stack: Generator<JsonFragment>[] = [jsonTree(value, strict, own)];
   let pieces: string[] = [],
     units = 0,
     steps = 0;
@@ -447,11 +490,12 @@ export const HQ_LIVE_V2_VALIDATION_OPTIONS = Object.freeze({
 });
 function* digestJsonWork(
   value: unknown,
-  maximum: number
+  maximum: number,
+  own?: (value: unknown) => void
 ): CodecWork<{ byteCount: number; sha256: string }> {
   let byteCount = 0;
   const digest = createHash("sha256");
-  for (const iterator = jsonFragments(value, true); ; ) {
+  for (const iterator = jsonFragments(value, true, true, own); ; ) {
     const next = iterator.next();
     if (next.done) break;
     const text = next.value;
@@ -814,12 +858,30 @@ function splitPart(part: CompactPart, kind: "published" | "stage") {
 }
 function* encodeSyncWork(
   sync: HqImplementedSyncState,
-  sourceFingerprint: string
-): CodecWork<{ manifest: HqV2Manifest; chunks: HqV2Chunk[] }> {
+  sourceFingerprint: string,
+  captureOwned = false
+): CodecWork<{
+  manifest: HqV2Manifest;
+  chunks: HqV2Chunk[];
+  candidate?: { state: HqImplementedSyncState; chunks: Map<string, Buffer> };
+}> {
   if (!hash(sourceFingerprint)) invalid();
+  let owned: HqImplementedSyncState | undefined;
   const expanded = yield {
-    work: digestJsonWork(sync, HQ_LIVE_V2_EXPANDED_BYTES),
+    // Capture exactly the values emitted by the strict byte traversal. Caller
+    // mutation across checkpoints cannot change this owned tree afterwards.
+    // All subsequent validation, compaction and encoding use ONLY that tree.
+    work: digestJsonWork(
+      sync,
+      HQ_LIVE_V2_EXPANDED_BYTES,
+      captureOwned
+        ? value => {
+            owned = value as HqImplementedSyncState;
+          }
+        : undefined
+    ),
   };
+  if (captureOwned) sync = owned!;
   yield { validateState: sync, measuredBytes: expanded.byteCount };
   exactKeys(sync, ROOT_KEYS);
   const compact: CompactSync = {
@@ -841,6 +903,7 @@ function* encodeSyncWork(
   };
   const groups: HqV2Group[] = [];
   const chunks = new Map<string, HqV2Chunk>();
+  const ownedChunks = captureOwned ? new Map<string, Buffer>() : undefined;
   let refs = 0,
     groupTotal = 0;
   function* addGroup(
@@ -882,6 +945,7 @@ function* encodeSyncWork(
         if (Buffer.byteLength(serialized) >= HQ_LIVE_V2_CHUNK_ROW_BYTES)
           invalid();
         chunks.set(id, { id, serialized });
+        ownedChunks?.set(id, Buffer.from(raw));
       }
       current = Buffer.allocUnsafe(HQ_LIVE_V2_CHUNK_BYTES);
       used = 0;
@@ -948,7 +1012,13 @@ function* encodeSyncWork(
   yield {
     work: validateManifestWork(manifest, sync.version, sourceFingerprint),
   };
-  return { manifest, chunks: Array.from(chunks.values()) };
+  return {
+    manifest,
+    chunks: Array.from(chunks.values()),
+    ...(captureOwned
+      ? { candidate: { state: sync, chunks: ownedChunks! } }
+      : {}),
+  };
 }
 export function encodeHqLiveV2Sync(
   sync: HqImplementedSyncState,
@@ -967,6 +1037,32 @@ export async function encodeHqLiveV2SyncAsync(
 ): Promise<{ manifest: HqV2Manifest; chunks: HqV2Chunk[] }> {
   try {
     return await runAsync(encodeSyncWork(sync, sourceFingerprint), checkpoint);
+  } catch {
+    return fail("HQ_V2_INVALID_STATE");
+  }
+}
+/** @internal Store-only capability. The candidate has no caller-input aliases:
+ * it is captured during the capped strict expanded-byte traversal, then fully
+ * validated and encoded by the same work. Chunk copies are the exact emitted
+ * bytes, not a re-decode or hash-only assertion. Never expose this candidate. */
+export async function encodeHqLiveV2SyncOwnedAsync(
+  sync: HqImplementedSyncState,
+  sourceFingerprint: string,
+  checkpoint: () => Promise<void>
+): Promise<{
+  manifest: HqV2Manifest;
+  chunks: HqV2Chunk[];
+  candidate: { state: HqImplementedSyncState; chunks: Map<string, Buffer> };
+}> {
+  try {
+    return (await runAsync(
+      encodeSyncWork(sync, sourceFingerprint, true),
+      checkpoint
+    )) as {
+      manifest: HqV2Manifest;
+      chunks: HqV2Chunk[];
+      candidate: { state: HqImplementedSyncState; chunks: Map<string, Buffer> };
+    };
   } catch {
     return fail("HQ_V2_INVALID_STATE");
   }
