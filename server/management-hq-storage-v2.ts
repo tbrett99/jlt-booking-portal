@@ -15,8 +15,10 @@ import {
 } from "./management-hq-wire-contract";
 
 /** Live-only storage profile. Actual production capacity and RSS/latency are unknown. */
-export const HQ_LIVE_V2_COMPACT_BYTES = 64 * 1024 * 1024;
-export const HQ_LIVE_V2_EXPANDED_BYTES = 128 * 1024 * 1024;
+export const HQ_LIVE_V2_OLD_COMPACT_BYTES = 64 * 1024 * 1024;
+export const HQ_LIVE_V2_OLD_EXPANDED_BYTES = 128 * 1024 * 1024;
+export const HQ_LIVE_V2_COMPACT_BYTES = 128 * 1024 * 1024;
+export const HQ_LIVE_V2_EXPANDED_BYTES = 256 * 1024 * 1024;
 export const HQ_LIVE_V2_CHUNK_BYTES = 512 * 1024;
 export const HQ_LIVE_V2_CHUNK_ROW_BYTES = 1024 * 1024;
 export const HQ_LIVE_V2_ROOT_BYTES = 16 * 1024 * 1024;
@@ -99,6 +101,29 @@ const GROUPED_STAGE_KEYS = [
 ];
 const fail: (code: string) => never = code => {
   throw new Error(code);
+};
+/** @internal Encoder-only capacity fact; persisted read/grammar failures never
+ * use this class. Identity, not provider-controlled error text, classifies it. */
+export class HqV2CapacityError extends Error {
+  readonly code = "HQ_V2_CAPACITY_EXCEEDED";
+  constructor(
+    readonly dimension: "compact" | "expanded" | "refs",
+    private readonly limit: number,
+    private readonly observed: number
+  ) {
+    super("HQ_V2_CAPACITY_EXCEEDED");
+    this.name = "HqV2CapacityError";
+  }
+}
+export function isHqLiveV2CapacityError(error: unknown): boolean {
+  return error instanceof HqV2CapacityError;
+}
+const capacityExceeded = (
+  kind: "compact" | "expanded" | "refs",
+  limit: number,
+  observed: number
+): never => {
+  throw new HqV2CapacityError(kind, limit, observed);
 };
 const invalid: () => never = () => fail("HQ_V2_INVALID_JSON");
 const object = (v: unknown): v is Record<string, unknown> =>
@@ -491,7 +516,8 @@ export const HQ_LIVE_V2_VALIDATION_OPTIONS = Object.freeze({
 function* digestJsonWork(
   value: unknown,
   maximum: number,
-  own?: (value: unknown) => void
+  own?: (value: unknown) => void,
+  capacity?: "compact" | "expanded"
 ): CodecWork<{ byteCount: number; sha256: string }> {
   let byteCount = 0;
   const digest = createHash("sha256");
@@ -501,7 +527,10 @@ function* digestJsonWork(
     const text = next.value;
     const bytes = Buffer.from(text, "utf8");
     byteCount += bytes.length;
-    if (byteCount > maximum) invalid();
+    if (byteCount > maximum) {
+      if (capacity) capacityExceeded(capacity, maximum, byteCount);
+      invalid();
+    }
     digest.update(bytes);
     yield;
   }
@@ -878,7 +907,8 @@ function* encodeSyncWork(
         ? value => {
             owned = value as HqImplementedSyncState;
           }
-        : undefined
+        : undefined,
+      "expanded"
     ),
   };
   if (captureOwned) sync = owned!;
@@ -894,7 +924,12 @@ function* encodeSyncWork(
       sync.stage === null ? null : yield { work: compactPartWork(sync.stage) },
   };
   const full = yield {
-    work: digestJsonWork(compact, HQ_LIVE_V2_COMPACT_BYTES),
+    work: digestJsonWork(
+      compact,
+      HQ_LIVE_V2_COMPACT_BYTES,
+      undefined,
+      "compact"
+    ),
   };
   const skeleton: SyncSkeleton = {
     version: sync.version,
@@ -919,7 +954,8 @@ function* encodeSyncWork(
       byteCount = 0;
     function* flush(): CodecWork<void> {
       if (!used) return;
-      if (++refs > HQ_LIVE_V2_MAX_REFS) invalid();
+      if (++refs > HQ_LIVE_V2_MAX_REFS)
+        capacityExceeded("refs", HQ_LIVE_V2_MAX_REFS, refs);
       const raw = current.subarray(0, used);
       const sha256 = yield { work: digestBufferWork(raw) };
       const id = chunkId(sourceFingerprint, sha256);
@@ -957,7 +993,8 @@ function* encodeSyncWork(
       const raw = Buffer.from(text, "utf8");
       byteCount += raw.length;
       groupTotal += raw.length;
-      if (groupTotal > HQ_LIVE_V2_COMPACT_BYTES) invalid();
+      if (groupTotal > HQ_LIVE_V2_COMPACT_BYTES)
+        capacityExceeded("compact", HQ_LIVE_V2_COMPACT_BYTES, groupTotal);
       digest.update(raw);
       let offset = 0;
       while (offset < raw.length) {
@@ -1026,7 +1063,8 @@ export function encodeHqLiveV2Sync(
 ): { manifest: HqV2Manifest; chunks: HqV2Chunk[] } {
   try {
     return runSync(encodeSyncWork(sync, sourceFingerprint));
-  } catch {
+  } catch (error) {
+    if (isHqLiveV2CapacityError(error)) throw error;
     return fail("HQ_V2_INVALID_STATE");
   }
 }
@@ -1037,7 +1075,8 @@ export async function encodeHqLiveV2SyncAsync(
 ): Promise<{ manifest: HqV2Manifest; chunks: HqV2Chunk[] }> {
   try {
     return await runAsync(encodeSyncWork(sync, sourceFingerprint), checkpoint);
-  } catch {
+  } catch (error) {
+    if (isHqLiveV2CapacityError(error)) throw error;
     return fail("HQ_V2_INVALID_STATE");
   }
 }
@@ -1063,7 +1102,8 @@ export async function encodeHqLiveV2SyncOwnedAsync(
       chunks: HqV2Chunk[];
       candidate: { state: HqImplementedSyncState; chunks: Map<string, Buffer> };
     };
-  } catch {
+  } catch (error) {
+    if (isHqLiveV2CapacityError(error)) throw error;
     return fail("HQ_V2_INVALID_STATE");
   }
 }

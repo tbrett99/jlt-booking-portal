@@ -1109,6 +1109,7 @@ export function createHqImplementedEngine(
                   "LEASE_LOST",
                   "SOURCE_BINDING_CHANGED",
                   "INVALID_PERSISTED_STATE",
+                  "STATE_BYTE_CAP_EXCEEDED",
                 ].includes(candidate.code)
               ? candidate.code
               : "SOURCE_OR_STORE_UNAVAILABLE";

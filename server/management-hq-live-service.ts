@@ -300,6 +300,10 @@ export interface HqLiveService {
   resumeStagedInitialImport?(): Promise<
     "resumed" | "notdue" | "busy" | "not_resumable"
   >;
+  /** One-use control-only capacity repair; the store cold-validates all saved bytes. */
+  repairInitialCapacity?(): Promise<
+    "repaired" | "notdue" | "busy" | "not_repairable"
+  >;
   /** Parent must apply its fresh Super Admin access gate before these reads. */
   readPublished(): Promise<HqImplementedState | null>;
   /** Server-only acceptance snapshot; only configured sync-on/read-off is permitted. */
@@ -573,6 +577,64 @@ export function createHqLiveService(
       return status === "resumed" || status === "notdue" || status === "busy"
         ? status
         : "not_resumable";
+    },
+    async repairInitialCapacity() {
+      if (
+        options.onlyInitialPublication !== true ||
+        typeof options.initialImportGuard !== "function"
+      )
+        throw new HqLiveError("CONFIG_INVALID");
+      await guard!();
+      const configuration = config.status();
+      if (
+        configuration.configured !== true ||
+        configuration.configurationCode !== null ||
+        configuration.syncEnabled !== true ||
+        configuration.readEnabled !== false
+      )
+        throw new HqLiveError("CONFIG_INVALID");
+      const store = await guarded(getStore);
+      // This observation selects versions only; it is not validation or authority.
+      // The exact root and every chunk are independently cold-validated again
+      // under the control lock by the separate repair capability below.
+      const observation = store.readProgressSnapshot
+        ? await guarded(() => store.readProgressSnapshot!())
+        : await guarded(() => store.readSnapshot());
+      const control = observation.control;
+      const syncVersion =
+        "stateVersion" in observation
+          ? observation.stateVersion
+          : (observation.sync?.version ?? null);
+      const hasPublished =
+        "hasPublished" in observation
+          ? observation.hasPublished
+          : !!observation.sync?.published;
+      if (
+        !control ||
+        syncVersion === null ||
+        hasPublished ||
+        control.stageStatus !== "needs_attention" ||
+        !["INVALID_PERSISTED_STATE", "STATE_BYTE_CAP_EXCEEDED"].includes(
+          control.lastErrorCode ?? ""
+        ) ||
+        control.consecutiveFailures < 1 ||
+        control.lastAttemptAtMs === null ||
+        control.lastSuccessAtMs !== null ||
+        control.lastPublishAtMs !== null ||
+        control.initialCapacityRepair !== undefined ||
+        typeof store.repairInitialCapacity !== "function"
+      )
+        return "not_repairable";
+      const status = await guarded(() =>
+        store.repairInitialCapacity!(
+          control.version,
+          syncVersion,
+          options.initialImportGuard!
+        )
+      );
+      return status === "repaired" || status === "notdue" || status === "busy"
+        ? status
+        : "not_repairable";
     },
     async invoke() {
       const configuration = config.status();
@@ -859,10 +921,12 @@ export function createHqLiveService(
   const published = service.readPublished.bind(service);
   const validation = service.readValidationSnapshot.bind(service);
   const validationStatus = service.getValidationStatus!.bind(service);
+  const capacityRepair = service.repairInitialCapacity!.bind(service);
   service.invoke = () => inAction(invoke);
   service.getStatus = () => inAction(status);
   service.readPublished = () => inAction(published);
   service.readValidationSnapshot = () => inAction(validation);
   service.getValidationStatus = () => inAction(validationStatus);
+  service.repairInitialCapacity = () => inAction(capacityRepair);
   return service;
 }

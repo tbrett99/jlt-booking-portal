@@ -16,6 +16,7 @@ import {
   HQ_LIVE_V2_ROOT_BYTES,
   HQ_LIVE_V2_MAX_REFS,
   HQ_LIVE_V2_VALIDATION_OPTIONS,
+  HqV2CapacityError,
   encodeHqLiveV2Sync,
   decodeHqLiveV2Sync,
   validateHqV2Manifest,
@@ -281,8 +282,8 @@ describe("offline exact storage codec", () => {
       HQ_LIVE_V2_ROOT_BYTES,
       HQ_LIVE_V2_MAX_REFS,
     ]).toEqual([
-      64 * 1024 * 1024,
       128 * 1024 * 1024,
+      256 * 1024 * 1024,
       512 * 1024,
       1024 * 1024,
       16 * 1024 * 1024,
@@ -630,7 +631,7 @@ describe("strict manifest grammar and independent limits", () => {
     ).toThrow(/^HQ_V2_INVALID_MANIFEST$/);
   });
   it("both compact and expanded profiles independently reject without a 2:1 inference", () => {
-    // Repeated escaped controls make compact exceed 64 MiB while expanded stays below 128 MiB.
+    // Repeated escaped controls make compact exceed 128 MiB while expanded stays below 256 MiB.
     function capacityState(
       records: number,
       strings: number,
@@ -661,7 +662,7 @@ describe("strict manifest grammar and independent limits", () => {
       }
       return state;
     }
-    const state = capacityState(110, 22, "\u0000");
+    const state = capacityState(220, 22, "\u0000");
     expect(hqJsonUtf8Bytes(state)).toBeLessThan(HQ_LIVE_V2_EXPANDED_BYTES);
     const compact = {
       ...state,
@@ -678,17 +679,13 @@ describe("strict manifest grammar and independent limits", () => {
       },
     };
     expect(hqJsonUtf8Bytes(compact)).toBeGreaterThan(HQ_LIVE_V2_COMPACT_BYTES);
-    expect(() => encodeHqLiveV2Sync(state, FP)).toThrow(
-      /^HQ_V2_INVALID_STATE$/
-    );
+    expect(() => encodeHqLiveV2Sync(state, FP)).toThrow(HqV2CapacityError);
     // Plain ASCII duplicated entity+canonical exceeds expanded first, while compact is smaller.
-    const expanded = capacityState(100, 180, "S");
+    const expanded = capacityState(200, 180, "S");
     expect(hqJsonUtf8Bytes(expanded)).toBeGreaterThan(
       HQ_LIVE_V2_EXPANDED_BYTES
     );
-    expect(() => encodeHqLiveV2Sync(expanded, FP)).toThrow(
-      /^HQ_V2_INVALID_STATE$/
-    );
+    expect(() => encodeHqLiveV2Sync(expanded, FP)).toThrow(HqV2CapacityError);
   }, 60000);
 });
 

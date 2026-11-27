@@ -22,11 +22,14 @@ import {
   encodeHqLiveV2SyncAsync,
   encodeHqLiveV2SyncOwnedAsync,
   hqJsonUtf8BytesAsync,
+  isHqLiveV2CapacityError,
   manifestChunkRefs,
   validateHqV2Chunk,
   validateHqV2Manifest,
   HQ_LIVE_V2_CHUNK_ROW_BYTES,
   HQ_LIVE_V2_ROOT_BYTES,
+  HQ_LIVE_V2_OLD_COMPACT_BYTES,
+  HQ_LIVE_V2_OLD_EXPANDED_BYTES,
   type HqV2Manifest,
   type HqV2ChunkRef,
 } from "./management-hq-storage-v2";
@@ -155,6 +158,22 @@ export type HqLiveStagedResumeResult =
   | "notdue"
   | "busy"
   | "not_resumable";
+export interface HqLiveInitialCapacityRepair {
+  format: "staged-initial-capacity-repair-v1";
+  atMs: number;
+  fromControlVersion: number;
+  syncVersion: number;
+  previousErrorCode: "INVALID_PERSISTED_STATE" | "STATE_BYTE_CAP_EXCEEDED";
+  previousAttemptAtMs: number;
+  previousConsecutiveFailures: number;
+  pages: number;
+  recordsRead: number;
+}
+export type HqLiveInitialCapacityRepairResult =
+  | "repaired"
+  | "notdue"
+  | "busy"
+  | "not_repairable";
 export interface HqLiveControl {
   format: "hq-live-control-v1";
   version: number;
@@ -172,6 +191,7 @@ export interface HqLiveControl {
   stageStatus: HqLiveStageStatus;
   initialRecovery?: HqLiveInitialRecovery;
   initialStagedResume?: HqLiveInitialStagedResume;
+  initialCapacityRepair?: HqLiveInitialCapacityRepair;
 }
 export interface HqLiveLease {
   token: string;
@@ -310,6 +330,40 @@ function controlRow(row: RowDataPacket): HqLiveControl {
     )
       fail("INVALID_PERSISTED_STATE");
   }
+  if (Object.prototype.hasOwnProperty.call(c, "initialCapacityRepair")) {
+    const repair = c.initialCapacityRepair;
+    const keys = [
+      "format",
+      "atMs",
+      "fromControlVersion",
+      "syncVersion",
+      "previousErrorCode",
+      "previousAttemptAtMs",
+      "previousConsecutiveFailures",
+      "pages",
+      "recordsRead",
+    ];
+    if (
+      !repair ||
+      typeof repair !== "object" ||
+      Array.isArray(repair) ||
+      Object.keys(repair).length !== keys.length ||
+      keys.some(key => !Object.prototype.hasOwnProperty.call(repair, key)) ||
+      repair.format !== "staged-initial-capacity-repair-v1" ||
+      !integer(repair.atMs, 1) ||
+      !integer(repair.fromControlVersion, 1, MAX_VERSION) ||
+      repair.fromControlVersion >= c.version ||
+      !integer(repair.syncVersion, 1, MAX_VERSION) ||
+      !["INVALID_PERSISTED_STATE", "STATE_BYTE_CAP_EXCEEDED"].includes(
+        repair.previousErrorCode
+      ) ||
+      !integer(repair.previousAttemptAtMs, 1) ||
+      !integer(repair.previousConsecutiveFailures, 1, 1000000) ||
+      !integer(repair.pages, 1, 1000) ||
+      !integer(repair.recordsRead, 1, 100000)
+    )
+      fail("INVALID_PERSISTED_STATE");
+  }
   return c;
 }
 /** Bounded control validation shared with explicitly unchecked progress observation. */
@@ -343,11 +397,38 @@ type VerifiedV2 = {
   chunks: Map<string, Buffer>;
   state: HqImplementedSyncState;
 };
+type ValidatedSyncFacts = Readonly<{
+  version: number;
+  publishedVersion: number | null;
+}>;
+function syncFacts(state: HqImplementedSyncState): ValidatedSyncFacts {
+  return Object.freeze({
+    version: state.version,
+    publishedVersion: state.published?.version ?? null,
+  });
+}
+type SyncRows = {
+  manifest: HqV2Manifest | null;
+  chunks: Map<string, string>;
+};
+type FullSyncResult = SyncRows & { state: HqImplementedSyncState | null };
+type SyncVerificationResult = SyncRows & { facts: ValidatedSyncFacts | null };
+type CompletionProof = {
+  sourceFingerprint: string;
+  rootCanonical: string;
+  chunks: Map<string, Buffer>;
+  facts: ValidatedSyncFacts;
+  token: string;
+  fencingNumber: number;
+  scope: string;
+  expiresAt: number;
+};
 // One module-private result, never authority/config/guards/actors/leases. The
 // opaque parent SHA binds all seven raw settings plus DB URL; Pool identity is
 // additionally mandatory. Only unfinished initial V2 states qualify. Original
-// codec caps bound retained state to 128 MiB expanded JSON, chunks to 64 MiB
-// decoded bytes and canonical root to 16 MiB UTF-8. No publication is retained.
+// codec caps bound logical retained state to 256 MiB expanded JSON, chunks to
+// 128 MiB decoded bytes and canonical root to 16 MiB UTF-8: 400 MiB logical,
+// NOT an RSS bound. No publication is retained.
 // Non-sliding 60s monotonic TTL, checked/cleared on access; no timers or work.
 const INITIAL_REUSE_TTL_MS = 60_000;
 let initialVerifiedV2:
@@ -436,8 +517,14 @@ export function createHqLiveStore(
   // the current control token/fence/DB deadlines independently below.
   let verifiedV2: VerifiedV2 | undefined;
   const pendingV2 = new WeakMap<PoolConnection, VerifiedV2>();
+  // One-use, request/store-local publication proof, NEVER a shared read result.
+  // Retains only owned emitted bytes and validated scalars, not the entity tree.
+  // Non-sliding monotonic expiry; no timer, budget extension or lease authority.
+  let committedCompletionProof: CompletionProof | undefined;
+  const pendingCompletionProof = new WeakMap<PoolConnection, CompletionProof>();
   const clearVerifiedV2 = () => {
     verifiedV2 = undefined;
+    committedCompletionProof = undefined;
     // Also invalidate an opt-in result if a default caller of the same pool
     // encounters a write/error/config denial. Never retain stale shared state.
     if (initialVerifiedV2?.pool === pool) initialVerifiedV2 = undefined;
@@ -465,7 +552,8 @@ export function createHqLiveStore(
   }
   async function transaction<T>(
     work: (c: PoolConnection) => Promise<T>,
-    openingAuthority?: () => Promise<void>
+    openingAuthority?: () => Promise<void>,
+    finalAuthority?: () => Promise<void>
   ): Promise<T> {
     let c: PoolConnection | undefined;
     try {
@@ -497,10 +585,16 @@ export function createHqLiveStore(
         if (databaseNow + Math.ceil(performance.now() - sampledAt) >= deadline)
           fail("LEASE_LOST");
       }
+      if (finalAuthority) await finalAuthority();
       assertBinding(finalBinding, binding());
       await c.commit();
       const candidate = pendingV2.get(c);
       if (candidate) retainCandidate(candidate);
+      // Promotion is strictly AFTER the actual SQL COMMIT resolves. Neither a
+      // pending read nor root UPDATE/zero CAS/rollback can establish this proof.
+      const completionProof = pendingCompletionProof.get(c);
+      if (completionProof && performance.now() < completionProof.expiresAt)
+        committedCompletionProof = completionProof;
       return result;
     } catch (error) {
       clearVerifiedV2();
@@ -517,6 +611,7 @@ export function createHqLiveStore(
       if (c) {
         renewalDeadlines.delete(c);
         pendingV2.delete(c);
+        pendingCompletionProof.delete(c);
       }
       c?.release();
     }
@@ -598,21 +693,56 @@ export function createHqLiveStore(
     }
     return chunks;
   }
+  function fullSync(
+    c: PoolConnection,
+    f: string,
+    cooperative?: boolean,
+    lease?: HqLiveLease
+  ): Promise<FullSyncResult>;
+  function fullSync(
+    c: PoolConnection,
+    f: string,
+    cooperative: boolean,
+    lease: HqLiveLease | undefined,
+    purpose: "verify" | "complete"
+  ): Promise<SyncVerificationResult>;
   async function fullSync(
     c: PoolConnection,
     f: string,
     cooperative = true,
-    lease?: HqLiveLease
-  ): Promise<{
-    state: HqImplementedSyncState | null;
-    manifest: HqV2Manifest | null;
-    chunks: Map<string, string>;
-  }> {
+    lease?: HqLiveLease,
+    purpose: "state" | "verify" | "complete" = "state"
+  ): Promise<FullSyncResult | SyncVerificationResult> {
+    const loaded = (
+      state: HqImplementedSyncState | null,
+      manifest: HqV2Manifest | null,
+      chunks: Map<string, string>
+    ): FullSyncResult | SyncVerificationResult =>
+      purpose === "state"
+        ? { state, manifest, chunks }
+        : { facts: state ? syncFacts(state) : null, manifest, chunks };
+    // Only completion may consume the store-local publication proof. Selecting
+    // it consumes it even on failure; all independent guards remain mandatory.
+    let completionProof: CompletionProof | undefined;
+    if (purpose === "complete") {
+      const candidate = committedCompletionProof;
+      committedCompletionProof = undefined;
+      if (
+        candidate &&
+        lease &&
+        candidate.token === lease.token &&
+        candidate.fencingNumber === lease.fencingNumber &&
+        candidate.sourceFingerprint === f &&
+        candidate.scope === initialReuseScope &&
+        performance.now() < candidate.expiresAt
+      )
+        completionProof = candidate;
+    }
     const result = await rows(c, HQ_LIVE_SYNC_DATASET_ID);
     if (!result.length) {
       clearVerifiedV2();
       assertBinding(f, binding());
-      return { state: null, manifest: null, chunks: new Map() };
+      return loaded(null, null, new Map());
     }
     const root = parseRow(
       result[0],
@@ -663,7 +793,7 @@ export function createHqLiveStore(
       }
       assertBinding(f, envelope.sourceFingerprint);
       assertBinding(f, binding());
-      return { state: envelope.sync, manifest: null, chunks: new Map() };
+      return loaded(envelope.sync, null, new Map());
     }
     if (hash(root.sourceFingerprint)) assertBinding(f, root.sourceFingerprint);
     let refs: HqV2ChunkRef[];
@@ -689,16 +819,22 @@ export function createHqLiveStore(
     if (!cooperative) clearVerifiedV2();
     const rootCanonical = cooperative ? canonicalHqJson(root) : "";
     const available =
-      initialReuseScope === undefined ? verifiedV2 : sharedResult();
+      completionProof ??
+      (initialReuseScope === undefined ? verifiedV2 : sharedResult());
     if (
       available &&
       (available.sourceFingerprint !== f ||
         available.rootCanonical !== rootCanonical ||
-        available.state.version !== root.syncVersion)
-    )
+        ("facts" in available
+          ? available.facts.version
+          : available.state.version) !== root.syncVersion)
+    ) {
       clearVerifiedV2();
+      completionProof = undefined;
+    }
     const retained =
-      initialReuseScope === undefined ? verifiedV2 : sharedResult();
+      completionProof ??
+      (initialReuseScope === undefined ? verifiedV2 : sharedResult());
     const ownedChunks = new Map<string, Buffer>();
     if (cooperative) {
       let exact = !!retained && retained.chunks.size === chunks.size;
@@ -711,7 +847,19 @@ export function createHqLiveStore(
           ownedChunks.set(ref.id, Buffer.from(bytes));
           await cpu!();
         }
+        if (completionProof && performance.now() >= completionProof.expiresAt)
+          exact = false;
         if (exact) {
+          if (purpose !== "state") {
+            const facts =
+              "facts" in retained!
+                ? retained.facts
+                : syncFacts(retained!.state);
+            assertBinding(f, binding());
+            return { facts, manifest: root, chunks };
+          }
+          // Publication proofs are never selected for full/public/engine reads.
+          if (!("state" in retained!)) fail("INVALID_PERSISTED_STATE");
           const state = await cloneHqJsonAsync(retained!.state, cpu!);
           assertBinding(f, binding());
           return { state, manifest: root, chunks };
@@ -734,7 +882,10 @@ export function createHqLiveStore(
         (initialReuseScope === undefined ||
           (state.published === null && state.stage))
       ) {
-        const ownedState = await cloneHqJsonAsync(state, cpu!);
+        // A cold verification-only decode has no mutable consumer: its decoded
+        // tree is already independently owned and may be retained directly.
+        const ownedState =
+          purpose === "state" ? await cloneHqJsonAsync(state, cpu!) : state;
         assertBinding(f, binding());
         pendingV2.set(c, {
           sourceFingerprint: f,
@@ -750,7 +901,7 @@ export function createHqLiveStore(
       fail("INVALID_PERSISTED_STATE");
     }
     assertBinding(f, binding()); // no state exposure after an awaited binding drift
-    return { state: state!, manifest: root, chunks };
+    return loaded(state!, root, chunks);
   }
   async function sync(
     c: PoolConnection,
@@ -1074,6 +1225,179 @@ export function createHqLiveStore(
         return "resumed";
       }, verifyAuthority);
     },
+    async repairInitialCapacity(
+      expectedControlVersion,
+      expectedSyncVersion,
+      authority
+    ) {
+      // A distinct protected repair, never ordinary attention acquisition or
+      // Resume generalization. No source work, lease, root migration or reset.
+      if (typeof authority !== "function") fail("AUTH_DENIED");
+      let originalBinding: string | undefined;
+      let denial: HqLiveError | undefined;
+      function repairBinding(): string {
+        const status = config.status();
+        const fingerprint = config.sourceFingerprint();
+        if (
+          status.configured !== true ||
+          status.configurationCode !== null ||
+          status.syncEnabled !== true ||
+          status.readEnabled !== false ||
+          !hash(fingerprint)
+        )
+          fail("CONFIG_INVALID");
+        if (originalBinding) assertBinding(originalBinding, fingerprint!);
+        return fingerprint!;
+      }
+      async function verifyAuthority(): Promise<void> {
+        let before: string | undefined;
+        try {
+          before = repairBinding();
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        // The parent's seven-setting authority is mandatory even on a store
+        // binding failure. The first denial is permanently latched.
+        try {
+          await authority();
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("AUTH_DENIED");
+        }
+        try {
+          const after = repairBinding();
+          if (before) assertBinding(before, after);
+        } catch (error) {
+          denial ??=
+            error instanceof HqLiveError
+              ? error
+              : new HqLiveError("CONFIG_INVALID");
+        }
+        if (denial) throw denial;
+        originalBinding ??= before!;
+      }
+      await verifyAuthority();
+      if (
+        !integer(expectedControlVersion, 1, MAX_VERSION) ||
+        !integer(expectedSyncVersion, 1, MAX_VERSION)
+      )
+        return "not_repairable";
+      return transaction(
+        async c => {
+          await verifyAuthority();
+          // Identical protected await boundary to Resume: every individual read,
+          // clock, batch and UPDATE checks authority before/after, even on rejection.
+          const guarded = new Proxy(c, {
+            get(target, property) {
+              if (property === "execute")
+                return async (...args: unknown[]) => {
+                  await verifyAuthority();
+                  try {
+                    return await (
+                      target.execute as (...args: unknown[]) => Promise<unknown>
+                    ).apply(target, args);
+                  } finally {
+                    await verifyAuthority();
+                  }
+                };
+              const value = Reflect.get(target, property, target);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+          const controlRows = await rows(
+            guarded,
+            HQ_LIVE_CONTROL_DATASET_ID,
+            true
+          );
+          if (!controlRows.length) return "not_repairable";
+          const control = controlRow(controlRows[0]);
+          assertBinding(originalBinding!, control.sourceFingerprint);
+          const lockedNow = await dbNow(guarded);
+          if (control.version !== expectedControlVersion)
+            return "not_repairable";
+          if (control.leaseToken !== null)
+            return control.leaseExpiresAtMs! > lockedNow
+              ? "busy"
+              : "not_repairable";
+          if (
+            control.stageStatus !== "needs_attention" ||
+            (control.lastErrorCode !== "INVALID_PERSISTED_STATE" &&
+              control.lastErrorCode !== "STATE_BYTE_CAP_EXCEEDED") ||
+            control.consecutiveFailures < 1 ||
+            control.lastAttemptAtMs === null ||
+            control.lastSuccessAtMs !== null ||
+            control.lastPublishAtMs !== null ||
+            control.initialCapacityRepair !== undefined
+          )
+            return "not_repairable";
+          // Independent strict full decode, never a cooperative cache proof. The
+          // unchanged root/chunks must be valid under the expanded live profile.
+          const loaded = await fullSync(guarded, originalBinding!, false);
+          const state = loaded.state;
+          const manifest = loaded.manifest;
+          const stage = state?.stage;
+          if (
+            !manifest ||
+            manifest.compactBytes > HQ_LIVE_V2_OLD_COMPACT_BYTES ||
+            manifest.expandedBytes > HQ_LIVE_V2_OLD_EXPANDED_BYTES ||
+            (manifest.compactBytes < 56 * 1024 * 1024 &&
+              manifest.expandedBytes < 112 * 1024 * 1024) ||
+            !state ||
+            state.version !== expectedSyncVersion ||
+            state.published !== null ||
+            !stage ||
+            stage.kind !== "backfill" ||
+            stage.basePublishedVersion !== null ||
+            stage.metadata === null ||
+            !integer(stage.pages, 1, 999) ||
+            !integer(stage.recordsRead, 1, 99999) ||
+            Object.keys(stage.entities).length === 0
+          )
+            return "not_repairable";
+          const counts = stage.metadata.counts;
+          if (
+            !counts ||
+            !integer(counts.bookingCount, 0, 100000) ||
+            !integer(counts.businessCount, 0, 100000) ||
+            counts.bookingCount + counts.businessCount === 0 ||
+            counts.bookingCount + counts.businessCount > 100000 ||
+            stage.feedKeys.booking.length > counts.bookingCount ||
+            stage.feedKeys.business.length > counts.businessCount
+          )
+            return "not_repairable";
+          const now = await dbNow(guarded); // fresh after the entire strict read
+          if (Date.parse(stage.metadata.expiresAt) <= now)
+            return "not_repairable";
+          if (control.nextDueAtMs > now) return "notdue";
+          if (control.fencingNumber >= MAX_VERSION) fail("VERSION_EXHAUSTED");
+          control.initialCapacityRepair = {
+            format: "staged-initial-capacity-repair-v1",
+            atMs: now,
+            fromControlVersion: control.version,
+            syncVersion: state.version,
+            previousErrorCode: control.lastErrorCode,
+            previousAttemptAtMs: control.lastAttemptAtMs,
+            previousConsecutiveFailures: control.consecutiveFailures,
+            pages: stage.pages,
+            recordsRead: stage.recordsRead,
+          };
+          control.fencingNumber++;
+          control.stageStatus = "progress";
+          control.lastErrorCode = null;
+          // Exactly one existing control CAS. Original due/history/cursors and all
+          // root/chunk/state-version bytes remain untouched. Finish is separate.
+          await saveControl(guarded, control);
+          return "repaired";
+        },
+        verifyAuthority,
+        verifyAuthority
+      );
+    },
     readProgressSnapshot: () => readHqProgressSnapshot(pool, config),
     async readSnapshot() {
       const f = binding();
@@ -1091,6 +1415,7 @@ export function createHqLiveStore(
     },
     acquireInitialPublication: () => store.acquire(true),
     async acquire(initialOnly = false) {
+      committedCompletionProof = undefined;
       const f = binding(true);
       return transaction(async c => {
         // INSERT IGNORE is initialization only; inspect by primary ID to reject foreign/sample collisions.
@@ -1116,10 +1441,12 @@ export function createHqLiveStore(
         );
         const control = (await locked(c, f))!;
         if (!control) fail("STORE_UNAVAILABLE");
-        const state = await sync(c, f); // reject corrupt or differently-bound state BEFORE granting a lease/provider request
-        if (initialized.affectedRows === 1 && state)
+        // Reject corruption/binding drift BEFORE granting a lease/provider
+        // request, without cloning a full tree merely to inspect presence.
+        const { facts } = await fullSync(c, f, true, undefined, "verify");
+        if (initialized.affectedRows === 1 && facts)
           fail("INVALID_PERSISTED_STATE"); // missing control is not an implicit protected reset
-        if (initialOnly && state?.published)
+        if (initialOnly && facts && facts.publishedVersion !== null)
           return { status: "already_complete" };
         const now = await dbNow(c);
         if (control.leaseToken && control.leaseExpiresAtMs! > now)
@@ -1172,6 +1499,7 @@ export function createHqLiveStore(
           });
         },
         async compareAndSwapSync(expected, next) {
+          committedCompletionProof = undefined; // a new write invalidates prior publication proof
           assertBinding(lease.sourceFingerprint, binding(true));
           if (
             !integer(next.version, 1, MAX_VERSION) ||
@@ -1189,6 +1517,7 @@ export function createHqLiveStore(
           // later transaction decision depends on a mutable caller object.
           let encoded: ReturnType<typeof encodeHqLiveV2Sync>;
           let preparedCandidate: VerifiedV2 | undefined;
+          let preparedCompletionProof: CompletionProof | undefined;
           let legacy: string | null = null;
           const envelope: HqLiveSyncEnvelope = {
             format: "hq-live-sync-v1",
@@ -1224,6 +1553,26 @@ export function createHqLiveStore(
                   state: owned.candidate.state,
                 };
               }
+              if (
+                owned.candidate.state.stage === null &&
+                owned.candidate.state.published !== null
+              ) {
+                preparedCompletionProof = {
+                  sourceFingerprint: lease.sourceFingerprint,
+                  rootCanonical: canonicalHqJson(owned.manifest),
+                  chunks: new Map(
+                    Array.from(owned.candidate.chunks, ([id, bytes]) => [
+                      id,
+                      Buffer.from(bytes),
+                    ])
+                  ),
+                  facts: syncFacts(owned.candidate.state),
+                  token: lease.token,
+                  fencingNumber: lease.fencingNumber,
+                  scope: initialReuseScope,
+                  expiresAt: performance.now() + INITIAL_REUSE_TTL_MS,
+                };
+              }
             }
             if (
               encoded.manifest.syncVersion !== nextVersion ||
@@ -1239,6 +1588,7 @@ export function createHqLiveStore(
             if (initialReuseScope !== undefined) clearVerifiedV2();
             if (cpu.denial()) throw cpu.denial();
             if (error instanceof HqLiveError) throw error;
+            if (isHqLiveV2CapacityError(error)) fail("STATE_BYTE_CAP_EXCEEDED");
             fail("INVALID_PERSISTED_STATE");
           }
           const manifestSerialized = JSON.stringify(encoded!.manifest);
@@ -1260,9 +1610,10 @@ export function createHqLiveStore(
                 c,
                 lease.sourceFingerprint,
                 true,
-                lease
+                lease,
+                "verify"
               );
-              const current = loaded.state;
+              const current = loaded.facts;
               if ((current?.version ?? null) !== expected) throw casMismatch;
               const useV2 = loaded.manifest !== null || legacy === null;
               const serialized = useV2 ? manifestSerialized : legacy!;
@@ -1348,6 +1699,8 @@ export function createHqLiveStore(
               if (r.affectedRows !== 1) fail("LEASE_LOST");
               if (useV2 && preparedCandidate)
                 pendingV2.set(c, preparedCandidate);
+              if (useV2 && preparedCompletionProof)
+                pendingCompletionProof.set(c, preparedCompletionProof);
               // A sync write can itself cross expiry: staging, 410 intent/cleanup and publication all roll back.
               await guard(c, lease);
               if (useV2) {
@@ -1366,7 +1719,7 @@ export function createHqLiveStore(
               }
               if (
                 completePublicationVersion !== null &&
-                completePublicationVersion !== current?.published?.version
+                completePublicationVersion !== current?.publishedVersion
               ) {
                 control.lastPublishAtMs = now;
                 await guard(c, lease); // final success/control update is guarded too
@@ -1393,35 +1746,48 @@ export function createHqLiveStore(
           !(HQ_LIVE_ERROR_CODES as readonly unknown[]).includes(
             completion.errorCode
           ))
-      )
+      ) {
+        committedCompletionProof = undefined;
         fail("INVALID_PERSISTED_STATE");
-      await transaction(async c => {
-        const opening = await guard(c, lease);
-        const now = opening.now;
-        await renewCpuLease(c, lease);
-        await fullSync(c, lease.sourceFingerprint, true, lease); // strong validation remains mandatory
-        const verified = await guard(c, lease);
-        const control = verified.control; // includes any fenced CPU renewals
-        control.stageStatus = completion.status;
-        control.nextDueAtMs = verified.now + completion.delaySeconds * 1000;
-        control.lastErrorCode = completion.errorCode ?? null;
-        if (completion.status === "applied") {
-          control.lastSuccessAtMs = now;
-          control.consecutiveFailures = 0;
-        } else if (
-          completion.status === "backoff" ||
-          completion.status === "needs_attention"
-        )
-          control.consecutiveFailures = Math.min(
-            control.consecutiveFailures + 1,
-            1000000
+      }
+      try {
+        await transaction(async c => {
+          const opening = await guard(c, lease);
+          const now = opening.now;
+          await renewCpuLease(c, lease);
+          await fullSync(c, lease.sourceFingerprint, true, lease, "complete"); // strong validation remains mandatory
+          const verified = await guard(c, lease);
+          const control = verified.control; // includes any fenced CPU renewals
+          control.stageStatus = completion.status;
+          control.nextDueAtMs = verified.now + completion.delaySeconds * 1000;
+          control.lastErrorCode = completion.errorCode ?? null;
+          if (completion.status === "applied") {
+            control.lastSuccessAtMs = now;
+            control.consecutiveFailures = 0;
+          } else if (
+            completion.status === "backoff" ||
+            completion.status === "needs_attention"
+          )
+            control.consecutiveFailures = Math.min(
+              control.consecutiveFailures + 1,
+              1000000
+            );
+          else control.consecutiveFailures = 0;
+          // Releasing the token is not permission to cross its DB deadlines
+          // during the final UPDATE/authority await/COMMIT boundary.
+          retainRenewalDeadline(
+            c,
+            control.leaseExpiresAtMs!,
+            control.leaseHardExpiresAtMs!
           );
-        else control.consecutiveFailures = 0;
-        control.leaseToken = null;
-        control.leaseExpiresAtMs = null;
-        control.leaseHardExpiresAtMs = null;
-        await saveControl(c, control);
-      });
+          control.leaseToken = null;
+          control.leaseExpiresAtMs = null;
+          control.leaseHardExpiresAtMs = null;
+          await saveControl(c, control);
+        });
+      } finally {
+        committedCompletionProof = undefined;
+      }
     },
   };
   return store;
@@ -1439,6 +1805,11 @@ export interface HqLiveStore {
     expectedSyncVersion: number,
     authority: () => Promise<void>
   ): Promise<HqLiveStagedResumeResult>;
+  repairInitialCapacity?(
+    expectedControlVersion: number,
+    expectedSyncVersion: number,
+    authority: () => Promise<void>
+  ): Promise<HqLiveInitialCapacityRepairResult>;
   acquire(initialOnly?: boolean): Promise<HqLiveAcquireResult>;
   acquireInitialPublication?(): Promise<HqLiveAcquireResult>;
   renew(lease: HqLiveLease): Promise<void>;

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { getDb, getRawDbPool } from "./db";
 import { getHqReport, exportHqReportCsv } from "./management-hq-engine";
+import type { HqReportOptions } from "../shared/management-hq-report";
 import {
   createHqImplementedSampleDirectory,
   runHqImplementedSampleScenario,
@@ -33,6 +34,7 @@ import type { HqInitialValidationResult } from "../shared/management-hq-initial-
 import { checkHqFirstPage } from "./management-hq-first-page-check";
 import { recoverHqEmptyInitialImport } from "./management-hq-initial-recovery";
 import { resumeHqStagedInitialImport } from "./management-hq-staged-resume";
+import { repairHqInitialCapacity } from "./management-hq-capacity-repair";
 import { hqReadDeadline } from "./management-hq-read-deadline";
 import {
   getHqLiveReport,
@@ -110,6 +112,9 @@ const range = z
     month: z.number().int().min(1).max(12).optional(),
   })
   .strict();
+const reportRange = range.extend({
+  detailPage: z.number().int().min(0).max(799).optional(),
+});
 
 function initialImportGuard(
   db: unknown,
@@ -145,7 +150,8 @@ function initialImportGuard(
 async function readReport(
   db: unknown,
   user: Parameters<typeof requireFreshHqSuperAdmin>[1],
-  input: z.infer<typeof range>
+  input: z.infer<typeof range>,
+  options?: HqReportOptions
 ) {
   const start = boundary();
   if (start.mode === "disabled")
@@ -168,7 +174,7 @@ async function readReport(
       deny(
         "Management HQ live reporting is awaiting a verified publication. Values are unavailable, not zero."
       );
-    const report = await getHqLiveReport(state, db, input);
+    const report = await getHqLiveReport(state, db, input, undefined, options);
     const after = await service.getStatus();
     if (after.stateVersion !== before.stateVersion)
       throw new Error("HQ_STATE_CHANGED");
@@ -193,7 +199,8 @@ async function readReport(
   const report = await getHqReport(
     stored.state,
     createHqImplementedSampleDirectory(),
-    input
+    input,
+    options
   );
   await freshAuthority(db, user);
   assertBoundary(start);
@@ -205,6 +212,22 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  repairInitialImportCapacity: procedure
+    .input(z.void())
+    .mutation(async ({ ctx }) => {
+      try {
+        const start = boundary();
+        const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+        const result = await repairHqInitialCapacity({
+          config: start.config,
+          guard,
+        });
+        await guard();
+        return result;
+      } catch (error) {
+        safeError(error);
+      }
+    }),
   finishInitialImportBatch: procedure
     .input(z.void())
     .mutation(async ({ ctx }) => {
@@ -446,9 +469,14 @@ export const managementHqRouter = router({
         safeError(error);
       }
     }),
-  report: procedure.input(range).query(async ({ ctx, input }) => {
+  report: procedure.input(reportRange).query(async ({ ctx, input }) => {
     try {
-      return (await readReport(ctx.hqDb, ctx.user, input)).report;
+      const { detailPage, ...filters } = input;
+      return (
+        await readReport(ctx.hqDb, ctx.user, filters, {
+          details: { kind: "page", page: detailPage ?? 0 },
+        })
+      ).report;
     } catch (error) {
       safeError(error);
     }

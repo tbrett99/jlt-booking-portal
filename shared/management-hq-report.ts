@@ -163,6 +163,10 @@ export interface HqAgentReportRow {
   cancelledCount: number;
   attributionState?: "provisional_current_owner" | "verified_original_seller";
 }
+/** Detail selection only; totals and identity resolution cover the full period. */
+export interface HqReportOptions {
+  details: { kind: "summary" } | { kind: "page"; page: number };
+}
 export interface HqReport {
   status: "available" | "unavailable";
   unavailableReason: string | null;
@@ -189,6 +193,13 @@ export interface HqReport {
   bookings: HqBookingDrilldown[];
   undatedExceptions: HqBookingDrilldown[];
   exportComplete: boolean;
+  detailMode?: "summary" | "page";
+  detailPage?: {
+    page: number;
+    pageSize: 25;
+    totalRows: number;
+    totalsComplete: true;
+  };
   limitations: string[];
   sourceMode?: "live" | "sample";
   stateVersion?: number | null;

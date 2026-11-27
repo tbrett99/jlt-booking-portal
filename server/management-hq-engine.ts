@@ -4,7 +4,7 @@ import type { HqWireMemberLink } from '../shared/management-hq-wire';
 import type { HqImplementedState } from './management-hq-ingestion';
 import { hqAssignedStaffSourceCandidate, hqCurrentOwnerSourceCandidate, projectHqWireBooking } from './management-hq-projection';
 import { validateHqBookingPage, validateHqChangePage } from './management-hq-contract';
-import type { HqAgentReportRow, HqBookingDrilldown, HqCommissionPassthrough, HqMoneyCoverage, HqReport, HqReportPerson, HqReportTotals } from '../shared/management-hq-report';
+import type { HqAgentReportRow, HqBookingDrilldown, HqCommissionPassthrough, HqMoneyCoverage, HqReport, HqReportOptions, HqReportPerson, HqReportTotals } from '../shared/management-hq-report';
 export type { HqReport } from '../shared/management-hq-report';
 
 export interface HqStoredRecord {
@@ -299,8 +299,11 @@ function commissionPassthrough(c: HqCommissionResult, b: HqBooking): HqCommissio
   const a = (amount: HqAmount) => known(amount, b) === null ? null : amount.amount;
   return { basis: c.basis, complete: c.complete, netDistributableCommission: a(c.netDistributableCommission), agentCommission: a(c.agentCommission), jltRetainedCommission: a(c.jltRetainedCommission), cardProcessingFeesIncluded: c.cardProcessingFeesIncluded, vatIncluded: c.vatIncluded, ptsIncluded: c.ptsIncluded, terms: { agentFraction: c.terms.agentFraction, jltFraction: c.terms.jltFraction, state: c.terms.state }, roundingBasis: c.roundingBasis, roundingResidual: a(c.roundingResidual), limitations: [...c.limitations] };
 }
-export async function getHqReport(state: HqState | HqImplementedState, directory: HqIdentityDirectory, filters: { year: number; month?: number }): Promise<HqReport> {
+export async function getHqReport(state: HqState | HqImplementedState, directory: HqIdentityDirectory, filters: { year: number; month?: number }, options?: HqReportOptions): Promise<HqReport> {
   if (!Number.isInteger(filters.year) || filters.year < 1900 || filters.year > 9999 || (filters.month !== undefined && (!Number.isInteger(filters.month) || filters.month < 1 || filters.month > 12))) throw new Error('Invalid HQ report period');
+  const details = options?.details;
+  if (options !== undefined && (!details || !['summary', 'page'].includes(details.kind))) throw new Error('Invalid HQ report details');
+  if (details?.kind === 'page' && (!Number.isSafeInteger(details.page) || details.page < 0 || details.page > 799)) throw new Error('Invalid HQ report detail page');
   const implemented = 'wireVersion' in state ? state : null;
   const legacy = 'envelope' in state ? state : null;
   const metadata = implemented?.metadata;
@@ -404,6 +407,26 @@ export async function getHqReport(state: HqState | HqImplementedState, directory
     group.rows.push(b);
   }
   result.agents = Array.from(agents.values()).map(({ person, rows }): HqAgentReportRow => ({ agent: person, totals: totals(rows), pendingCount: rows.filter(b => b.status === 'pending').length, cancelledCount: rows.filter(b => b.status === 'cancelled').length, ...(implemented ? { attributionState: 'provisional_current_owner' as const } : {}) })).sort((a, b) => a.agent.userId - b.agent.userId);
+  // Output selection only: all totals, cohorts and identity checks above are complete.
+  if (details?.kind === 'summary') {
+    result.exportComplete = result.bookings.length + result.undatedExceptions.length === 0;
+    result.bookings = [];
+    result.undatedExceptions = [];
+    result.detailMode = 'summary';
+  } else if (details?.kind === 'page') {
+    const seen = new Set<string>();
+    const rows = [...result.bookings, ...result.undatedExceptions].sort((a, b) => a.id.localeCompare(b.id)).filter(row => { if (seen.has(row.id)) return false; seen.add(row.id); return true; });
+    const totalRows = rows.length;
+    if (details.page > 0 && details.page * 25 >= totalRows) throw new Error('HQ report detail page out of range');
+    if (totalRows > 25 || details.page > 0) {
+      const pageRows = rows.slice(details.page * 25, (details.page + 1) * 25);
+      result.bookings = pageRows.filter(row => row.reportingDate !== null);
+      result.undatedExceptions = pageRows.filter(row => row.reportingDate === null);
+      result.exportComplete = false;
+      result.detailMode = 'page';
+      result.detailPage = { page: details.page, pageSize: 25, totalRows, totalsComplete: true };
+    }
+  }
   if (Buffer.byteLength(JSON.stringify(result)) > REPORT_MAX_BYTES) return unavailable('REPORT_BYTE_CAP_EXCEEDED');
   return result;
 }

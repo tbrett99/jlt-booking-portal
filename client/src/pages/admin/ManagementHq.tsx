@@ -9,6 +9,10 @@ import type { HqLiveStatusDto } from "../../../../server/management-hq-live-serv
 import type { HqConnectionCheckResult } from "@shared/management-hq-connection-check";
 import type { HqInitialImportResult } from "@shared/management-hq-initial-import";
 import type { HqInitialValidationResult } from "@shared/management-hq-initial-validation";
+import {
+  HQ_INITIAL_CAPACITY_REPAIR_MESSAGES as CAPACITY_REPAIR_MESSAGES,
+  type HqInitialCapacityRepairResult,
+} from "@shared/management-hq-capacity-repair";
 import type {
   HqBookingDrilldown,
   HqMoneyCoverage,
@@ -55,6 +59,91 @@ const queryOptions = {
 const panel = "rounded-xl border border-border bg-card p-4 sm:p-5";
 const cell = "px-3 py-3 align-top";
 const tableClass = "w-full text-left text-sm";
+
+type DetailPage = {
+  page: number;
+  pageSize: 25;
+  totalRows: number;
+  totalsComplete: true;
+};
+
+/** Undefined is the old full-body contract; null rejects a malformed page. */
+function safeDetailPage(
+  value: unknown,
+  requestedPage: number
+): DetailPage | null | undefined {
+  if (!value || typeof value !== "object") return null;
+  const report = value as Record<string, unknown>;
+  if (!("detailMode" in report) && !("detailPage" in report))
+    return requestedPage === 0 ? undefined : null;
+  const detail = report.detailPage as Record<string, unknown> | null;
+  if (
+    report.detailMode !== "page" ||
+    !detail ||
+    !safeCount(detail.page) ||
+    detail.page > 799 ||
+    detail.page !== requestedPage ||
+    detail.pageSize !== PAGE_SIZE ||
+    !safeCount(detail.totalRows) ||
+    detail.totalRows > 20000 ||
+    detail.totalsComplete !== true ||
+    detail.page >= Math.max(1, Math.ceil(detail.totalRows / PAGE_SIZE)) ||
+    !Array.isArray(report.bookings) ||
+    !Array.isArray(report.undatedExceptions)
+  )
+    return null;
+  const files = [...report.bookings, ...report.undatedExceptions];
+  if (
+    files.length !==
+      Math.min(PAGE_SIZE, detail.totalRows - detail.page * PAGE_SIZE) ||
+    files.some(file => !file || typeof file.id !== "string") ||
+    new Set(files.map(file => file.id)).size !== files.length
+  )
+    return null;
+  // Retain only the explicit bounded contract, never arbitrary response fields.
+  return {
+    page: detail.page,
+    pageSize: PAGE_SIZE,
+    totalRows: detail.totalRows,
+    totalsComplete: true,
+  };
+}
+
+// Only unresolved operation tokens survive unmount. No settings, actor objects,
+// source values or results are retained. Mounted observers receive lock state only.
+const pendingCapacityRepairs = new Map<number, symbol>();
+const capacityRepairListeners = new Map<
+  number,
+  Set<(pending: boolean) => void>
+>();
+function notifyCapacityRepair(actorId: number) {
+  capacityRepairListeners
+    .get(actorId)
+    ?.forEach(listener => listener(pendingCapacityRepairs.has(actorId)));
+}
+function useCapacityRepairPending(actorId: number) {
+  const [pending, setPending] = useState(() =>
+    pendingCapacityRepairs.has(actorId)
+  );
+  useEffect(() => {
+    const listeners = capacityRepairListeners.get(actorId) ?? new Set();
+    capacityRepairListeners.set(actorId, listeners);
+    listeners.add(setPending);
+    setPending(pendingCapacityRepairs.has(actorId));
+    return () => {
+      listeners.delete(setPending);
+      if (!listeners.size) capacityRepairListeners.delete(actorId);
+    };
+  }, [actorId]);
+  return pending;
+}
+
+const CAPACITY_REPAIR_UNVERIFIED =
+  "Saved import repair could not be verified. Use Refresh to check saved status before another action. No automatic retry is performed.";
+type CapacityRepairView = Pick<
+  HqInitialCapacityRepairResult,
+  "status" | "checkedAt"
+>;
 
 function activeSuperAdmin(user: unknown): user is Actor {
   const actor = user as Actor | null | undefined;
@@ -142,6 +231,30 @@ const safeAmount = (value: unknown): value is string | null =>
   (typeof value === "string" &&
     value.length <= 100 &&
     /^-?\d+(?:\.\d+)?$/.test(value));
+
+function safeCapacityRepair(value: unknown): CapacityRepairView | null {
+  if (!value || typeof value !== "object") return null;
+  const result = value as Record<string, unknown>;
+  if (
+    typeof result.status !== "string" ||
+    !Object.prototype.hasOwnProperty.call(
+      CAPACITY_REPAIR_MESSAGES,
+      result.status
+    ) ||
+    !safeStamp(result.checkedAt) ||
+    new Date(result.checkedAt).toISOString().slice(0, 19) !==
+      result.checkedAt.slice(0, 19) ||
+    typeof result.message !== "string" ||
+    (result.errorCode !== null && typeof result.errorCode !== "string") ||
+    (result.status === "repaired" && result.errorCode !== null)
+  )
+    return null;
+  // Never retain provider copy, arbitrary errors or extra response/source fields.
+  return {
+    status: result.status as CapacityRepairView["status"],
+    checkedAt: result.checkedAt,
+  };
+}
 
 function safeInitialImport(value: unknown): InitialImportView {
   const fallback: InitialImportView = {
@@ -445,11 +558,13 @@ function Pagination({
   count,
   setPage,
   label,
+  disabled = false,
 }: {
   page: number;
   count: number;
   setPage: (page: number) => void;
   label: string;
+  disabled?: boolean;
 }) {
   const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
   return (
@@ -463,7 +578,7 @@ function Pagination({
       <Button
         size="sm"
         variant="outline"
-        disabled={page === 0}
+        disabled={disabled || page === 0}
         onClick={() => setPage(page - 1)}
       >
         Previous {label}
@@ -471,7 +586,7 @@ function Pagination({
       <Button
         size="sm"
         variant="outline"
-        disabled={page + 1 >= pages}
+        disabled={disabled || page + 1 >= pages}
         onClick={() => setPage(page + 1)}
       >
         Next {label}
@@ -717,6 +832,19 @@ function ActorHq({
   const [initialValidation, setInitialValidation] =
     useState<InitialValidationView | null>(null);
   const [initialCheckFailed, setInitialCheckFailed] = useState(false);
+  const legacyInitialFlights = useRef(0);
+  const [legacyInitialPending, setLegacyInitialPending] = useState(false);
+  const repairPending = useCapacityRepairPending(actorId);
+  const [repairResult, setRepairResult] = useState<CapacityRepairView | null>(
+    null
+  );
+  const [repairFailed, setRepairFailed] = useState(false);
+  const repairFlight = useRef<symbol | null>(null);
+  const repairInvalidated = useRef(false);
+  const repairRefreshing = useRef(false);
+  const repairSettings = useRef("");
+  const repairRoute = useRef("");
+  const repairResultBoundary = useRef("");
   const alive = useRef(true);
   const lock = useRef(false);
   const initialRunLock = useRef(false);
@@ -749,6 +877,8 @@ function ActorHq({
     trpc.managementHq.finishInitialImportBatch.useMutation();
   const validateInitialImport =
     trpc.managementHq.validateInitialImport.useMutation();
+  const repairInitialImportCapacity =
+    trpc.managementHq.repairInitialImportCapacity.useMutation();
   const statusReady =
     booted &&
     status.isFetchedAfterMount &&
@@ -785,7 +915,8 @@ function ActorHq({
     reportBusy ||
     connectionBusy ||
     initialRunBusy ||
-    !!initialBusy;
+    !!initialBusy ||
+    repairPending;
   const canRead =
     statusReady &&
     (mode === "live"
@@ -852,6 +983,17 @@ function ActorHq({
   });
   if (boundary.current !== currentBoundary) {
     boundary.current = currentBoundary;
+    if (
+      repairFlight.current &&
+      (!repairRefreshing.current ||
+        repairSettings.current !== settingsBoundary ||
+        repairRoute.current !== window.location.href ||
+        status.error ||
+        authorityError ||
+        connectionAccessRevoked ||
+        actionError)
+    )
+      repairInvalidated.current = true;
     permission.current = false;
     epoch.current++;
     connectionAttempt.current++;
@@ -892,6 +1034,10 @@ function ActorHq({
     checkConnection.reset();
     setInitialValidation(null);
     setInitialCheckFailed(false);
+    if (!repairRefreshing.current || repairInvalidated.current) {
+      setRepairResult(null);
+      setRepairFailed(false);
+    }
     // A settings/source change invalidates pending manual work immediately. A
     // completed import's one explicit status refresh is the sole exception;
     // it may legitimately publish a new status version, never private checks.
@@ -921,6 +1067,13 @@ function ActorHq({
       initialRefresh.current = false;
     }
   }, [initialResult]);
+
+  useEffect(() => {
+    if (repairRefreshing.current && (repairResult || repairFailed)) {
+      repairResultBoundary.current = boundary.current;
+      repairRefreshing.current = false;
+    }
+  }, [repairResult, repairFailed]);
 
   useEffect(() => {
     alive.current = true;
@@ -957,6 +1110,7 @@ function ActorHq({
   async function refresh() {
     if (
       lock.current ||
+      pendingCapacityRepairs.has(actorId) ||
       initialRunLock.current ||
       !identityCheck.current(actorId)
     )
@@ -971,6 +1125,8 @@ function ActorHq({
     setInitialResult(null);
     setInitialValidation(null);
     setInitialCheckFailed(false);
+    setRepairResult(null);
+    setRepairFailed(false);
     importInitialBatch.reset();
     validateInitialImport.reset();
     permission.current = false;
@@ -1001,6 +1157,7 @@ function ActorHq({
   async function checkOrbitConnection() {
     if (
       lock.current ||
+      pendingCapacityRepairs.has(actorId) ||
       initialRunLock.current ||
       connectionBusy ||
       connectionAccessRevoked ||
@@ -1016,6 +1173,8 @@ function ActorHq({
     const generation = ++epoch.current;
     const route = window.location.href;
     setConnectionResult(null);
+    setRepairResult(null);
+    setRepairFailed(false);
     initialAttempt.current++;
     initialRefresh.current = false;
     setInitialResult(null);
@@ -1064,6 +1223,7 @@ function ActorHq({
       live?.hasPublished === true || initialResult?.hasPublished === true;
     if (
       lock.current ||
+      pendingCapacityRepairs.has(actorId) ||
       initialRunLock.current ||
       busy ||
       !initialGate.current ||
@@ -1106,6 +1266,8 @@ function ActorHq({
     const stillCurrent = () =>
       sameActorAction() && epoch.current === generation && initialGate.current;
     let retainedImportResult = false;
+    legacyInitialFlights.current++;
+    setLegacyInitialPending(true);
     try {
       if (kind === "check") {
         const result = await validateInitialImport.mutateAsync();
@@ -1160,6 +1322,9 @@ function ActorHq({
         setInitialResult(safeInitialImport(null));
       }
     } finally {
+      legacyInitialFlights.current--;
+      if (alive.current)
+        setLegacyInitialPending(legacyInitialFlights.current > 0);
       if (initialFlight.current === flight) {
         if (!retainedImportResult) initialRefresh.current = false;
         initialFlight.current = null;
@@ -1169,9 +1334,124 @@ function ActorHq({
     }
   }
 
+  async function repairSavedImport() {
+    if (
+      lock.current ||
+      legacyInitialFlights.current > 0 ||
+      initialRunLock.current ||
+      pendingCapacityRepairs.has(actorId) ||
+      busy ||
+      !initialGate.current ||
+      !alive.current ||
+      !identityCheck.current(actorId) ||
+      live?.health !== "needs_attention" ||
+      live.hasPublished !== false ||
+      !["INVALID_PERSISTED_STATE", "STATE_BYTE_CAP_EXCEEDED"].includes(
+        live.lastErrorCode ?? ""
+      )
+    )
+      return;
+    const flight = Symbol("saved import repair");
+    pendingCapacityRepairs.set(actorId, flight);
+    repairFlight.current = flight;
+    repairInvalidated.current = false;
+    repairRefreshing.current = false;
+    lock.current = true;
+    notifyCapacityRepair(actorId);
+    const route = window.location.href;
+    const settings = latestSettings.current;
+    repairSettings.current = settings;
+    repairRoute.current = route;
+    permission.current = false;
+    epoch.current++;
+    connectionAttempt.current++;
+    initialAttempt.current++;
+    setConnectionResult(null);
+    setInitialResult(null);
+    setInitialValidation(null);
+    setInitialCheckFailed(false);
+    setRepairResult(null);
+    setRepairFailed(false);
+    const sameAction = () =>
+      alive.current &&
+      identityCheck.current(actorId) &&
+      repairFlight.current === flight &&
+      !repairInvalidated.current &&
+      window.location.href === route &&
+      latestSettings.current === settings &&
+      !initialStatusError.current;
+    let retainedResult = false;
+    try {
+      // No deadlines/races: only actual mutateAsync settlement owns this lock.
+      const result = safeCapacityRepair(
+        await repairInitialImportCapacity.mutateAsync()
+      );
+      if (!sameAction() || !initialGate.current) return;
+      if (result?.status === "repaired") {
+        repairRefreshing.current = true;
+        await utils.managementHq.status.cancel();
+        if (!sameAction()) return;
+        const fresh = await status.refetch({ cancelRefetch: true });
+        if (!sameAction()) return;
+        if (fresh.error) throw fresh.error;
+        const dto = fresh.data?.live;
+        if (
+          !dto ||
+          fresh.data?.reportMode !== "live" ||
+          fresh.data.liveConfigured !== true ||
+          dto.configured !== true ||
+          dto.syncEnabled !== true ||
+          dto.readEnabled !== false ||
+          dto.configurationCode ||
+          dto.hasPublished !== false ||
+          (dto.lastErrorCode !== null && dto.lastErrorCode !== undefined) ||
+          dto.health !== "progress" ||
+          dto.stageStatus !== "progress" ||
+          dto.intervalSeconds !== live.intervalSeconds ||
+          dto.freshnessSeconds !== live.freshnessSeconds ||
+          dto.freshnessTargetSeconds !== live.freshnessTargetSeconds
+        )
+          throw new Error("HQ_STATUS_UNVERIFIED");
+      }
+      repairResultBoundary.current = boundary.current;
+      retainedResult = true;
+      setRepairResult(result);
+      setRepairFailed(!result);
+    } catch (error) {
+      if (!sameAction()) return;
+      const code =
+        (error as { data?: { code?: unknown }; code?: unknown } | null)?.data
+          ?.code ?? (error as { code?: unknown } | null)?.code;
+      if (isAuthorityError(error) || code === "PRECONDITION_FAILED") {
+        permission.current = false;
+        epoch.current++;
+        initialAttempt.current++;
+        connectionAttempt.current++;
+        setConnectionAccessRevoked(true);
+        setRepairResult(null);
+        setActionError("Management HQ access could not be verified.");
+      } else {
+        repairResultBoundary.current = boundary.current;
+        retainedResult = true;
+        setRepairFailed(true);
+      }
+    } finally {
+      if (repairFlight.current === flight) {
+        repairFlight.current = null;
+        lock.current = false;
+        if (!retainedResult) repairRefreshing.current = false;
+      }
+      if (pendingCapacityRepairs.get(actorId) === flight) {
+        pendingCapacityRepairs.delete(actorId);
+        notifyCapacityRepair(actorId);
+      }
+    }
+  }
+
   async function replay(scenario: Scenario) {
     if (
       lock.current ||
+      pendingCapacityRepairs.has(actorId) ||
       initialRunLock.current ||
       busy ||
       !statusReady ||
@@ -1212,7 +1492,7 @@ function ActorHq({
   }
 
   function changePeriod(nextYear: number, nextMonth: number | undefined) {
-    if (initialRunLock.current) return;
+    if (initialRunLock.current || pendingCapacityRepairs.has(actorId)) return;
     permission.current = false;
     epoch.current++;
     connectionAttempt.current++;
@@ -1223,6 +1503,8 @@ function ActorHq({
     setInitialResult(null);
     setInitialValidation(null);
     setInitialCheckFailed(false);
+    setRepairResult(null);
+    setRepairFailed(false);
     if (initialFlight.current) {
       initialFlight.current = null;
       lock.current = false;
@@ -1249,6 +1531,17 @@ function ActorHq({
       : null;
   const initialPublished =
     live?.hasPublished === true || visibleInitialResult?.hasPublished === true;
+  const repairAvailable =
+    initialEnabled &&
+    !initialPublished &&
+    live?.health === "needs_attention" &&
+    ["INVALID_PERSISTED_STATE", "STATE_BYTE_CAP_EXCEEDED"].includes(
+      live.lastErrorCode ?? ""
+    );
+  const showRepairResult =
+    initialEnabled &&
+    (repairResultBoundary.current === currentBoundary ||
+      (repairRefreshing.current && !repairInvalidated.current));
   const initialWaitDue =
     visibleInitialResult?.status === "notdue" &&
     safeStamp(visibleInitialResult.nextDueAt)
@@ -1297,6 +1590,7 @@ function ActorHq({
               statusSlow &&
               !initialRunBusy &&
               !initialBusy &&
+              !repairPending &&
               !connectionBusy &&
               !replaying &&
               !reportBusy
@@ -1352,10 +1646,11 @@ function ActorHq({
         boundary={`${settingsBoundary}:${window.location.href}:${year}:${month ?? "annual"}`}
         eligible={initialRunEligible}
         published={live?.hasPublished === true}
-        disabled={busy && !initialRunBusy}
+        disabled={repairPending || (busy && !initialRunBusy)}
         verifyCurrent={() =>
           alive.current &&
           identityCheck.current(actorId) &&
+          !pendingCapacityRepairs.has(actorId) &&
           !initialStatusError.current
         }
         invoke={() => finishInitialBatch.mutateAsync()}
@@ -1372,8 +1667,7 @@ function ActorHq({
             dto.configured !== true ||
             dto.syncEnabled !== true ||
             dto.readEnabled !== false ||
-            dto.configurationCode ||
-            dto.lastErrorCode
+            dto.configurationCode
           )
             throw new Error("HQ_STATUS_UNVERIFIED");
           return {
@@ -1381,6 +1675,7 @@ function ActorHq({
             progress: dto.progress,
             nextDueAt: dto.nextDueAt,
             health: dto.health,
+            sourceError: dto.lastErrorCode ?? null,
           };
         }}
         onBusy={owned => {
@@ -1412,6 +1707,61 @@ function ActorHq({
               </p>
             ) : (
               <>
+                {repairAvailable && (
+                  <div
+                    className="space-y-2 text-sm"
+                    aria-label="Saved import repair"
+                  >
+                    <p role="alert">
+                      {live?.lastErrorCode === "INVALID_PERSISTED_STATE"
+                        ? "Portal could not validate the saved import. Repair will check all saved progress; it will not reset or discard records."
+                        : "The import reached its storage limit. Repair will check all saved progress before allowing it to continue."}
+                    </p>
+                    <p>
+                      Repair validates saved progress and adjusts import control
+                      only if eligible. It does not restart the import, discard
+                      records or activate HQ dashboards.
+                    </p>
+                    <Button
+                      variant="outline"
+                      disabled={
+                        busy ||
+                        lock.current ||
+                        initialRunLock.current ||
+                        legacyInitialPending ||
+                        repairInitialImportCapacity.isPending
+                      }
+                      onClick={() => void repairSavedImport()}
+                    >
+                      Repair saved import
+                    </Button>
+                  </div>
+                )}
+                {repairPending && (
+                  <p role="status">
+                    A saved import repair is pending. Wait for the request to
+                    settle before any other action.
+                  </p>
+                )}
+                {showRepairResult && !repairPending && repairResult && (
+                  <div
+                    role={
+                      repairResult.status === "repaired" ? "status" : "alert"
+                    }
+                    className="space-y-1 text-sm"
+                  >
+                    <p>{CAPACITY_REPAIR_MESSAGES[repairResult.status]}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Checked{" "}
+                      {new Date(repairResult.checkedAt).toLocaleString()}. HQ
+                      dashboards remain off; finishing the import still requires
+                      an explicit click.
+                    </p>
+                  </div>
+                )}
+                {showRepairResult && !repairPending && repairFailed && (
+                  <p role="alert">{CAPACITY_REPAIR_UNVERIFIED}</p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {!initialPublished && (
                     <Button
@@ -1718,10 +2068,17 @@ function ActorHq({
               key={label}
               variant={view === label ? "default" : "outline"}
               aria-pressed={view === label}
-              disabled={!!initialBusy || initialRunBusy}
+              disabled={!!initialBusy || initialRunBusy || repairPending}
               onClick={() => {
-                if (initialRunBusy) return;
-                if (initialBusy || initialValidation || initialResult)
+                if (initialRunBusy || pendingCapacityRepairs.has(actorId))
+                  return;
+                if (
+                  initialBusy ||
+                  initialValidation ||
+                  initialResult ||
+                  repairResult ||
+                  repairFailed
+                )
                   changePeriod(year, month);
                 setView(label);
               }}
@@ -1738,7 +2095,11 @@ function ActorHq({
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={year}
               disabled={
-                replaying || connectionBusy || !!initialBusy || initialRunBusy
+                replaying ||
+                connectionBusy ||
+                !!initialBusy ||
+                initialRunBusy ||
+                repairPending
               }
               onChange={event =>
                 changePeriod(parseInt(event.target.value, 10), month)
@@ -1760,7 +2121,11 @@ function ActorHq({
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               value={month ?? "all"}
               disabled={
-                replaying || connectionBusy || !!initialBusy || initialRunBusy
+                replaying ||
+                connectionBusy ||
+                !!initialBusy ||
+                initialRunBusy ||
+                repairPending
               }
               onChange={event =>
                 changePeriod(
@@ -1850,6 +2215,11 @@ function ActorHq({
         month={month}
         view={view}
         isCurrent={() => permission.current && identityCheck.current(actorId)}
+        canNavigate={() =>
+          !lock.current &&
+          !initialRunLock.current &&
+          !pendingCapacityRepairs.has(actorId)
+        }
         epoch={epoch}
         onBusy={setReportBusy}
         onError={() => {
@@ -1872,6 +2242,7 @@ function ReportView({
   month,
   view,
   isCurrent,
+  canNavigate,
   epoch,
   onBusy,
   onError,
@@ -1883,30 +2254,40 @@ function ReportView({
   month?: number;
   view: View;
   isCurrent: () => boolean;
+  canNavigate: () => boolean;
   epoch: { current: number };
   onBusy: (busy: boolean) => void;
   onError: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [booted, setBooted] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(0);
+  const [detailRequest, setDetailRequest] = useState(0);
   const [agentPage, setAgentPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const mounted = useRef(true);
+  const reportRoute = useRef(window.location.href);
   const exportSequence = useRef(0);
   const authority = useRef(isCurrent);
   authority.current = isCurrent;
   const input = useMemo(
-    () => ({ year, ...(month === undefined ? {} : { month }) }),
-    [year, month]
+    () => ({
+      year,
+      ...(month === undefined ? {} : { month }),
+      ...(detailRequest === 0 ? {} : { detailPage: detailRequest }),
+    }),
+    [year, month, detailRequest]
   );
+  const [bootedInput, setBootedInput] = useState<typeof input | null>(null);
+  const booted = bootedInput === input;
   const report = trpc.managementHq.report.useQuery(input, {
     ...queryOptions,
     enabled: booted,
   });
+  const detailPage = safeDetailPage(report.data, detailRequest);
   const matches =
-    report.data?.filters.year === year &&
+    detailPage !== null &&
+    report.data?.filters?.year === year &&
     report.data.filters.month === (month ?? null) &&
     report.data.sourceMode === mode &&
     (mode !== "live" || report.data.stateVersion === stateVersion);
@@ -1917,29 +2298,43 @@ function ReportView({
     !report.error &&
     !report.isFetching &&
     !report.isLoading &&
+    window.location.href === reportRoute.current &&
     authority.current();
   const readyRef = useRef(false);
   readyRef.current = !!ready;
   const data: HqReport | undefined = ready ? report.data : undefined;
   useEffect(() => {
     mounted.current = true;
+    let currentInput = true;
     void utils.managementHq.report
       .cancel(input)
       .then(() => {
-        if (mounted.current) setBooted(true);
+        if (currentInput && mounted.current) setBootedInput(input);
       })
       .catch(() => {
-        if (mounted.current) onError();
+        if (currentInput && mounted.current) onError();
       });
     return () => {
+      currentInput = false;
       mounted.current = false;
       readyRef.current = false;
       exportSequence.current++;
     };
   }, [input, utils]);
   useEffect(() => {
-    onBusy(!booted || report.isFetching || report.isLoading);
-  }, [booted, report.isFetching, report.isLoading, onBusy]);
+    onBusy(
+      !booted ||
+        !report.isFetchedAfterMount ||
+        report.isFetching ||
+        report.isLoading
+    );
+  }, [
+    booted,
+    report.isFetchedAfterMount,
+    report.isFetching,
+    report.isLoading,
+    onBusy,
+  ]);
   useEffect(() => () => onBusy(false), [onBusy]);
 
   async function exportCsv() {
@@ -1948,6 +2343,7 @@ function ReportView({
       !authority.current() ||
       exporting ||
       !data?.exportComplete ||
+      detailPage !== undefined ||
       data.status !== "available"
     )
       return;
@@ -2025,14 +2421,41 @@ function ReportView({
       [...data.bookings, ...data.undatedExceptions].map(file => [file.id, file])
     ).values()
   );
-  const pages = Math.max(1, Math.ceil(files.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pages - 1);
+  const paged = detailPage !== undefined && detailPage !== null;
+  const totalRows = paged ? detailPage.totalRows : files.length;
+  const pages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+  const currentPage = paged ? detailPage.page : Math.min(page, pages - 1);
+  const visibleFiles = paged
+    ? files
+    : files.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const currentAgentPage = Math.min(
     agentPage,
     Math.max(0, Math.ceil(data.agents.length / PAGE_SIZE) - 1)
   );
-  const detail = files.find(file => file.id === selected);
+  const detail = visibleFiles.find(file => file.id === selected);
   const margin = data.totals.weightedMargin;
+
+  function changePage(nextPage: number) {
+    if (
+      !readyRef.current ||
+      !authority.current() ||
+      !canNavigate() ||
+      window.location.href !== reportRoute.current ||
+      nextPage < 0 ||
+      nextPage >= pages
+    )
+      return;
+    setSelected(null);
+    exportSequence.current++;
+    epoch.current++;
+    setExporting(false);
+    setPage(nextPage);
+    if (paged) {
+      readyRef.current = false;
+      onBusy(true);
+      setDetailRequest(nextPage);
+    }
+  }
 
   return (
     <div
@@ -2048,7 +2471,7 @@ function ReportView({
         <Button
           size="sm"
           variant="outline"
-          disabled={exporting || !data.exportComplete}
+          disabled={exporting || paged || !data.exportComplete}
           onClick={() => void exportCsv()}
         >
           <Download className="mr-2 h-4 w-4" />
@@ -2064,11 +2487,21 @@ function ReportView({
           or carries a source stale flag. Missing is not zero.
         </p>
       )}
-      {!data.exportComplete && (
-        <p role="alert" className="text-sm text-amber-600 dark:text-amber-300">
-          Report exceeds the server export bound. Export is unavailable; this is
-          not a complete file.
+      {paged ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Booking details are paged; figures above cover the full period. A
+          complete CSV is unavailable for this view.
         </p>
+      ) : (
+        !data.exportComplete && (
+          <p
+            role="alert"
+            className="text-sm text-amber-600 dark:text-amber-300"
+          >
+            Report exceeds the server export bound. Export is unavailable; this
+            is not a complete file.
+          </p>
+        )
       )}
       {view === "Executive Dashboard" && (
         <>
@@ -2335,9 +2768,10 @@ function ReportView({
       <section className={`${panel} space-y-3`} aria-label="Booking drilldown">
         <h2 className="font-semibold">Booking drilldown</h2>
         <p className="text-sm text-muted-foreground">
-          Retained confirmed, pending, cancelled and exception records. Table
-          pagination does not limit the server-bounded export of all filtered
-          records.
+          Retained confirmed, pending, cancelled and exception records.{" "}
+          {paged
+            ? "Totals cover the whole filtered period; booking details are paged."
+            : "Table pagination does not limit the server-bounded export of all filtered records."}
         </p>
         <div className="overflow-x-auto">
           <table className={tableClass}>
@@ -2364,90 +2798,88 @@ function ReportView({
               </tr>
             </thead>
             <tbody>
-              {files
-                .slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
-                .map(file => (
-                  <tr key={file.id} className="border-b last:border-0">
-                    <th scope="row" className={`${cell} font-medium`}>
-                      {file.bookingRef}
-                      <span className="block text-xs text-muted-foreground">
-                        Revision {file.revision}
-                      </span>
-                    </th>
-                    <td className={cell}>
-                      <span
-                        className={
-                          file.status === "cancelled"
-                            ? "text-amber-600 dark:text-amber-300"
-                            : ""
-                        }
-                      >
-                        {file.status}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {file.cohort}
-                      </span>
-                    </td>
-                    <td className={cell}>
-                      {file.reportingDate ?? "Undated"}
-                      <span className="block text-xs text-muted-foreground">
-                        {file.dateSource}
-                      </span>
-                    </td>
-                    <td className={cell}>
-                      <Person person={file.seller} />
-                      {!file.seller && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {file.currentOwner
-                            ? "Original seller unavailable; current owner provisional"
-                            : (file.sellerReason ??
-                              "No verified selling attribution")}
-                        </p>
-                      )}
-                    </td>
-                    <td className={cell}>
-                      <Person person={file.currentOwner ?? null} />
-                      <ProvisionalAttribution state={file.attributionState} />
-                    </td>
-                    <td className={cell}>
-                      <Person person={file.assignedStaff ?? null} />
-                      {file.assignedStaff && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Current assigned staff only · not seller or admin
-                          processor
-                        </p>
-                      )}
-                    </td>
-                    <td className={cell}>
-                      <Person person={file.processor} />
+              {visibleFiles.map(file => (
+                <tr key={file.id} className="border-b last:border-0">
+                  <th scope="row" className={`${cell} font-medium`}>
+                    {file.bookingRef}
+                    <span className="block text-xs text-muted-foreground">
+                      Revision {file.revision}
+                    </span>
+                  </th>
+                  <td className={cell}>
+                    <span
+                      className={
+                        file.status === "cancelled"
+                          ? "text-amber-600 dark:text-amber-300"
+                          : ""
+                      }
+                    >
+                      {file.status}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {file.cohort}
+                    </span>
+                  </td>
+                  <td className={cell}>
+                    {file.reportingDate ?? "Undated"}
+                    <span className="block text-xs text-muted-foreground">
+                      {file.dateSource}
+                    </span>
+                  </td>
+                  <td className={cell}>
+                    <Person person={file.seller} />
+                    {!file.seller && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Processing only
+                        {file.currentOwner
+                          ? "Original seller unavailable; current owner provisional"
+                          : (file.sellerReason ??
+                            "No verified selling attribution")}
                       </p>
-                    </td>
-                    <td className={`${cell} whitespace-nowrap tabular-nums`}>
-                      {formatHqMoney(file.financials.gross)}
-                    </td>
-                    <td className={`${cell} whitespace-nowrap tabular-nums`}>
-                      {formatHqMoney(file.financials.grossProfit)}
-                    </td>
-                    <td className={`${cell} whitespace-nowrap tabular-nums`}>
-                      {formatHqMoney(file.financials.settledJltIncome)}
-                    </td>
-                    <td className={cell}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        aria-expanded={selected === file.id}
-                        aria-controls="hq-source-detail"
-                        onClick={() =>
-                          setSelected(selected === file.id ? null : file.id)
-                        }
-                      >
-                        Source values for {file.bookingRef}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                    )}
+                  </td>
+                  <td className={cell}>
+                    <Person person={file.currentOwner ?? null} />
+                    <ProvisionalAttribution state={file.attributionState} />
+                  </td>
+                  <td className={cell}>
+                    <Person person={file.assignedStaff ?? null} />
+                    {file.assignedStaff && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Current assigned staff only · not seller or admin
+                        processor
+                      </p>
+                    )}
+                  </td>
+                  <td className={cell}>
+                    <Person person={file.processor} />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Processing only
+                    </p>
+                  </td>
+                  <td className={`${cell} whitespace-nowrap tabular-nums`}>
+                    {formatHqMoney(file.financials.gross)}
+                  </td>
+                  <td className={`${cell} whitespace-nowrap tabular-nums`}>
+                    {formatHqMoney(file.financials.grossProfit)}
+                  </td>
+                  <td className={`${cell} whitespace-nowrap tabular-nums`}>
+                    {formatHqMoney(file.financials.settledJltIncome)}
+                  </td>
+                  <td className={cell}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-expanded={selected === file.id}
+                      aria-controls="hq-source-detail"
+                      onClick={() =>
+                        setSelected(selected === file.id ? null : file.id)
+                      }
+                    >
+                      Source values for {file.bookingRef}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
               {!files.length && (
                 <tr>
                   <td colSpan={11} className={cell}>
@@ -2460,9 +2892,10 @@ function ReportView({
         </div>
         <Pagination
           label="bookings"
-          count={files.length}
+          count={totalRows}
           page={currentPage}
-          setPage={setPage}
+          setPage={changePage}
+          disabled={!canNavigate()}
         />
         {detail && (
           <BookingDetail file={detail} onClose={() => setSelected(null)} />

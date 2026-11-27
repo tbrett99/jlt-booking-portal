@@ -1,5 +1,5 @@
 import type { HqInitialValidationResult } from "../shared/management-hq-initial-validation";
-import type { HqReport } from "../shared/management-hq-report";
+import type { HqReport, HqReportOptions } from "../shared/management-hq-report";
 import type { HqWireBookingPayload } from "../shared/management-hq-wire";
 import {
   validateHqImplementedSyncState,
@@ -119,7 +119,14 @@ function summary(
     report.scopeId !== "company_all_real_and_unattributed" ||
     report.filters.year !== year ||
     report.filters.month !== null ||
-    !report.exportComplete ||
+    !(
+      report.exportComplete === true ||
+      (report.exportComplete === false &&
+        report.detailMode === "summary" &&
+        report.detailPage === undefined &&
+        report.bookings.length === 0 &&
+        report.undatedExceptions.length === 0)
+    ) ||
     !knownMoney(report.totals.grossSales.knownSum) ||
     !knownMoney(report.totals.grossProfit.knownSum)
   )
@@ -239,11 +246,14 @@ export async function validateHqInitialPublication(
       state: HqImplementedState,
       db: unknown,
       range: { year: number },
-      guard?: () => Promise<void>
+      guard?: () => Promise<void>,
+      options?: HqReportOptions
     ) => Promise<HqReport> = getHqLiveReport;
     for (const year of Array.from(years).sort((a, b) => a - b)) {
       await assertCurrent();
-      const report = await read(state, db, { year }, assertCurrent);
+      const report = await read(state, db, { year }, assertCurrent, {
+        details: { kind: "summary" },
+      });
       await assertCurrent();
       if (
         report.generationId !== pin.generationId ||

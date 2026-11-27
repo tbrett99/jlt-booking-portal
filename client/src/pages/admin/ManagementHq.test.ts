@@ -36,6 +36,7 @@ const mock = vi.hoisted(() => ({
   importMutateAsync: vi.fn(),
   validationMutateAsync: vi.fn(),
   finishMutateAsync: vi.fn(),
+  repairMutateAsync: vi.fn(),
   refetch: vi.fn(),
   cancel: vi.fn(),
   csv: vi.fn(),
@@ -130,6 +131,8 @@ vi.mock("@/lib/trpc", async () => {
                       return await mock.validationMutateAsync(input);
                     if (path === "managementHq.finishInitialImportBatch")
                       return await mock.finishMutateAsync(input);
+                    if (path === "managementHq.repairInitialImportCapacity")
+                      return await mock.repairMutateAsync(input);
                     await mock.mutationWait;
                     if (mock.mutationError) throw mock.mutationError;
                     if (input === undefined) return mock.connectionResult;
@@ -437,6 +440,7 @@ beforeEach(() => {
   mock.importMutateAsync.mockReset();
   mock.validationMutateAsync.mockReset();
   mock.finishMutateAsync.mockReset();
+  mock.repairMutateAsync.mockReset();
   mock.connectionMutateAsync.mockImplementation(async () => {
     await mock.mutationWait;
     if (mock.mutationError) throw mock.mutationError;
@@ -3706,4 +3710,710 @@ describe("Explicit run admission and slow-status read-only controls", () => {
     await redrawRunPage();
     assertRunOnly();
   });
+});
+
+// Capacity-repair coverage is appended: all preceding actual-DOM cases remain intact.
+function capacityRepairFixture(patch: Record<string, any> = {}) {
+  firstImportFixture({
+    payloadIntegrity: "unchecked",
+    health: "needs_attention",
+    lastErrorCode: "INVALID_PERSISTED_STATE",
+    stageStatus: "progress",
+    stateVersion: 66,
+    progress: savedRunProgress(66, 6600),
+    ...patch,
+  });
+  mock.data["managementHq.status"].stateVersion = 66;
+}
+function capacityRepairPayload(patch: Record<string, unknown> = {}) {
+  return {
+    status: "repaired",
+    checkedAt: "2026-11-26T15:00:00.000Z",
+    message:
+      "NEVER-RENDER raw source message https://private.invalid Bearer private",
+    errorCode: null,
+    ...patch,
+  };
+}
+function capacityRepairCalls() {
+  return mock.mutationCalls.filter(
+    call => call.path === "managementHq.repairInitialImportCapacity"
+  );
+}
+function assertNoRepairSourceAction() {
+  expect(finishCalls()).toHaveLength(0);
+  expect(initialCalls("importInitialBatch")).toHaveLength(0);
+  expect(initialCalls("validateInitialImport")).toHaveLength(0);
+  expect(mock.connectionMutateAsync).not.toHaveBeenCalled();
+  expect(mock.hooks.some(hook => hook.options?.refetchInterval)).toBe(false);
+  expect(container.textContent).not.toContain("NEVER-RENDER");
+  assertNoDashboardActivation();
+}
+
+describe("Saved import capacity repair on actual HQ DOM", () => {
+  it.each([
+    [
+      "INVALID_PERSISTED_STATE",
+      "Portal could not validate the saved import.",
+      "it will not reset or discard records",
+    ],
+    [
+      "STATE_BYTE_CAP_EXCEEDED",
+      "The import reached its storage limit.",
+      "check all saved progress before allowing it to continue",
+    ],
+  ])(
+    "shows precise fixed %s attention guidance without importing or inventing damaged records",
+    async (code, copy, qualifier) => {
+      capacityRepairFixture({ lastErrorCode: code });
+      await render();
+      expect(firstPanel()?.textContent).toContain(copy);
+      expect(firstPanel()?.textContent).toContain(qualifier);
+      expect(firstPanel()?.textContent).toContain(
+        "does not restart the import, discard records or activate HQ dashboards"
+      );
+      expect(button("Repair saved import").disabled).toBe(false);
+      expect(button("Continue first import").disabled).toBe(true);
+      expect(container.textContent).toContain("66 pages · 6600 records");
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(capacityRepairCalls()).toHaveLength(0);
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each(["INVALID_PERSISTED_STATE", "STATE_BYTE_CAP_EXCEEDED"])(
+    "Finish forwards verified %s attention to the controller server-error path before any source mutation",
+    async code => {
+      capacityRepairFixture({ lastErrorCode: code });
+      await render();
+      await click("Finish first import");
+      expect(finishRunPanel()?.textContent).toContain(
+        "server reported an error"
+      );
+      expect(finishRunPanel()?.textContent).not.toContain(
+        "current status could not be verified"
+      );
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(button("Repair saved import").disabled).toBe(false);
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each([
+    { health: "progress" },
+    { hasPublished: true },
+    { lastErrorCode: "SOURCE_BINDING_CHANGED" },
+    { lastErrorCode: null },
+    { readEnabled: true },
+    { syncEnabled: false },
+    { configured: false },
+    { configurationCode: "CONFIG_INVALID" },
+  ])(
+    "does not offer repair outside the approved initial attention boundary %j",
+    async patch => {
+      capacityRepairFixture(patch);
+      await render();
+      expect(
+        container.querySelector('[aria-label="Saved import repair"]')
+      ).toBeNull();
+      expect(capacityRepairCalls()).toHaveLength(0);
+      expect(mock.mutationCalls).toHaveLength(0);
+      expect(mock.refetch).not.toHaveBeenCalled();
+    }
+  );
+
+  it("success rereads status once, preserves 66/6600 saved progress and still requires a manual Finish", async () => {
+    capacityRepairFixture();
+    const before = structuredClone(
+      mock.data["managementHq.status"].live.progress
+    );
+    mock.repairMutateAsync.mockResolvedValue(
+      capacityRepairPayload({ source: { bookings: "NEVER-RENDER" } })
+    );
+    mock.refetch.mockImplementationOnce(async () => {
+      Object.assign(mock.data["managementHq.status"].live, {
+        health: "progress",
+        lastErrorCode: null,
+        stateVersion: 67,
+      });
+      mock.data["managementHq.status"].stateVersion = 67;
+      return { data: mock.data["managementHq.status"], error: null };
+    });
+    await render();
+    await click("Repair saved import");
+    expect(capacityRepairCalls()).toEqual([
+      {
+        path: "managementHq.repairInitialImportCapacity",
+        actorId: 47,
+        input: undefined,
+      },
+    ]);
+    expect(mock.refetch.mock.calls).toEqual([
+      ["managementHq.status", { cancelRefetch: true }],
+    ]);
+    expect(firstPanel()?.textContent).toContain(
+      "Saved import validated and ready to continue"
+    );
+    expect(firstPanel()?.textContent).toContain("No import batch was started");
+    expect(firstPanel()?.textContent).toContain(
+      "finishing the import still requires an explicit click"
+    );
+    expect(mock.data["managementHq.status"].live.progress).toEqual(before);
+    expect(container.textContent).toContain("66 pages · 6600 records");
+    expect(button("Finish first import").disabled).toBe(false);
+    expect(
+      container.querySelector('[aria-label="Saved import repair"]')
+    ).toBeNull();
+    expect(button("Continue first import").disabled).toBe(false);
+    await render();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    assertNoRepairSourceAction();
+    await click("Refresh");
+    expect(firstPanel()?.textContent).not.toContain(
+      "Saved import validated and ready to continue"
+    );
+  });
+
+  it.each([
+    ["notdue", "not due for repair yet"],
+    ["busy", "A reporting request is still running"],
+    ["not_repairable", "not eligible for the one-use capacity repair"],
+    ["invalid_settings", "Repair requires valid first-import settings"],
+    ["needs_attention", "could not be fully validated for repair"],
+  ])(
+    "renders only fixed %s copy with no refetch or automatic retry",
+    async (status, expected) => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockResolvedValue(
+        capacityRepairPayload({
+          status,
+          errorCode: "NEVER-RENDER arbitrary error code",
+          customer: "NEVER-RENDER customer",
+        })
+      );
+      await render();
+      const before = structuredClone(mock.data["managementHq.status"]);
+      await click("Repair saved import");
+      expect(firstPanel()?.textContent).toContain(expected);
+      expect(firstPanel()?.querySelector('[role="alert"]')).toBeTruthy();
+      expect(firstPanel()?.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(mock.data["managementHq.status"]).toEqual(before);
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(capacityRepairCalls()).toHaveLength(1);
+      expect(button("Repair saved import").disabled).toBe(false);
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each([
+    null,
+    undefined,
+    {},
+    capacityRepairPayload({ status: "__proto__" }),
+    capacityRepairPayload({ status: "constructor" }),
+    capacityRepairPayload({ status: "applied" }),
+    capacityRepairPayload({ checkedAt: "NEVER-RENDER not a timestamp" }),
+    capacityRepairPayload({ message: {} }),
+    capacityRepairPayload({ errorCode: {} }),
+    capacityRepairPayload({ errorCode: "STATE_BYTE_CAP_EXCEEDED" }),
+  ])(
+    "ignores malformed repair DTO %j without readiness, progress or further action",
+    async payload => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockResolvedValue(payload);
+      await render();
+      await click("Repair saved import");
+      expect(firstPanel()?.textContent).toContain(
+        "Saved import repair could not be verified"
+      );
+      expect(firstPanel()?.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(container.textContent).not.toContain("Invalid Date");
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(capacityRepairCalls()).toHaveLength(1);
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each([
+    new Error("NEVER-RENDER SQL provider secret"),
+    {
+      data: { code: "INTERNAL_SERVER_ERROR" },
+      message: "NEVER-RENDER provider detail",
+    },
+  ])(
+    "ordinary rejected repair uses fixed unknown-outcome wording %j",
+    async error => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockRejectedValue(error);
+      await render();
+      await click("Repair saved import");
+      expect(firstPanel()?.textContent).toContain(
+        "Saved import repair could not be verified"
+      );
+      expect(firstPanel()?.textContent).toContain(
+        "No automatic retry is performed"
+      );
+      expect(button("Repair saved import").disabled).toBe(false);
+      expect(mock.refetch).not.toHaveBeenCalled();
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each(["FORBIDDEN", "UNAUTHORIZED", "PRECONDITION_FAILED"])(
+    "current %s repair rejection permanently denies actions until successful manual Refresh",
+    async code => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockRejectedValue({
+        data: { code },
+        message: "NEVER-RENDER raw denial",
+      });
+      await render();
+      await click("Repair saved import");
+      expect(firstPanel()).toBeNull();
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      expect(finishRunPanel()).toBeNull();
+      expect(container.textContent).toContain(
+        "Management HQ access could not be verified."
+      );
+      await render();
+      expect(firstPanel()).toBeNull();
+      expect(mock.refetch).not.toHaveBeenCalled();
+      await click("Refresh");
+      expect(button("Repair saved import").disabled).toBe(false);
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it.each([
+    "actor",
+    "revoked",
+    "auth-pending",
+    "settings",
+    "sync-settings",
+    "mode",
+    "generation",
+    "status-error",
+    "status-pending",
+    "route",
+    "unmount",
+  ])(
+    "suppresses a late repaired result across %s invalidation without starting a status read",
+    async changeType => {
+      capacityRepairFixture();
+      const pending = deferred<any>();
+      mock.repairMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Repair saved import");
+      await connectionBoundaryChange(changeType);
+      await act(async () => pending.resolve(capacityRepairPayload()));
+      expect(container.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(container.textContent).not.toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(capacityRepairCalls()).toHaveLength(1);
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+      expect(finishCalls()).toHaveLength(0);
+    }
+  );
+
+  it.each(["actor", "settings", "route", "unmount"])(
+    "stale %s denial cannot revoke the next actor or boundary",
+    async changeType => {
+      capacityRepairFixture();
+      const pending = deferred<any>();
+      mock.repairMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      await click("Repair saved import");
+      await connectionBoundaryChange(changeType);
+      await act(async () =>
+        pending.reject({ data: { code: "FORBIDDEN" }, message: "NEVER-RENDER" })
+      );
+      expect(container.textContent).not.toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(container.textContent).not.toContain(
+        "Saved import repair could not be verified"
+      );
+      expect(mock.refetch).not.toHaveBeenCalled();
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+    }
+  );
+
+  it.each([
+    "Refresh",
+    "Check Orbit connection",
+    "Continue first import",
+    "Finish first import",
+  ])(
+    "repair synchronously excludes a same-tick second repair and %s action",
+    async competing => {
+      capacityRepairFixture();
+      const pending = deferred<any>();
+      mock.repairMutateAsync.mockReturnValue(pending.promise);
+      await render();
+      const repair = button("Repair saved import");
+      const other = button(competing);
+      try {
+        await act(async () => {
+          repair.click();
+          repair.click();
+          other.click();
+        });
+        expect(capacityRepairCalls()).toHaveLength(1);
+        expect(button("Repair saved import").disabled).toBe(true);
+        expect(button("Refresh").disabled).toBe(true);
+        expect(button("Finish first import").disabled).toBe(true);
+        expect(mock.refetch).not.toHaveBeenCalled();
+        assertNoRepairSourceAction();
+      } finally {
+        await act(async () =>
+          pending.resolve(capacityRepairPayload({ status: "busy" }))
+        );
+      }
+    }
+  );
+
+  it.each(["Refresh", "Check Orbit connection"])(
+    "existing %s operation synchronously prevents repair admission",
+    async competing => {
+      capacityRepairFixture();
+      const pending = deferred<any>();
+      if (competing === "Refresh")
+        mock.refetch.mockReturnValueOnce(pending.promise);
+      else mock.connectionMutateAsync.mockReturnValueOnce(pending.promise);
+      await render();
+      const repair = button("Repair saved import");
+      const other = button(competing);
+      try {
+        await act(async () => {
+          other.click();
+          repair.click();
+        });
+        expect(capacityRepairCalls()).toHaveLength(0);
+      } finally {
+        await act(async () =>
+          pending.resolve(
+            competing === "Refresh"
+              ? { data: mock.data["managementHq.status"], error: null }
+              : connectionPayload()
+          )
+        );
+      }
+    }
+  );
+
+  it("a prior Finish mutation remains owned after server attention appears and Stop is clicked", async () => {
+    firstImportFixture({
+      health: "progress",
+      progress: savedRunProgress(65, 6500),
+    });
+    const batch = deferred<any>();
+    mock.finishMutateAsync.mockReturnValue(batch.promise);
+    await render();
+    await click("Finish first import");
+    expect(finishCalls()).toHaveLength(1);
+    Object.assign(mock.data["managementHq.status"].live, {
+      health: "needs_attention",
+      lastErrorCode: "INVALID_PERSISTED_STATE",
+      progress: savedRunProgress(66, 6600),
+    });
+    await render();
+    await click("Stop after current batch");
+    expect(button("Repair saved import").disabled).toBe(true);
+    await click("Repair saved import");
+    expect(capacityRepairCalls()).toHaveLength(0);
+    await act(async () =>
+      batch.resolve(
+        importPayload({
+          status: "needs_attention",
+          progress: { pages: 66, recordsRead: 6600 },
+        })
+      )
+    );
+    expect(button("Repair saved import").disabled).toBe(false);
+    expect(capacityRepairCalls()).toHaveLength(0);
+    expect(finishCalls()).toHaveLength(1);
+    assertNoDashboardActivation();
+  });
+
+  it.each(["resolve", "reject"])(
+    "pending repair survives same-actor unmount/remount until actual %s, suppresses old outcome and locks Finish",
+    async settlement => {
+      capacityRepairFixture();
+      const pending = deferred<any>();
+      mock.repairMutateAsync.mockReturnValueOnce(pending.promise);
+      await render();
+      await click("Repair saved import");
+      await act(async () => root.render(null));
+      await render();
+      expect(button("Repair saved import").disabled).toBe(true);
+      expect(button("Refresh").disabled).toBe(true);
+      expect(button("Finish first import").disabled).toBe(true);
+      expect(button("Check Orbit connection").disabled).toBe(true);
+      expect(firstPanel()?.textContent).toContain(
+        "saved import repair is pending"
+      );
+      await click("Repair saved import");
+      await click("Finish first import");
+      expect(capacityRepairCalls()).toHaveLength(1);
+      expect(mock.refetch).not.toHaveBeenCalled();
+      await act(async () => {
+        if (settlement === "resolve") pending.resolve(capacityRepairPayload());
+        else
+          pending.reject({
+            data: { code: "FORBIDDEN" },
+            message: "NEVER-RENDER old denial",
+          });
+      });
+      expect(button("Repair saved import").disabled).toBe(false);
+      expect(button("Refresh").disabled).toBe(false);
+      expect(button("Finish first import").disabled).toBe(false);
+      expect(firstPanel()?.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(container.textContent).not.toContain(
+        "Management HQ access could not be verified."
+      );
+      expect(mock.refetch).not.toHaveBeenCalled();
+      assertNoRepairSourceAction();
+    }
+  );
+
+  it("locks through the single owned repair status refetch, including a pending redraw and changed control version", async () => {
+    capacityRepairFixture();
+    mock.repairMutateAsync.mockResolvedValue(capacityRepairPayload());
+    const statusRead = deferred<any>();
+    mock.refetch.mockReturnValueOnce(statusRead.promise);
+    await render();
+    await click("Repair saved import");
+    mock.fetching["managementHq.status"] = true;
+    await render();
+    expect(button("Refresh").disabled).toBe(true);
+    expect(button("Finish first import").disabled).toBe(true);
+    mock.fetching["managementHq.status"] = false;
+    Object.assign(mock.data["managementHq.status"], { stateVersion: 67 });
+    Object.assign(mock.data["managementHq.status"].live, {
+      stateVersion: 67,
+      health: "progress",
+      lastErrorCode: null,
+    });
+    await render();
+    expect(button("Finish first import").disabled).toBe(true);
+    await act(async () =>
+      statusRead.resolve({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+    );
+    expect(firstPanel()?.textContent).toContain(
+      "Saved import validated and ready to continue"
+    );
+    expect(button("Finish first import").disabled).toBe(false);
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    assertNoRepairSourceAction();
+  });
+
+  it.each(["settings", "route", "actor", "unmount", "status-error"])(
+    "suppresses success across %s changes during the owned repair status reread",
+    async changeType => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockResolvedValue(capacityRepairPayload());
+      const statusRead = deferred<any>();
+      mock.refetch.mockReturnValueOnce(statusRead.promise);
+      await render();
+      await click("Repair saved import");
+      await connectionBoundaryChange(changeType);
+      await act(async () =>
+        statusRead.resolve({
+          data: mock.data["managementHq.status"],
+          error: null,
+        })
+      );
+      expect(container.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(capacityRepairCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(finishCalls()).toHaveLength(0);
+      expect(container.textContent).not.toContain("NEVER-RENDER");
+    }
+  );
+
+  it.each(["FORBIDDEN", "PRECONDITION_FAILED", "INTERNAL_SERVER_ERROR"])(
+    "fresh repair status %s failure never displays repair success or starts another control action",
+    async code => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockResolvedValue(capacityRepairPayload());
+      mock.refetch.mockResolvedValueOnce({
+        data: undefined,
+        error: { data: { code }, message: "NEVER-RENDER raw status" },
+      });
+      await render();
+      await click("Repair saved import");
+      expect(container.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      if (code === "INTERNAL_SERVER_ERROR") {
+        expect(firstPanel()?.textContent).toContain(
+          "Saved import repair could not be verified"
+        );
+      } else {
+        expect(firstPanel()).toBeNull();
+        expect(finishRunPanel()).toBeNull();
+        expect(container.textContent).toContain(
+          "Management HQ access could not be verified."
+        );
+      }
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      assertNoRepairSourceAction();
+    }
+  );
+});
+
+describe("Repair control ownership additional actual-DOM boundaries", () => {
+  it("an unresolved legacy import still blocks repair after settings invalidation clears its existing busy display", async () => {
+    firstImportFixture();
+    const pending = deferred<any>();
+    mock.importMutateAsync.mockReturnValue(pending.promise);
+    await render();
+    await click("Import Orbit figures");
+    Object.assign(mock.data["managementHq.status"].live, {
+      intervalSeconds: 600,
+      health: "needs_attention",
+      lastErrorCode: "INVALID_PERSISTED_STATE",
+      progress: savedRunProgress(66, 6600),
+    });
+    await render();
+    expect(button("Refresh").disabled).toBe(false);
+    expect(button("Repair saved import").disabled).toBe(true);
+    await click("Repair saved import");
+    expect(capacityRepairCalls()).toHaveLength(0);
+    await act(async () => pending.resolve(importPayload()));
+    expect(button("Repair saved import").disabled).toBe(false);
+    expect(mock.refetch).not.toHaveBeenCalled();
+    assertNoDashboardActivation();
+  });
+
+  it("actor A settlement cannot unlock actor B's independent repair or display A's denied outcome", async () => {
+    capacityRepairFixture();
+    const actorA = deferred<any>();
+    const actorB = deferred<any>();
+    mock.repairMutateAsync
+      .mockReturnValueOnce(actorA.promise)
+      .mockReturnValueOnce(actorB.promise);
+    await render();
+    await click("Repair saved import");
+    mock.user = { ...mock.user, id: 48 };
+    await render();
+    expect(button("Repair saved import").disabled).toBe(false);
+    await click("Repair saved import");
+    await act(async () =>
+      actorA.reject({ data: { code: "FORBIDDEN" }, message: "NEVER-RENDER" })
+    );
+    expect(button("Repair saved import").disabled).toBe(true);
+    expect(button("Finish first import").disabled).toBe(true);
+    expect(button("Refresh").disabled).toBe(true);
+    expect(container.textContent).not.toContain(
+      "Management HQ access could not be verified."
+    );
+    expect(mock.refetch).not.toHaveBeenCalled();
+    await act(async () =>
+      actorB.resolve(capacityRepairPayload({ status: "busy" }))
+    );
+    expect(button("Repair saved import").disabled).toBe(false);
+    expect(capacityRepairCalls().map(call => call.actorId)).toEqual([47, 48]);
+    assertNoRepairSourceAction();
+  });
+
+  it("a route/settings change and return during repair's owned refetch remains invalidated", async () => {
+    capacityRepairFixture();
+    mock.repairMutateAsync.mockResolvedValue(capacityRepairPayload());
+    const statusRead = deferred<any>();
+    mock.refetch.mockReturnValueOnce(statusRead.promise);
+    await render();
+    await click("Repair saved import");
+    const interval = mock.data["managementHq.status"].live.intervalSeconds;
+    mock.data["managementHq.status"].live.intervalSeconds = 600;
+    await act(async () => window.history.replaceState({}, "", "/super-admin"));
+    await render();
+    mock.data["managementHq.status"].live.intervalSeconds = interval;
+    await act(async () =>
+      window.history.replaceState({}, "", "/admin/management-hq")
+    );
+    await render();
+    expect(button("Refresh").disabled).toBe(true);
+    await act(async () =>
+      statusRead.resolve({
+        data: mock.data["managementHq.status"],
+        error: null,
+      })
+    );
+    expect(firstPanel()?.textContent).not.toContain(
+      "Saved import validated and ready to continue"
+    );
+    expect(button("Refresh").disabled).toBe(false);
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
+    assertNoRepairSourceAction();
+  });
+
+  it("a calendar-invalid repair timestamp cannot claim successful validation", async () => {
+    capacityRepairFixture();
+    mock.repairMutateAsync.mockResolvedValue(
+      capacityRepairPayload({ checkedAt: "2026-02-30T15:00:00.000Z" })
+    );
+    await render();
+    await click("Repair saved import");
+    expect(firstPanel()?.textContent).toContain(
+      "Saved import repair could not be verified"
+    );
+    expect(mock.refetch).not.toHaveBeenCalled();
+    assertNoRepairSourceAction();
+  });
+
+  it.each([
+    [
+      "fresh attention with an error",
+      { health: "needs_attention", lastErrorCode: "INVALID_PERSISTED_STATE" },
+    ],
+    [
+      "fresh publication",
+      { health: "progress", lastErrorCode: null, hasPublished: true },
+    ],
+  ])(
+    "repaired response is not success when fresh status reports %s",
+    async (_label, freshPatch) => {
+      capacityRepairFixture();
+      mock.repairMutateAsync.mockResolvedValue(capacityRepairPayload());
+      mock.refetch.mockImplementationOnce(async () => {
+        Object.assign(mock.data["managementHq.status"].live, {
+          ...freshPatch,
+          stageStatus: freshPatch.health,
+          stateVersion: 67,
+        });
+        mock.data["managementHq.status"].stateVersion = 67;
+        return { data: mock.data["managementHq.status"], error: null };
+      });
+      await render();
+      await click("Repair saved import");
+      expect(firstPanel()?.textContent).toContain(
+        "Saved import repair could not be verified"
+      );
+      expect(firstPanel()?.textContent).not.toContain(
+        "Saved import validated and ready to continue"
+      );
+      expect(capacityRepairCalls()).toHaveLength(1);
+      expect(mock.refetch).toHaveBeenCalledTimes(1);
+      expect(finishCalls()).toHaveLength(0);
+      assertNoRepairSourceAction();
+    }
+  );
 });

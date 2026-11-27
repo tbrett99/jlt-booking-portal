@@ -1,4 +1,4 @@
-import type { HqReport } from "../shared/management-hq-report";
+import type { HqReport, HqReportOptions } from "../shared/management-hq-report";
 import type { HqWireMemberLink } from "../shared/management-hq-wire";
 import { getHqReport, type HqIdentityDirectory } from "./management-hq-engine";
 import { createPortalHqImplementedDirectory } from "./management-hq-identity";
@@ -58,13 +58,15 @@ export async function getHqLiveReport(
   state: HqImplementedState,
   db: unknown,
   range: { year: number; month?: number },
-  guard?: () => Promise<void>
+  guard?: () => Promise<void>,
+  options?: HqReportOptions
 ): Promise<HqReport> {
   // The real existing-person directory is mandatory. No fixture directory in live mode.
   const report = await getHqReport(
     state,
     memoizeHqReportDirectory(createPortalHqImplementedDirectory(db), guard),
-    range
+    range,
+    options
   );
   if (report.status !== "available") throw new Error("HQ_REPORT_UNAVAILABLE");
   return report;
