@@ -36,6 +36,11 @@ import { recoverHqEmptyInitialImport } from "./management-hq-initial-recovery";
 import { resumeHqStagedInitialImport } from "./management-hq-staged-resume";
 import { repairHqInitialCapacity } from "./management-hq-capacity-repair";
 import { hqReadDeadline } from "./management-hq-read-deadline";
+import type { createHqBackgroundCoordinator } from "./management-hq-background";
+import {
+  rawHqBackgroundEnabled as hqBackgroundEnabled,
+  hqBackgroundBinding,
+} from "./management-hq-background-config";
 import {
   getHqLiveReport,
   withHqLiveReportMetadata,
@@ -147,6 +152,76 @@ function initialImportGuard(
   };
 }
 
+async function backgroundAction<T>(
+  db: unknown,
+  user: Parameters<typeof requireFreshHqSuperAdmin>[1],
+  work: (
+    coordinator: ReturnType<typeof createHqBackgroundCoordinator>
+  ) => Promise<T>
+): Promise<T> {
+  const start = boundary();
+  const binding = hqBackgroundBinding();
+  const initialGuard = initialImportGuard(db, user, start);
+  let failure: unknown = null;
+  const guard = async () => {
+    try {
+      if (hqBackgroundBinding() !== binding)
+        deny(
+          "Management HQ configuration changed. Refresh to check current access."
+        );
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      await initialGuard();
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      if (hqBackgroundBinding() !== binding)
+        deny(
+          "Management HQ configuration changed. Refresh to check current access."
+        );
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure) throw failure;
+  };
+  await guard();
+  let poolRuntime: typeof import("./management-hq-background-pool");
+  let runtime: typeof import("./management-hq-background");
+  try {
+    poolRuntime = await import("./management-hq-background-pool");
+    await guard();
+    runtime = await import("./management-hq-background");
+  } finally {
+    await guard();
+  }
+  let pool: ReturnType<typeof poolRuntime.getHqBackgroundPool>;
+  try {
+    pool = poolRuntime.getHqBackgroundPool();
+  } finally {
+    await guard();
+  }
+  const authorize = async (actorId: number) => {
+    await guard();
+    try {
+      await poolRuntime.requireHqBackgroundActor(pool, actorId);
+    } finally {
+      await guard();
+    }
+  };
+  const coordinator = runtime.createHqBackgroundCoordinator({
+    pool,
+    authorize,
+  });
+  try {
+    return await work(coordinator);
+  } finally {
+    await guard();
+  }
+}
+
 async function readReport(
   db: unknown,
   user: Parameters<typeof requireFreshHqSuperAdmin>[1],
@@ -212,6 +287,47 @@ async function readReport(
 }
 
 export const managementHqRouter = router({
+  backgroundInitialImportStatus: procedure
+    .input(z.void())
+    .query(async ({ ctx }) => {
+      try {
+        if (!hqBackgroundEnabled()) {
+          await freshAuthority(ctx.hqDb, ctx.user);
+          if (hqBackgroundEnabled())
+            deny(
+              "Management HQ configuration changed. Refresh to check current access."
+            );
+          return { enabled: false, job: null };
+        }
+        return await backgroundAction(ctx.hqDb, ctx.user, c =>
+          c.status(ctx.user.id)
+        );
+      } catch (error) {
+        safeError(error);
+      }
+    }),
+  startBackgroundInitialImport: procedure
+    .input(z.void())
+    .mutation(async ({ ctx }) => {
+      try {
+        return await backgroundAction(ctx.hqDb, ctx.user, c =>
+          c.start(ctx.user.id)
+        );
+      } catch (error) {
+        safeError(error);
+      }
+    }),
+  pauseBackgroundInitialImport: procedure
+    .input(z.void())
+    .mutation(async ({ ctx }) => {
+      try {
+        return await backgroundAction(ctx.hqDb, ctx.user, c =>
+          c.pause(ctx.user.id)
+        );
+      } catch (error) {
+        safeError(error);
+      }
+    }),
   repairInitialImportCapacity: procedure
     .input(z.void())
     .mutation(async ({ ctx }) => {
@@ -234,6 +350,10 @@ export const managementHqRouter = router({
       try {
         const start = boundary();
         const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+        if (hqBackgroundEnabled())
+          await backgroundAction(ctx.hqDb, ctx.user, c =>
+            c.assertManualAllowed(ctx.user.id)
+          );
         const result = await finishHqInitialBatch({
           config: start.config,
           guard,
@@ -276,6 +396,10 @@ export const managementHqRouter = router({
     try {
       const start = boundary();
       const guard = initialImportGuard(ctx.hqDb, ctx.user, start);
+      if (hqBackgroundEnabled())
+        await backgroundAction(ctx.hqDb, ctx.user, c =>
+          c.assertManualAllowed(ctx.user.id)
+        );
       const result = await importHqInitialBatch({
         config: start.config,
         guard,

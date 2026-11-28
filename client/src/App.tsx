@@ -59,6 +59,7 @@ const AdminRefundKanban = lazy(() => import("./pages/admin/AdminRefundKanban"));
 const CommissionDue = lazy(() => import("./pages/admin/CommissionDue"));
 const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
 const ManagementHq = lazy(() => import("./pages/admin/ManagementHq"));
+const ManagementHqBackground = lazy(() => import("./pages/admin/ManagementHqBackground"));
 const CommissionMarginReport = lazy(() => import("./pages/admin/CommissionMarginReport"));
 const NotificationTemplates = lazy(() => import("./pages/admin/NotificationTemplates"));
 const AdminFlightsPipeline = lazy(() => import("./pages/admin/AdminFlightsPipeline"));
@@ -535,6 +536,7 @@ export function AuthRouter() {
         <Route path="/super-admin" component={SuperAdminDashboard} />
         <Route path="/admin/business-staff" component={AdminBusinessStaff} />
         {user.role === "super_admin" && <Route path="/admin/staff-access" component={AdminStaffAccess} />}
+        {user.role === "super_admin" && <Route path="/admin/management-hq/background" component={ManagementHqBackground} />}
         {user.role === "super_admin" && <Route path="/admin/management-hq" component={ManagementHq} />}
         <Route path="/reports" component={AdminReports} />
         <Route path="/commission-margin" component={CommissionMarginReport} />

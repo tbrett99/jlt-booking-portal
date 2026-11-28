@@ -1580,6 +1580,14 @@ function ActorHq({
             Restated booking performance, financial coverage and individual
             attribution activity.
           </p>
+          {initialEnabled && !busy && (
+            <a
+              href="/admin/management-hq/background"
+              className="mt-3 inline-block text-sm font-medium text-emerald-700 underline dark:text-emerald-300"
+            >
+              Run the saved import in the background
+            </a>
+          )}
         </div>
         <Button
           variant="outline"

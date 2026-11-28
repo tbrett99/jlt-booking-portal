@@ -11,7 +11,9 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "release:github": "node scripts/release-github.mjs"
+    "release:github": "node scripts/release-github.mjs",
+    "build:hq-initial-background": "esbuild scripts/management-hq-background-worker.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/management-hq-background-worker.mjs",
+    "hq:initial-background": "NODE_ENV=production node dist/management-hq-background-worker.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.907.0",
